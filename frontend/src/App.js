@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import ConnectPage from './pages/ConnectPage';
 import OAuthCallback from './pages/OAuthCallback';
+import Pipeline from './pages/Pipeline';
 import { getMe } from './lib/api';
 import { useEffect } from 'react';
 
@@ -66,6 +67,14 @@ function App() {
           element={
             token && user
               ? <Settings user={user} onLogout={handleLogout} onUserUpdate={setUser} />
+              : <Navigate to="/" />
+          }
+        />
+        <Route
+          path="/pipeline"
+          element={
+            token && user
+              ? <Pipeline user={user} onLogout={handleLogout} />
               : <Navigate to="/" />
           }
         />

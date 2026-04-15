@@ -93,7 +93,13 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 - ✅ Manual email processing modal
 - ✅ Settings page with Fund Thesis
 
-### 2026-04-15 (Session 3)
+### 2026-04-15 (Session 4)
+- ✅ Connect page redesigned — "Your inbox, AI-powered." with 4 feature pillars, split layout
+- ✅ Gmail scope text updated: "Gmail read + send access · Your emails never leave your account"
+- ✅ Pipeline/Kanban view — 4 columns (Inbox, In Review, In Diligence, Passed), deal cards with thesis ring + sector/stage chips + quick move arrows
+- ✅ Settings: "Reconnect Gmail" button with explanation for send scope grant
+- ✅ ActionModal: 403 insufficient_scope error shows "Go to Settings to reconnect Gmail" link
+- ✅ Dashboard nav: Pipeline button added
 - ✅ Schema migration applied (thesis_match_score, fit_strengths, fit_weaknesses, match_reasoning columns)
 - ✅ Sample deals patched with thesis data (VaultAI 88, GreenLoop 62)
 - ✅ auto-migrate_sample_thesis() runs on startup

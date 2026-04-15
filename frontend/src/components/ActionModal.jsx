@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Send, Loader, Check, AlertTriangle, XCircle, MessageSquare, Share2 } from 'lucide-react';
+import { X, Send, Loader, Check, AlertTriangle, XCircle, MessageSquare, Share2, RefreshCw } from 'lucide-react';
 import { generateAction, sendAction } from '../lib/api';
 
 const ACTION_CONFIG = {
@@ -133,7 +133,18 @@ export default function ActionModal({ deal, actionType, onClose, onSent }) {
                   style={{ background: 'rgba(240,82,82,0.08)', border: '1px solid rgba(240,82,82,0.2)' }}
                 >
                   <AlertTriangle size={13} className="text-[#f05252] shrink-0 mt-0.5" />
-                  <p className="text-[#f05252] leading-relaxed">{error}</p>
+                  <div className="flex-1">
+                    <p className="text-[#f05252] leading-relaxed">{error}</p>
+                    {(error.includes('permission') || error.includes('scope') || error.includes('reconnect')) && (
+                      <a
+                        href="/settings"
+                        className="inline-flex items-center gap-1 mt-2 text-[#4da6ff] underline underline-offset-2 hover:text-white transition-colors"
+                      >
+                        <RefreshCw size={11} />
+                        Go to Settings to reconnect Gmail
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
 

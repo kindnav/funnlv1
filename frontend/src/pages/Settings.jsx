@@ -333,6 +333,17 @@ export default function Settings({ user, onLogout }) {
                   {disconnecting ? <RefreshCw size={13} className="animate-spin" /> : <Mail size={13} />}
                   Disconnect Gmail
                 </button>
+                <a
+                  data-testid="reconnect-gmail-btn"
+                  href={`${BACKEND_URL}/api/auth/google`}
+                  className="flex items-center gap-2 text-[rgba(255,255,255,0.5)] hover:text-white text-sm border border-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.25)] rounded-lg px-4 py-2 transition-all"
+                >
+                  <RefreshCw size={13} />
+                  Reconnect Gmail
+                </a>
+                <p className="text-[rgba(255,255,255,0.25)] text-xs leading-relaxed">
+                  Use <strong className="text-[rgba(255,255,255,0.4)]">Reconnect Gmail</strong> to grant email-sending permission if "Send Email" actions in the deal panel don't work.
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
