@@ -433,7 +433,9 @@ def build_gmail_service(user: dict):
     expiry = None
     if user.get('token_expiry'):
         try:
-            expiry = datetime.fromisoformat(user['token_expiry'].replace('Z', '+00:00'))
+            # Google-auth uses naive UTC datetimes internally — strip timezone
+            dt = datetime.fromisoformat(user['token_expiry'].replace('Z', '+00:00'))
+            expiry = dt.astimezone(timezone.utc).replace(tzinfo=None)
         except Exception:
             pass
     creds = Credentials(
@@ -559,12 +561,34 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
         return 0
     try:
         gmail, creds = await asyncio.to_thread(build_gmail_service, user)
-        if creds.expired and creds.refresh_token:
+        # Refresh token if expired (use try/except to avoid any datetime comparison issues)
+        try:
+            needs_refresh = creds.expired and creds.refresh_token
+        except Exception:
+            needs_refresh = bool(creds.refresh_token)  # Assume refresh needed if unsure
+
+        if needs_refresh:
             await asyncio.to_thread(creds.refresh, GoogleRequest())
+            # Store expiry as naive UTC string for compatibility
+            new_expiry = None
+            if creds.expiry:
+                try:
+                    e = creds.expiry
+                    if hasattr(e, 'tzinfo') and e.tzinfo:
+                        e = e.astimezone(timezone.utc).replace(tzinfo=None)
+                    new_expiry = e.isoformat()
+                except Exception:
+                    pass
             await sb_update('users', {
                 'access_token': creds.token,
-                'token_expiry': creds.expiry.isoformat() if creds.expiry else None,
+                'token_expiry': new_expiry,
             }, {'id': f'eq.{user_id}'})
+            # Rebuild service with refreshed credentials
+            gmail, creds = await asyncio.to_thread(build_gmail_service, {
+                **user,
+                'access_token': creds.token,
+                'token_expiry': new_expiry,
+            })
 
         params = {'userId': 'me', 'maxResults': 20 if is_initial else 50, 'labelIds': ['INBOX']}
         if not is_initial and user.get('last_synced'):
@@ -690,6 +714,17 @@ async def auth_callback(
 
         google_id = user_info['id']
         email = user_info.get('email', '')
+        def _safe_expiry(dt):
+            """Convert expiry to naive-UTC ISO string for google-auth compatibility"""
+            if not dt:
+                return None
+            try:
+                if hasattr(dt, 'tzinfo') and dt.tzinfo:
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt.isoformat()
+            except Exception:
+                return None
+
         user_data = {
             'google_id': google_id,
             'email': email,
@@ -697,7 +732,7 @@ async def auth_callback(
             'picture': user_info.get('picture', ''),
             'access_token': creds.token,
             'refresh_token': creds.refresh_token,
-            'token_expiry': creds.expiry.isoformat() if creds.expiry else None,
+            'token_expiry': _safe_expiry(creds.expiry),
         }
 
         existing = await sb_select('users', {'google_id': f'eq.{google_id}'})
