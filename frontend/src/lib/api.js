@@ -37,3 +37,15 @@ export const saveFundSettings = (data) =>
   fetchJson(`${API}/fund-settings`, { method: 'POST', body: JSON.stringify(data) });
 export const getDbStatus = () =>
   fetch(`${API}/status/db`).then((r) => r.json()).catch(() => ({ tables_ready: false }));
+
+export const generateAction = (dealId, actionType) =>
+  fetchJson(`${API}/deals/${dealId}/generate-action`, {
+    method: 'POST',
+    body: JSON.stringify({ action_type: actionType }),
+  });
+
+export const sendAction = (dealId, data) =>
+  fetchJson(`${API}/deals/${dealId}/send-action`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });

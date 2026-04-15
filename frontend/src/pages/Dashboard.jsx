@@ -269,7 +269,7 @@ export default function Dashboard({ user, onLogout }) {
             <table className="w-full border-collapse text-left" data-testid="deals-table">
               <thead className="sticky top-0 z-10 bg-[#0c0c12]">
                 <tr>
-                  {['', 'Score', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action', 'Date'].map((h) => (
+                  {['', 'Score', 'Fit %', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action', 'Date'].map((h) => (
                     <th
                       key={h}
                       className="border-b border-[rgba(255,255,255,0.07)] px-3 py-2.5 text-[rgba(255,255,255,0.4)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
@@ -300,6 +300,29 @@ export default function Dashboard({ user, onLogout }) {
                       >
                         {deal.relevance_score || '—'}
                       </span>
+                    </td>
+                    {/* Thesis match pill */}
+                    <td className="px-3 py-2.5 w-12 hidden lg:table-cell">
+                      {deal.thesis_match_score != null ? (
+                        <span
+                          className="inline-flex items-center justify-center w-9 h-6 rounded border font-mono text-xs font-bold"
+                          style={{
+                            background: deal.thesis_match_score >= 70
+                              ? 'rgba(61,214,140,0.1)' : deal.thesis_match_score >= 45
+                              ? 'rgba(245,166,35,0.1)' : 'rgba(240,82,82,0.1)',
+                            borderColor: deal.thesis_match_score >= 70
+                              ? 'rgba(61,214,140,0.3)' : deal.thesis_match_score >= 45
+                              ? 'rgba(245,166,35,0.3)' : 'rgba(240,82,82,0.3)',
+                            color: deal.thesis_match_score >= 70
+                              ? '#3dd68c' : deal.thesis_match_score >= 45
+                              ? '#f5a623' : '#f05252',
+                          }}
+                        >
+                          {deal.thesis_match_score}
+                        </span>
+                      ) : (
+                        <span className="text-[rgba(255,255,255,0.15)] text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 min-w-[140px] max-w-[160px]">
                       <p className="text-white text-sm font-medium truncate">{deal.sender_name || '—'}</p>

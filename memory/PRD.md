@@ -1,115 +1,126 @@
 # VC Deal Flow Intelligence Tool — PRD
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Status**: MVP Complete — Spam Filtering + Fund Thesis UI done (2026-04-15)
+**Last Updated**: 2026-04-15  
+**Status**: MVP Complete — Action Engine + Thesis Match Engine live
 
 ---
 
 ## Problem Statement
 Build a full-stack VC deal flow intelligence tool that:
 - Connects to Gmail via OAuth to auto-ingest inbound emails
-- Uses Claude AI (Anthropic) to extract structured deal signals
-- Scores and categorizes emails (relevance 1–10, category, next action)
+- Uses Claude AI to extract structured deal signals + score thesis alignment
+- Scores, categorizes, and generates one-click email responses
 - Displays everything in a dark, professional internal dashboard
-- Supports manual email processing via paste modal
 
 ---
 
 ## Architecture
-- **Frontend**: React (Create React App), Tailwind CSS, Lucide icons, DM Sans / DM Mono fonts
+- **Frontend**: React (CRA), Tailwind CSS, Lucide icons
 - **Backend**: FastAPI (Python 3.11) on port 8001
 - **Database**: Supabase (PostgreSQL via REST/PostgREST API)
-- **AI**: Anthropic Claude (`claude-sonnet-4-5`) via `anthropic` Python SDK (AsyncAnthropic)
-- **Gmail**: Google OAuth 2.0 (`gmail.readonly` scope) via `google-auth-oauthlib`
-- **Scheduling**: APScheduler (AsyncIOScheduler) — syncs every 15 min
+- **AI**: Anthropic Claude (`claude-sonnet-4-5`) via `anthropic` SDK
+- **Gmail**: Google OAuth 2.0 (`gmail.readonly` + `gmail.send` scopes)
+- **Scheduling**: APScheduler (15-min background sync)
 - **Auth**: JWT (PyJWT) stored in localStorage
 
 ---
 
-## User Personas
-- **VC Partner/Associate**: Receives 50–200+ emails per week, needs to triage quickly
-- **Fund Admin**: Sets up integrations, manages settings
+## Core Product Pillars
+
+### 1. Thesis-Aware Scoring (LIVE)
+- Claude outputs `thesis_match_score` (0-100), `fit_strengths[]`, `fit_weaknesses[]`, `match_reasoning`
+- Requires DB schema migration (see below)
+- Detail panel shows SVG ring chart + strength/weakness bullets
+
+### 2. Action Engine (LIVE)
+- Three one-click actions: Decline (reject), Request Info, Forward to Partner
+- Claude generates personalized email draft per action type
+- User can edit To/Subject/Body before sending
+- Sends via Gmail API using `gmail.send` scope
+- Status auto-updates after send (reject → Archived, others → Reviewed)
+
+### 3. Spam Filtering (LIVE)
+- `get_deals` and `get_stats` exclude: Spam/irrelevant, Service provider/vendor, Recruiter/hiring
+- Ingestion pipeline skips Spam/irrelevant category emails
+
+### 4. Pitch Signal Heuristics (LIVE)
+- `pitch_signal_score()` function pre-screens emails before Claude
+- 20 keyword vocabulary: raising, deck, seed, founder, MRR, valuation, etc.
 
 ---
 
-## Core Requirements (Static)
-1. Gmail OAuth connect/disconnect
-2. Auto-sync inbox every 15 minutes (skip newsletters, duplicates, own emails)
-3. Claude AI extraction: company, founder, sector, stage, check size, score, next action, tags
-4. Dashboard: stats bar, filter toolbar, data table, right-side detail panel
-5. Manual email processing modal
-6. Settings page: API key status, Gmail status, redirect URI info
-7. 4 pre-seeded sample deals for demo
+## Database Schema
+
+### users
+`id, google_id, email, name, picture, access_token, refresh_token, token_expiry, last_synced`
+
+### deals
+`id, user_id, thread_id, message_id, received_date, sender_name, sender_email, subject, body_preview, gmail_thread_link, company_name, founder_name, founder_role, category, warm_or_cold, sector, stage, check_size_requested, geography, deck_attached, traction_mentioned, intro_source, summary, relevance_score, urgency_score, next_action, confidence, tags, thesis_match_score, fit_strengths, fit_weaknesses, match_reasoning, status, notes, processed_at, created_at`
+
+### REQUIRED SCHEMA MIGRATION SQL (run in Supabase SQL Editor)
+```sql
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS thesis_match_score INTEGER;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_strengths TEXT[];
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_weaknesses TEXT[];
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
+```
 
 ---
 
-## What's Been Implemented (2026-04-15)
-
-### Backend (server.py)
-- ✅ Google OAuth flow (`/api/auth/google`, `/api/auth/callback`)
-- ✅ JWT auth middleware (30-day tokens)
-- ✅ Supabase REST API client (httpx-based, no direct DB connection needed)
-- ✅ Database auto-init with Management API fallback
-- ✅ Sample data seeding (4 deals via system user)
-- ✅ Claude AI email analysis (AsyncAnthropic, model: claude-sonnet-4-5)
-- ✅ Gmail API integration (token refresh, email fetch, body extraction)
-- ✅ Background sync scheduler (APScheduler, 15-min interval)
-- ✅ API routes: `/api/deals`, `/api/deals/process`, `/api/deals/{id}`, `/api/stats`, `/api/sync`, `/api/settings`, `/api/auth/*`
-- ✅ Ownership check on PATCH endpoint
-
-### Frontend
-- ✅ ConnectPage (dark, grid background, Google OAuth button)
-- ✅ OAuthCallback (token extraction, localStorage storage)
-- ✅ Dashboard (full-screen, TopNav, StatsBar, Toolbar, DealTable, DetailPanel)
-- ✅ DetailPanel (AI summary, score bars, deal signals grid, tags, action buttons)
-- ✅ ProcessEmailModal (sender/subject/body form, Claude AI submit)
-- ✅ Settings page (Gmail status, AI config, OAuth URI info, logout)
-- ✅ Filter buttons (All/New/Score≥7/Pitches/Warm Intros) + search
-- ✅ Category color coding (purple/blue/teal/green/red/gray)
-- ✅ Score pills (green/amber/red) + glowing status dots
-- ✅ Deal status actions (Mark Reviewed, Add to Pipeline, Archive)
+## API Endpoints
+- `GET /api/auth/google` — Initiate OAuth
+- `GET /api/auth/callback` — OAuth redirect handler
+- `GET /api/auth/me` — Current user
+- `POST /api/auth/logout` / `POST /api/auth/disconnect`
+- `GET /api/deals` — Get filtered deals (no spam/vendor/recruiter)
+- `POST /api/deals/process` — Manual email processing
+- `PATCH /api/deals/{id}` — Update status/notes
+- `POST /api/deals/{id}/generate-action` — Claude email draft (reject/request_info/forward_partner)
+- `POST /api/deals/{id}/send-action` — Send email via Gmail API
+- `GET /api/stats` — Dashboard stats (filtered)
+- `POST /api/sync` — Trigger Gmail sync
+- `GET/POST /api/fund-settings` — Fund thesis CRUD
 
 ---
 
-## Database Tables (Supabase)
-- `users`: Google OAuth tokens, profile, last_synced
-- `deals`: Full AI-extracted deal data, status, notes
-- System user (`00000000-0000-0000-0000-000000000001`) for sample data
+## What's Been Implemented
 
----
+### 2026-04-15 (Session 1)
+- ✅ Gmail OAuth + background sync (15-min APScheduler)
+- ✅ Claude AI extraction pipeline
+- ✅ Dashboard: stats, filters, deals table, detail panel
+- ✅ Manual email processing modal
+- ✅ Settings page with Fund Thesis
 
-## Environment Variables (backend/.env)
-- `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`
-- `ANTHROPIC_API_KEY`
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI`
-- `JWT_SECRET` / `FRONTEND_URL`
+### 2026-04-15 (Session 2)
+- ✅ Spam/vendor/recruiter filtering from dashboard + stats
+- ✅ Fund Thesis — prominent "Fund Thesis" button in nav + callout banner in Settings
+- ✅ Gmail `gmail.send` scope added to OAuth flow
+- ✅ Thesis Match Engine: thesis_match_score (0-100), fit_strengths[], fit_weaknesses[], match_reasoning
+- ✅ Action Engine: generate-action + send-action endpoints
+- ✅ ActionModal component (edit draft, send, loading/success states)
+- ✅ Detail panel: Thesis Ring chart, strength/weakness bullets, 3 action buttons
+- ✅ Dashboard table: "Fit %" column showing thesis_match_score
+- ✅ Pitch signal heuristics: pitch_signal_score() pre-filter function
 
 ---
 
 ## Prioritized Backlog
 
-### P0 (Critical — setup required)
-- [ ] Add `https://vc-pipeline-1.preview.emergentagent.com/api/auth/callback` to Google Cloud Console OAuth redirect URIs
-- [ ] Verify Supabase tables exist (run `/app/setup/migration.sql` if not)
+### P0 (Required for full thesis match to show)
+- [ ] Run schema migration SQL in Supabase SQL Editor (4 ALTER TABLE statements)
+- [ ] Existing connected Gmail users must reconnect to grant `gmail.send` scope
 
-### P1 (High value next features)
-- [ ] Deal notes field — editable text note on each deal
-- [ ] Pipeline view — Kanban board of deals by stage
+### P1 (Next features)
+- [ ] Deal notes — editable text note on each deal in detail panel
+- [ ] Pipeline/Kanban view — deals by stage
+- [ ] Sync Now — visual success confirmation after sync completes
 - [ ] Email thread view — full conversation history
-- [ ] Bulk actions — archive/mark-reviewed multiple deals
-- [ ] Email notifications for high-score deals (>8)
 
-### P2 (Enhancement)
-- [ ] Export to CSV / Airtable
-- [ ] Team collaboration (multiple users per fund)
-- [ ] Deal tagging / custom categories
-- [ ] Webhook for new high-score deals (Slack notification)
-- [ ] Mobile-responsive layout
-
----
-
-## Next Tasks
-1. Connect Gmail in Google Cloud Console (add redirect URI)
-2. Test full OAuth flow with real Gmail account
-3. Verify 15-min background sync works after first connect
-4. Add P1 notes field to detail panel
+### P2 (Future)
+- [ ] CSV export
+- [ ] Slack webhook for high-score deals (>8)
+- [ ] Mobile responsive layout
+- [ ] Bulk actions
+- [ ] Team collaboration (multi-user per fund)

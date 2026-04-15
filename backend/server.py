@@ -9,6 +9,7 @@ import base64
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from email.utils import parsedate_to_datetime
+from email.mime.text import MIMEText
 from typing import Optional
 
 import httpx
@@ -173,6 +174,10 @@ CREATE TABLE IF NOT EXISTS deals (
   tags TEXT[],
   status TEXT DEFAULT 'New',
   notes TEXT,
+  thesis_match_score INTEGER,
+  fit_strengths TEXT[],
+  fit_weaknesses TEXT[],
+  match_reasoning TEXT,
   processed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, thread_id)
@@ -223,6 +228,10 @@ SAMPLE_DEALS = [
         "next_action": "Review now",
         "confidence": "High",
         "tags": ["AI", "Enterprise", "Seed", "Warm", "Contract Tech"],
+        "thesis_match_score": 88,
+        "fit_strengths": ["Strong AI/Enterprise sector alignment", "Early traction — $45k MRR with 22 design partners", "Warm intro signal from trusted source"],
+        "fit_weaknesses": ["Seed stage may be later than typical entry point"],
+        "match_reasoning": "VaultAI's AI contract intelligence platform closely aligns with enterprise software theses, with early traction and a warm intro backing conviction.",
         "status": "New",
         "processed_at": "2025-01-15T10:35:00+00:00",
         "created_at": "2025-01-15T10:35:00+00:00",
@@ -256,6 +265,10 @@ SAMPLE_DEALS = [
         "next_action": "Request more info",
         "confidence": "Medium",
         "tags": ["Climate Tech", "Marketplace", "Pre-seed", "B2B"],
+        "thesis_match_score": 62,
+        "fit_strengths": ["Climate tech is a high-conviction sector", "B2B marketplace model has strong network effects potential"],
+        "fit_weaknesses": ["No traction or revenue metrics yet", "Pre-seed stage is very early", "Two-sided marketplace requires liquidity proof"],
+        "match_reasoning": "GreenLoop targets a real gap in circular economy infrastructure but lacks the traction metrics that would typically warrant conviction at this stage.",
         "status": "New",
         "processed_at": "2025-01-14T14:25:00+00:00",
         "created_at": "2025-01-14T14:25:00+00:00",
@@ -289,6 +302,10 @@ SAMPLE_DEALS = [
         "next_action": "Follow up later",
         "confidence": "High",
         "tags": ["LP", "Fund Update", "Q2"],
+        "thesis_match_score": None,
+        "fit_strengths": [],
+        "fit_weaknesses": [],
+        "match_reasoning": "This is an LP fund update, not an investment opportunity — thesis match scoring does not apply.",
         "status": "Reviewed",
         "processed_at": "2025-01-13T09:20:00+00:00",
         "created_at": "2025-01-13T09:20:00+00:00",
@@ -332,6 +349,7 @@ async def init_database():
     exists = await sb_table_exists('users')
     if exists:
         logger.info("Database tables verified")
+        await migrate_schema()
         await seed_sample_data()
         return True
 
@@ -367,6 +385,28 @@ async def seed_sample_data():
         await sb_insert('deals', deal)
     logger.info("Sample data seeded")
 
+SCHEMA_MIGRATION_SQL = """
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS thesis_match_score INTEGER;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_strengths TEXT[];
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_weaknesses TEXT[];
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
+"""
+
+async def migrate_schema():
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f'https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query',
+                headers={'Authorization': f'Bearer {SUPABASE_KEY}', 'Content-Type': 'application/json'},
+                json={'query': SCHEMA_MIGRATION_SQL}
+            )
+            if resp.status_code in (200, 201):
+                logger.info("Schema migration applied")
+            else:
+                logger.warning(f"Schema migration may need manual SQL: {resp.status_code}")
+    except Exception as e:
+        logger.error(f"Schema migration error: {e}")
+
 # ── JWT helpers ─────────────────────────────────────────────────────────────────
 def create_jwt(user_id: str, email: str) -> str:
     payload = {
@@ -392,6 +432,7 @@ GOOGLE_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
 ]
 
 GOOGLE_CLIENT_CONFIG = {
@@ -498,7 +539,14 @@ CLAUDE_SYSTEM = (
     '- next_action: one of "Review now","Forward to partner","Archive","Ignore","Request more info",'
     '"Schedule meeting","Add to pipeline","Follow up later"\n'
     '- confidence: "High","Medium","Low"\n'
-    "- tags: array of up to 5 strings"
+    "- tags: array of up to 5 strings\n"
+    "- thesis_match_score: 0-100 integer or null (only output when fund thesis context is provided; "
+    "80+=strong fit, 50=neutral, 30-=poor fit; null if no thesis provided)\n"
+    "- fit_strengths: array of 2-3 short strings — specific reasons this deal FITS the fund thesis "
+    "(empty array if no thesis provided)\n"
+    "- fit_weaknesses: array of 2-3 short strings — specific reasons this deal does NOT fit the fund thesis "
+    "(empty array if no thesis provided)\n"
+    "- match_reasoning: 1-2 sentence string summarizing overall thesis alignment (null if no thesis provided)"
 )
 
 async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str, fund_ctx: dict = None) -> dict:
@@ -553,6 +601,19 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
 # Categories to skip entirely — not relevant to any fund
 SKIP_CATEGORIES = {'Spam / irrelevant'}
 
+# ── Pitch signal heuristics ────────────────────────────────────────────────────
+PITCH_KEYWORDS = [
+    'raising', 'raise', 'funding', 'investment', 'deck', 'pitch', 'round',
+    'pre-seed', 'preseed', 'seed', 'series a', 'series b', 'startup',
+    'founder', 'co-founder', 'venture', 'capital', 'mrr', 'arr',
+    'traction', 'term sheet', 'valuation', 'equity', 'investors',
+]
+
+def pitch_signal_score(subject: str, body: str) -> int:
+    """Return count of pitch-related keywords found — used to pre-filter emails before Claude."""
+    text = f"{subject} {body[:1000]}".lower()
+    return sum(1 for kw in PITCH_KEYWORDS if kw in text)
+
 async def process_and_save_email(
     user_id: Optional[str], sender_name: str, sender_email: str,
     subject: str, body: str, thread_id: str = None,
@@ -603,11 +664,20 @@ async def process_and_save_email(
         'next_action': ai.get('next_action', 'Review now'),
         'confidence': ai.get('confidence', 'Medium'),
         'tags': ai.get('tags', []),
+        'thesis_match_score': ai.get('thesis_match_score'),
+        'fit_strengths': ai.get('fit_strengths', []),
+        'fit_weaknesses': ai.get('fit_weaknesses', []),
+        'match_reasoning': ai.get('match_reasoning'),
         'status': 'New',
         'processed_at': now,
         'created_at': now,
     }
     saved = await sb_insert('deals', deal)
+    if not saved:
+        # Fallback: retry without new schema fields if columns don't exist yet
+        for f in ('thesis_match_score', 'fit_strengths', 'fit_weaknesses', 'match_reasoning'):
+            deal.pop(f, None)
+        saved = await sb_insert('deals', deal)
     return saved or deal
 
 # ── Gmail sync ─────────────────────────────────────────────────────────────────────
@@ -721,6 +791,107 @@ async def sync_all_users():
     users = await sb_select('users', {'refresh_token': 'not.is.null'})
     for u in users:
         await sync_user_emails(u['id'])
+
+# ── Action engine ──────────────────────────────────────────────────────────────
+ACTION_PROMPTS = {
+    'reject': (
+        "Write a professional, respectful rejection email from an investor. "
+        "Reference the company name specifically. Give a genuine reason for passing tied to fit — "
+        "be human and encouraging. 3-5 sentences. No generic filler phrases like 'at this time'."
+    ),
+    'request_info': (
+        "Write a brief, direct follow-up email requesting more information. "
+        "Ask 3-4 targeted questions based on what is missing from the pitch (traction, market size, team, etc.). "
+        "Be specific to this company — not generic."
+    ),
+    'forward_partner': (
+        "Write a concise internal forwarding note for a co-investor or fund partner. "
+        "Cover: what the company does, key traction or metrics if available, why it is interesting, "
+        "and a suggested next step. Tone: internal memo, 3-4 sentences, opinionated."
+    ),
+}
+
+async def generate_action_draft(deal: dict, action_type: str, fund_ctx: dict = None) -> dict:
+    ctx = (
+        f"Company: {deal.get('company_name', 'Unknown')}\n"
+        f"Founder: {deal.get('founder_name', 'Unknown')} ({deal.get('founder_role', '')})\n"
+        f"Stage: {deal.get('stage', 'Unknown')}\n"
+        f"Sector: {deal.get('sector', 'Unknown')}\n"
+        f"Summary: {deal.get('summary', '')}\n"
+        f"Check size asked: {deal.get('check_size_requested', 'Not mentioned')}\n"
+        f"Traction: {'Mentioned' if deal.get('traction_mentioned') else 'Not mentioned'}"
+    )
+    if deal.get('fit_weaknesses'):
+        ctx += f"\nThesis gaps: {', '.join(deal['fit_weaknesses'])}"
+    if deal.get('fit_strengths'):
+        ctx += f"\nThesis strengths: {', '.join(deal['fit_strengths'])}"
+    if fund_ctx and fund_ctx.get('fund_name'):
+        ctx += f"\nFund: {fund_ctx['fund_name']}"
+
+    instruction = ACTION_PROMPTS.get(action_type, ACTION_PROMPTS['request_info'])
+    prompt = (
+        f"Deal context:\n{ctx}\n\n"
+        f"Original email subject: \"{deal.get('subject', '')}\"\n\n"
+        f"Task: {instruction}\n\n"
+        "Return ONLY valid JSON:\n"
+        "{\"subject\": \"reply subject here\", \"body\": \"full email body here\"}"
+    )
+    try:
+        msg = await claude_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=800,
+            system="You are a VC investor assistant. Generate professional email drafts. Return ONLY valid JSON, no markdown.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+        text = re.sub(r'^```(?:json)?\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+        result = json.loads(text)
+        return {
+            "to_email": deal.get('sender_email', ''),
+            "to_name": deal.get('sender_name', ''),
+            "subject": result.get('subject', f"Re: {deal.get('subject', '')}"),
+            "body": result.get('body', ''),
+            "action_type": action_type,
+        }
+    except Exception as e:
+        logger.error(f"Action draft error: {e}")
+        return {
+            "to_email": deal.get('sender_email', ''),
+            "to_name": deal.get('sender_name', ''),
+            "subject": f"Re: {deal.get('subject', '')}",
+            "body": "",
+            "action_type": action_type,
+        }
+
+async def send_gmail_message(
+    user_id: str, to_email: str, to_name: str,
+    subject: str, body: str, thread_id: str = None
+):
+    users = await sb_select('users', {'id': f'eq.{user_id}'})
+    if not users or not users[0].get('refresh_token'):
+        return False, "Gmail not connected"
+    user = users[0]
+    try:
+        gmail, creds = await asyncio.to_thread(build_gmail_service, user)
+        msg = MIMEText(body, 'plain')
+        msg['to'] = f"{to_name} <{to_email}>" if to_name else to_email
+        msg['from'] = 'me'
+        msg['subject'] = subject
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        send_body = {'raw': raw}
+        if thread_id and 'sample' not in str(thread_id):
+            send_body['threadId'] = thread_id
+        result = await asyncio.to_thread(
+            lambda: gmail.users().messages().send(userId='me', body=send_body).execute()
+        )
+        return True, result.get('id', '')
+    except Exception as e:
+        err = str(e)
+        logger.error(f"Gmail send error: {err}")
+        if 'insufficient' in err.lower() or 'scope' in err.lower() or '403' in err:
+            return False, "insufficient_scope"
+        return False, err
 
 # ── Routes ─────────────────────────────────────────────────────────────────────────
 
@@ -886,6 +1057,52 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update deal")
     return {"message": "Updated"}
+
+@api_router.post("/deals/{deal_id}/generate-action")
+async def generate_deal_action(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    action_type = data.get('action_type', 'request_info')
+    if action_type not in ('reject', 'request_info', 'forward_partner'):
+        raise HTTPException(status_code=400, detail="Invalid action_type")
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    fund_ctx = get_fund_settings(current_user['user_id'])
+    return await generate_action_draft(deals[0], action_type, fund_ctx)
+
+@api_router.post("/deals/{deal_id}/send-action")
+async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    to_email = data.get('to_email', '').strip()
+    body = data.get('body', '').strip()
+    if not to_email or not body:
+        raise HTTPException(status_code=400, detail="to_email and body are required")
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    deal = deals[0]
+    success, result = await send_gmail_message(
+        user_id=uid,
+        to_email=to_email,
+        to_name=data.get('to_name', ''),
+        subject=data.get('subject', ''),
+        body=body,
+        thread_id=deal.get('thread_id'),
+    )
+    if not success:
+        if result == 'insufficient_scope':
+            raise HTTPException(
+                status_code=403,
+                detail="Gmail send permission not granted. Please reconnect Gmail to enable sending."
+            )
+        raise HTTPException(status_code=500, detail=f"Send failed: {result}")
+    action_type = data.get('action_type', 'request_info')
+    status_map = {'reject': 'Archived', 'request_info': 'Reviewed', 'forward_partner': 'Reviewed'}
+    new_status = status_map.get(action_type, 'Reviewed')
+    await sb_update('deals', {'status': new_status}, {
+        'id': f'eq.{deal_id}',
+        'user_id': f'in.({uid},{SYSTEM_USER_ID})',
+    })
+    return {"message": "Email sent", "status": new_status}
 
 # Sync
 @api_router.post("/sync")
