@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, Archive, ChevronRight,
-  XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown,
+  XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText,
 } from 'lucide-react';
 import { updateDeal } from '../lib/api';
 import ActionModal from './ActionModal';
@@ -58,7 +58,24 @@ const ThesisRing = ({ score }) => {
 
 export default function DetailPanel({ deal, onClose, onDealUpdated }) {
   const [saving, setSaving] = useState(null);
-  const [actionModal, setActionModal] = useState(null); // 'reject' | 'request_info' | 'forward_partner' | null
+  const [actionModal, setActionModal] = useState(null);
+  const [notes, setNotes] = useState(deal.notes || '');
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  useEffect(() => { setNotes(deal.notes || ''); }, [deal.id]);
+
+  const handleSaveNotes = async () => {
+    if (notes === (deal.notes || '')) return;
+    setSaving('notes');
+    try {
+      await updateDeal(deal.id, { notes });
+      onDealUpdated({ ...deal, notes });
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } finally {
+      setSaving(null);
+    }
+  }; // 'reject' | 'request_info' | 'forward_partner' | null
 
   const relScore = deal.relevance_score || 0;
   const urgScore = deal.urgency_score || 0;
@@ -241,8 +258,31 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             </div>
           )}
 
+          {/* Notes */}
+          <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText size={13} className="text-[rgba(255,255,255,0.3)]" />
+              <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold flex-1">
+                Notes
+              </p>
+              {notesSaved && (
+                <span className="text-[#3dd68c] text-xs flex items-center gap-1">
+                  <Check size={11} /> Saved
+                </span>
+              )}
+            </div>
+            <textarea
+              data-testid="deal-notes-input"
+              rows={3}
+              placeholder="Add your notes, next steps, or follow-up reminders..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={handleSaveNotes}
+              className="w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.07)] rounded-lg px-3 py-2.5 text-xs text-[rgba(255,255,255,0.75)] placeholder-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[#7c6dfa] transition-colors resize-none leading-relaxed"
+            />
+          </div>
+
           {/* Recommended action */}
-          {deal.next_action && (
             <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
               <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-2">
                 Recommended Action

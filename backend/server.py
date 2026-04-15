@@ -350,6 +350,7 @@ async def init_database():
     if exists:
         logger.info("Database tables verified")
         await migrate_schema()
+        await migrate_sample_thesis()
         await seed_sample_data()
         return True
 
@@ -406,6 +407,34 @@ async def migrate_schema():
                 logger.warning(f"Schema migration may need manual SQL: {resp.status_code}")
     except Exception as e:
         logger.error(f"Schema migration error: {e}")
+
+SAMPLE_THESIS = {
+    "00000000-0000-0000-0001-000000000001": {
+        "thesis_match_score": 88,
+        "fit_strengths": ["Strong AI/Enterprise alignment", "Early traction — $45k MRR, 22 design partners", "Warm intro from trusted source"],
+        "fit_weaknesses": ["Seed stage may be later than typical entry point"],
+        "match_reasoning": "VaultAI closely aligns with enterprise software and AI theses, backed by early traction and a credible warm introduction.",
+    },
+    "00000000-0000-0000-0001-000000000002": {
+        "thesis_match_score": 62,
+        "fit_strengths": ["Climate tech is a high-conviction sector", "B2B marketplace has network effects potential"],
+        "fit_weaknesses": ["No traction or revenue metrics", "Pre-seed is very early", "Two-sided marketplace needs liquidity proof"],
+        "match_reasoning": "GreenLoop targets a real gap in circular economy but lacks the traction metrics to build conviction at this stage.",
+    },
+    "00000000-0000-0000-0001-000000000003": {
+        "thesis_match_score": None,
+        "fit_strengths": [],
+        "fit_weaknesses": [],
+        "match_reasoning": "LP fund update — thesis match scoring does not apply to non-investment emails.",
+    },
+}
+
+async def migrate_sample_thesis():
+    for deal_id, data in SAMPLE_THESIS.items():
+        rows = await sb_select('deals', {'id': f'eq.{deal_id}', 'thesis_match_score': 'is.null'})
+        if rows:
+            await sb_update('deals', data, {'id': f'eq.{deal_id}'})
+    logger.info("Sample deal thesis data patched")
 
 # ── JWT helpers ─────────────────────────────────────────────────────────────────
 def create_jwt(user_id: str, email: str) -> str:
@@ -1106,9 +1135,12 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
 
 # Sync
 @api_router.post("/sync")
-async def trigger_sync(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
-    background_tasks.add_task(sync_user_emails, current_user['user_id'])
-    return {"message": "Sync started", "status": "syncing"}
+async def trigger_sync(current_user: dict = Depends(get_current_user)):
+    try:
+        count = await asyncio.wait_for(sync_user_emails(current_user['user_id']), timeout=45)
+        return {"message": "Sync complete", "new_deals": count or 0, "status": "done"}
+    except asyncio.TimeoutError:
+        return {"message": "Sync started (large inbox — check back shortly)", "new_deals": 0, "status": "syncing"}
 
 # Stats
 @api_router.get("/stats")

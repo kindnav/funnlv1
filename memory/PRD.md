@@ -93,7 +93,13 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 - ✅ Manual email processing modal
 - ✅ Settings page with Fund Thesis
 
-### 2026-04-15 (Session 2)
+### 2026-04-15 (Session 3)
+- ✅ Schema migration applied (thesis_match_score, fit_strengths, fit_weaknesses, match_reasoning columns)
+- ✅ Sample deals patched with thesis data (VaultAI 88, GreenLoop 62)
+- ✅ auto-migrate_sample_thesis() runs on startup
+- ✅ Sync Now — synchronous endpoint (45s timeout), returns new_deals count
+- ✅ Sync button shows "Synced · X new" / "Up to date" state for 5s after sync
+- ✅ Deal Notes — editable textarea in detail panel, auto-saves on blur with "Saved" confirmation
 - ✅ Spam/vendor/recruiter filtering from dashboard + stats
 - ✅ Fund Thesis — prominent "Fund Thesis" button in nav + callout banner in Settings
 - ✅ Gmail `gmail.send` scope added to OAuth flow

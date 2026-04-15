@@ -52,6 +52,7 @@ export default function Dashboard({ user, onLogout }) {
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // {new_deals, status}
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -92,10 +93,15 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncResult(null);
     try {
-      await triggerSync();
-      setTimeout(() => { fetchAll(); setIsSyncing(false); }, 5000);
-    } catch { setIsSyncing(false); }
+      const result = await triggerSync();
+      setSyncResult(result);
+      await fetchAll();
+    } catch { /* silent */ } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncResult(null), 5000);
+    }
   };
 
   const handleProcessed = (newDeal) => {
@@ -231,10 +237,25 @@ export default function Dashboard({ user, onLogout }) {
             data-testid="sync-now-btn"
             onClick={handleSync}
             disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-[rgba(255,255,255,0.5)] hover:text-white border border-[rgba(255,255,255,0.07)] hover:border-[rgba(255,255,255,0.15)] transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-50"
+            style={syncResult?.status === 'done' ? {
+              background: 'rgba(61,214,140,0.08)',
+              border: '1px solid rgba(61,214,140,0.25)',
+              color: '#3dd68c',
+            } : {
+              color: 'rgba(255,255,255,0.5)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              background: 'transparent',
+            }}
           >
             <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+            <span className="hidden sm:inline">
+              {isSyncing
+                ? 'Syncing...'
+                : syncResult?.status === 'done'
+                  ? `Synced${syncResult.new_deals > 0 ? ` · ${syncResult.new_deals} new` : ' · Up to date'}`
+                  : 'Sync Now'}
+            </span>
           </button>
           <button
             data-testid="process-email-btn"
