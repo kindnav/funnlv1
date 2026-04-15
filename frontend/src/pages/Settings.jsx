@@ -118,6 +118,26 @@ export default function Settings({ user, onLogout }) {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
 
+          {/* ── Fund Thesis callout banner ── */}
+          <div
+            className="rounded-xl px-5 py-4 flex items-start gap-4"
+            style={{
+              background: 'linear-gradient(135deg, rgba(124,109,250,0.15), rgba(91,77,232,0.08))',
+              border: '1px solid rgba(124,109,250,0.35)',
+            }}
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+              style={{ background: 'rgba(124,109,250,0.2)' }}>
+              <Sparkles size={15} className="text-[#7c6dfa]" />
+            </div>
+            <div>
+              <p className="text-white font-semibold text-sm mb-0.5">Set your Fund Thesis first</p>
+              <p className="text-[rgba(255,255,255,0.45)] text-xs leading-relaxed">
+                The AI uses your thesis to calibrate relevance scores for every inbound email. Fill in the form below — the more specific, the better your deal scoring.
+              </p>
+            </div>
+          </div>
+
           {/* ── Fund Thesis ── */}
           <div className={cardCls}>
             <div className="flex items-center gap-2 mb-1">

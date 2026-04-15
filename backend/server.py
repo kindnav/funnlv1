@@ -843,11 +843,15 @@ async def disconnect_gmail(current_user: dict = Depends(get_current_user)):
 async def get_deals(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     user_deals, sample_deals = await asyncio.gather(
-        sb_select('deals', {'user_id': f'eq.{uid}', 'order': 'created_at.desc', 'limit': '200'}),
-        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'order': 'created_at.desc'}),
+        sb_select('deals', {'user_id': f'eq.{uid}', 'category': 'neq.Spam / irrelevant', 'order': 'created_at.desc', 'limit': '200'}),
+        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'category': 'neq.Spam / irrelevant', 'order': 'created_at.desc'}),
     )
-    # Always show user deals first, then sample deals together
-    return (user_deals or []) + (sample_deals or [])
+    # Additional client-side filter for other low-signal categories
+    def is_relevant(d):
+        cat = d.get('category', '')
+        irrelevant = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
+        return cat not in irrelevant
+    return [d for d in (user_deals or []) + (sample_deals or []) if is_relevant(d)]
 
 @api_router.post("/deals/process")
 async def process_email_manual(data: dict, current_user: dict = Depends(get_current_user)):
@@ -893,11 +897,12 @@ async def trigger_sync(background_tasks: BackgroundTasks, current_user: dict = D
 @api_router.get("/stats")
 async def get_stats(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    IRRELEVANT_CATS = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
     user_deals, sample_deals = await asyncio.gather(
         sb_select('deals', {'user_id': f'eq.{uid}'}),
         sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}'}),
     )
-    deals = (user_deals or []) + (sample_deals or [])
+    deals = [d for d in (user_deals or []) + (sample_deals or []) if d.get('category') not in IRRELEVANT_CATS]
     if not deals:
         return {'total': 0, 'founder_pitches': 0, 'avg_relevance': 0.0, 'high_score': 0, 'unreviewed': 0}
     pitches = sum(1 for d in deals if d.get('category') in ('Founder pitch', 'Warm intro'))

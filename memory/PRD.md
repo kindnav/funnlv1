@@ -1,7 +1,7 @@
 # VC Deal Flow Intelligence Tool — PRD
-**Project**: Future Frontier Capital — Internal Deal Flow Intelligence  
+**Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Status**: MVP Complete
+**Status**: MVP Complete — Spam Filtering + Fund Thesis UI done (2026-04-15)
 
 ---
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox
+  ChevronDown, LogOut, Inbox, BookOpen
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -151,11 +151,17 @@ export default function Dashboard({ user, onLogout }) {
         )}
 
         <button
-          data-testid="settings-btn"
+          data-testid="fund-thesis-btn"
           onClick={() => navigate('/settings')}
-          className="text-[rgba(255,255,255,0.35)] hover:text-white transition-colors p-1"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{
+            background: 'rgba(124,109,250,0.08)',
+            border: '1px solid rgba(124,109,250,0.25)',
+            color: '#7c6dfa',
+          }}
         >
-          <SettingsIcon size={16} />
+          <BookOpen size={13} />
+          <span className="hidden sm:inline">Fund Thesis</span>
         </button>
         <button
           data-testid="logout-btn"
