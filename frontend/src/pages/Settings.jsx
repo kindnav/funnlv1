@@ -1,19 +1,66 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, ExternalLink } from 'lucide-react';
-import { getSettings, disconnectGmail, logout } from '../lib/api';
+import {
+  ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle,
+  BookOpen, Save, Sparkles, ChevronDown
+} from 'lucide-react';
+import { getSettings, disconnectGmail, logout, getFundSettings, saveFundSettings } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+const FUND_TYPES = [
+  'VC Fund', 'Student VC Org', 'Accelerator', 'Angel Network',
+  'Family Office', 'Corporate VC', 'Micro-VC', 'Other',
+];
+const ALL_STAGES = ['Pre-seed', 'Seed', 'Series A', 'Series B+', 'Growth', 'Any Stage'];
 
 export default function Settings({ user, onLogout }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
+
+  // Fund thesis form state
+  const [thesis, setThesis] = useState({
+    fund_name: '', fund_type: '', thesis: '', sectors: '', check_size: '', stages: [],
+  });
+  const [thesisSaving, setThesisSaving] = useState(false);
+  const [thesisSaved, setThesisSaved] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
-    getSettings().then((s) => { if (s) setSettings(s); }).finally(() => setLoading(false));
+    Promise.all([getSettings(), getFundSettings()]).then(([s, f]) => {
+      if (s) setSettings(s);
+      if (f && Object.keys(f).length > 0) {
+        setThesis({
+          fund_name: f.fund_name || '',
+          fund_type: f.fund_type || '',
+          thesis: f.thesis || '',
+          sectors: f.sectors || '',
+          check_size: f.check_size || '',
+          stages: f.stages || [],
+        });
+      }
+    }).finally(() => setLoading(false));
   }, []);
+
+  const toggleStage = (stage) => {
+    setThesis((t) => ({
+      ...t,
+      stages: t.stages.includes(stage) ? t.stages.filter((s) => s !== stage) : [...t.stages, stage],
+    }));
+  };
+
+  const handleSaveThesis = async () => {
+    setThesisSaving(true);
+    try {
+      await saveFundSettings(thesis);
+      setThesisSaved(true);
+      setTimeout(() => setThesisSaved(false), 2500);
+    } finally {
+      setThesisSaving(false);
+    }
+  };
 
   const handleDisconnect = async () => {
     if (!window.confirm('Disconnect Gmail? You can reconnect anytime.')) return;
@@ -32,7 +79,9 @@ export default function Settings({ user, onLogout }) {
   };
 
   const cardCls = 'bg-[#13131c] border border-[rgba(255,255,255,0.07)] rounded-xl p-6';
-  const labelCls = 'text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3';
+  const inputCls =
+    'w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[#7c6dfa] transition-colors';
+  const labelCls = 'block text-[rgba(255,255,255,0.45)] text-xs uppercase tracking-wider font-semibold mb-1.5';
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0c0c12] overflow-hidden">
@@ -68,14 +117,168 @@ export default function Settings({ user, onLogout }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
-          {/* Gmail Integration */}
+
+          {/* ── Fund Thesis ── */}
+          <div className={cardCls}>
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={15} className="text-[#7c6dfa]" />
+              <h2 className="text-white font-semibold text-sm">Fund Thesis</h2>
+              <span className="ml-auto px-2 py-0.5 rounded text-xs font-mono"
+                style={{ background: 'rgba(124,109,250,0.1)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.2)' }}>
+                AI-calibrated
+              </span>
+            </div>
+            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-5 leading-relaxed">
+              Describe your fund's focus. Claude uses this to score every email's relevance — a student VC org focused on edtech will see different scores than a growth-stage fintech fund.
+            </p>
+
+            <div className="space-y-4">
+              {/* Row 1: Fund name + type */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Fund Name</label>
+                  <input
+                    data-testid="fund-name-input"
+                    type="text"
+                    placeholder="Future Frontier Capital"
+                    value={thesis.fund_name}
+                    onChange={(e) => setThesis({ ...thesis, fund_name: e.target.value })}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Fund Type</label>
+                  <div className="relative">
+                    <select
+                      data-testid="fund-type-select"
+                      value={thesis.fund_type}
+                      onChange={(e) => setThesis({ ...thesis, fund_type: e.target.value })}
+                      className={`${inputCls} appearance-none pr-8 cursor-pointer`}
+                      style={{ background: '#0c0c12' }}
+                    >
+                      <option value="">Select type...</option>
+                      {FUND_TYPES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[rgba(255,255,255,0.3)] pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Investment thesis */}
+              <div>
+                <label className={labelCls}>Investment Thesis</label>
+                <textarea
+                  data-testid="thesis-input"
+                  rows={4}
+                  placeholder="E.g. We invest in pre-seed and seed B2B SaaS companies with strong founder-market fit in fintech, devtools, and enterprise AI. We look for technical founders with domain expertise building in large markets..."
+                  value={thesis.thesis}
+                  onChange={(e) => setThesis({ ...thesis, thesis: e.target.value })}
+                  className={`${inputCls} resize-none leading-relaxed`}
+                />
+              </div>
+
+              {/* Row 2: Sectors + check size */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Sector Focus</label>
+                  <input
+                    data-testid="sectors-input"
+                    type="text"
+                    placeholder="AI/ML, Fintech, Climate, EdTech"
+                    value={thesis.sectors}
+                    onChange={(e) => setThesis({ ...thesis, sectors: e.target.value })}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Check Size Range</label>
+                  <input
+                    data-testid="check-size-input"
+                    type="text"
+                    placeholder="$250K – $1.5M"
+                    value={thesis.check_size}
+                    onChange={(e) => setThesis({ ...thesis, check_size: e.target.value })}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              {/* Preferred stages */}
+              <div>
+                <label className={labelCls}>Preferred Stages</label>
+                <div className="flex flex-wrap gap-2">
+                  {ALL_STAGES.map((stage) => {
+                    const active = thesis.stages.includes(stage);
+                    return (
+                      <button
+                        key={stage}
+                        data-testid={`stage-${stage.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                        onClick={() => toggleStage(stage)}
+                        type="button"
+                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all border"
+                        style={{
+                          background: active ? 'rgba(124,109,250,0.15)' : 'rgba(255,255,255,0.03)',
+                          borderColor: active ? 'rgba(124,109,250,0.4)' : 'rgba(255,255,255,0.08)',
+                          color: active ? '#7c6dfa' : 'rgba(255,255,255,0.4)',
+                        }}
+                      >
+                        {stage}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* How it affects scoring */}
+              <div
+                className="flex items-start gap-2.5 rounded-lg p-3 text-xs"
+                style={{ background: 'rgba(124,109,250,0.05)', border: '1px solid rgba(124,109,250,0.12)' }}
+              >
+                <Sparkles size={12} className="text-[#7c6dfa] mt-0.5 shrink-0" />
+                <p className="text-[rgba(255,255,255,0.45)] leading-relaxed">
+                  Claude will score emails 8–10 only when they align with your thesis, stage, and sectors.
+                  Spam and off-thesis emails are automatically filtered out before reaching your dashboard.
+                </p>
+              </div>
+
+              {/* Save button */}
+              <div className="flex justify-end">
+                <button
+                  data-testid="save-thesis-btn"
+                  onClick={handleSaveThesis}
+                  disabled={thesisSaving}
+                  className="flex items-center gap-2 text-sm font-medium px-5 py-2 rounded-lg transition-all disabled:opacity-50"
+                  style={{
+                    background: thesisSaved ? 'rgba(61,214,140,0.15)' : '#7c6dfa',
+                    color: thesisSaved ? '#3dd68c' : 'white',
+                    border: thesisSaved ? '1px solid rgba(61,214,140,0.3)' : 'none',
+                    boxShadow: thesisSaved ? 'none' : '0 0 16px rgba(124,109,250,0.3)',
+                  }}
+                >
+                  {thesisSaving ? (
+                    <RefreshCw size={13} className="animate-spin" />
+                  ) : thesisSaved ? (
+                    <Check size={13} />
+                  ) : (
+                    <Save size={13} />
+                  )}
+                  {thesisSaving ? 'Saving...' : thesisSaved ? 'Saved!' : 'Save Thesis'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Gmail Integration ── */}
           <div className={cardCls}>
             <div className="flex items-center gap-2 mb-1">
               <Mail size={15} className="text-[#4da6ff]" />
               <h2 className="text-white font-semibold text-sm">Gmail Integration</h2>
             </div>
             <p className="text-[rgba(255,255,255,0.35)] text-xs mb-5">
-              Connect your Gmail account to automatically ingest and analyze inbound emails.
+              Connect your Gmail to auto-ingest and analyze inbound emails every 15 minutes.
+              Spam and irrelevant emails are automatically filtered out.
             </p>
 
             {loading ? (
@@ -85,8 +288,10 @@ export default function Settings({ user, onLogout }) {
               </div>
             ) : settings?.gmail_connected ? (
               <div className="space-y-4">
-                <div className="flex items-center gap-3 bg-[#3dd68c]/08 border border-[#3dd68c]/20 rounded-lg p-3">
-                  <div className="w-8 h-8 rounded-full bg-[#3dd68c]/10 border border-[#3dd68c]/20 flex items-center justify-center shrink-0">
+                <div className="flex items-center gap-3 rounded-lg p-3"
+                  style={{ background: 'rgba(61,214,140,0.06)', border: '1px solid rgba(61,214,140,0.2)' }}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(61,214,140,0.1)', border: '1px solid rgba(61,214,140,0.2)' }}>
                     <Check size={14} className="text-[#3dd68c]" />
                   </div>
                   <div>
@@ -111,7 +316,8 @@ export default function Settings({ user, onLogout }) {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 bg-[#f5a623]/08 border border-[#f5a623]/20 rounded-lg p-3">
+                <div className="flex items-center gap-2 rounded-lg p-3"
+                  style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.2)' }}>
                   <AlertTriangle size={13} className="text-[#f5a623]" />
                   <p className="text-[rgba(255,255,255,0.5)] text-xs">No Gmail account connected</p>
                 </div>
@@ -128,81 +334,57 @@ export default function Settings({ user, onLogout }) {
             )}
           </div>
 
-          {/* AI Configuration */}
+          {/* ── AI Configuration ── */}
           <div className={cardCls}>
             <div className="flex items-center gap-2 mb-1">
               <Key size={15} className="text-[#7c6dfa]" />
               <h2 className="text-white font-semibold text-sm">AI Configuration</h2>
             </div>
-            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-5">
-              Claude AI (Anthropic) is used to extract deal signals from emails.
+            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4">
+              Claude AI extracts deal signals and scores relevance against your fund thesis.
             </p>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between bg-[#0c0c12] border border-[rgba(255,255,255,0.06)] rounded-lg px-4 py-3">
-                <div>
-                  <p className="text-[rgba(255,255,255,0.7)] text-sm">Anthropic API Key</p>
-                  <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono mt-0.5">
-                    {settings?.anthropic_key_set ? 'sk-ant-•••••••••••••••••' : 'Not configured'}
-                  </p>
+            <div className="space-y-2">
+              {[
+                { label: 'Anthropic API Key', value: settings?.anthropic_key_set ? 'sk-ant-•••••••••••••' : 'Not configured', active: settings?.anthropic_key_set },
+                { label: 'Model', value: 'claude-sonnet-4-5', active: true },
+                { label: 'Spam filter', value: 'Enabled — auto-removes irrelevant emails', active: true, color: '#3dd68c' },
+              ].map(({ label, value, active, color }) => (
+                <div key={label} className="flex items-center justify-between rounded-lg px-4 py-3"
+                  style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div>
+                    <p className="text-[rgba(255,255,255,0.7)] text-sm">{label}</p>
+                    <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono mt-0.5">{value}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                    style={{
+                      background: active ? `${color || '#3dd68c'}14` : 'rgba(240,82,82,0.08)',
+                      color: active ? (color || '#3dd68c') : '#f05252',
+                    }}>
+                    {active ? <Check size={11} /> : <AlertTriangle size={11} />}
+                    {active ? 'Active' : 'Missing'}
+                  </div>
                 </div>
-                <div
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                  style={{
-                    background: settings?.anthropic_key_set ? 'rgba(61,214,140,0.08)' : 'rgba(240,82,82,0.08)',
-                    color: settings?.anthropic_key_set ? '#3dd68c' : '#f05252',
-                  }}
-                >
-                  {settings?.anthropic_key_set ? <Check size={11} /> : <AlertTriangle size={11} />}
-                  {settings?.anthropic_key_set ? 'Active' : 'Missing'}
-                </div>
-              </div>
-              <div className="flex items-center justify-between bg-[#0c0c12] border border-[rgba(255,255,255,0.06)] rounded-lg px-4 py-3">
-                <div>
-                  <p className="text-[rgba(255,255,255,0.7)] text-sm">Model</p>
-                  <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono mt-0.5">claude-sonnet-4-5</p>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-[rgba(124,109,250,0.08)] text-[#7c6dfa]">
-                  Active
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Google OAuth */}
+          {/* ── Google OAuth App ── */}
           <div className={cardCls}>
-            <div className="flex items-center gap-2 mb-1">
-              <svg viewBox="0 0 24 24" className="w-4 h-4">
-                <path fill="#4da6ff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#3dd68c" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#f5a623" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-                <path fill="#f05252" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              <h2 className="text-white font-semibold text-sm">Google OAuth App</h2>
-            </div>
-            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4">
-              Required redirect URI for your Google Cloud OAuth client.
-            </p>
-            <div className="bg-[#0c0c12] border border-[rgba(255,255,255,0.06)] rounded-lg px-4 py-3">
-              <p className="text-[rgba(255,255,255,0.4)] text-xs mb-1">Authorized Redirect URI</p>
+            <h2 className="text-white font-semibold text-sm mb-3">Google OAuth Redirect URI</h2>
+            <div className="rounded-lg px-4 py-3" style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <p className="text-[rgba(255,255,255,0.4)] text-xs mb-1">Add this in Google Cloud Console</p>
               <code className="text-[#4da6ff] text-xs font-mono break-all">
                 {BACKEND_URL}/api/auth/callback
               </code>
             </div>
-            <p className="text-[rgba(255,255,255,0.25)] text-xs mt-3">
-              Add this URI in Google Cloud Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs
-            </p>
           </div>
 
-          {/* Account */}
+          {/* ── Account ── */}
           <div className={cardCls}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold text-sm">Account</h2>
-            </div>
+            <h2 className="text-white font-semibold text-sm mb-4">Account</h2>
             {user && (
               <div className="flex items-center gap-3 mb-4">
-                {user.picture && (
-                  <img src={user.picture} alt="" className="w-10 h-10 rounded-full" />
-                )}
+                {user.picture && <img src={user.picture} alt="" className="w-10 h-10 rounded-full" />}
                 <div>
                   <p className="text-white text-sm font-medium">{user.name}</p>
                   <p className="text-[rgba(255,255,255,0.4)] text-xs font-mono">{user.email}</p>
@@ -218,6 +400,7 @@ export default function Settings({ user, onLogout }) {
               Sign Out
             </button>
           </div>
+
         </div>
       </div>
     </div>

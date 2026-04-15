@@ -51,6 +51,30 @@ SB_HEADERS = {
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# ── Fund settings (per-user, file-backed) ──────────────────────────────────────
+SETTINGS_FILE = ROOT_DIR / 'fund_settings.json'
+_fund_settings: dict = {}
+
+def _load_fund_settings():
+    global _fund_settings
+    if SETTINGS_FILE.exists():
+        try:
+            _fund_settings = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            _fund_settings = {}
+
+def get_fund_settings(user_id: str) -> dict:
+    return _fund_settings.get(user_id, {})
+
+def save_fund_settings(user_id: str, data: dict):
+    _fund_settings[user_id] = data
+    try:
+        SETTINGS_FILE.write_text(json.dumps(_fund_settings, indent=2))
+    except Exception as e:
+        logger.error(f'Failed to save fund settings: {e}')
+
+_load_fund_settings()
+
 app = FastAPI(title="VC Deal Flow API")
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
@@ -477,13 +501,39 @@ CLAUDE_SYSTEM = (
     "- tags: array of up to 5 strings"
 )
 
-async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str) -> dict:
+async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str, fund_ctx: dict = None) -> dict:
+    # Build fund-aware system prompt
+    system = CLAUDE_SYSTEM
+    if fund_ctx:
+        ctx_lines = []
+        if fund_ctx.get('fund_name'):
+            ctx_lines.append(f"Fund Name: {fund_ctx['fund_name']}")
+        if fund_ctx.get('fund_type'):
+            ctx_lines.append(f"Fund Type: {fund_ctx['fund_type']}")
+        if fund_ctx.get('thesis'):
+            ctx_lines.append(f"Investment Thesis: {fund_ctx['thesis']}")
+        if fund_ctx.get('stages'):
+            stages = fund_ctx['stages'] if isinstance(fund_ctx['stages'], str) else ', '.join(fund_ctx['stages'])
+            ctx_lines.append(f"Preferred Stages: {stages}")
+        if fund_ctx.get('sectors'):
+            ctx_lines.append(f"Sector Focus: {fund_ctx['sectors']}")
+        if fund_ctx.get('check_size'):
+            ctx_lines.append(f"Typical Check Size: {fund_ctx['check_size']}")
+        if ctx_lines:
+            fund_block = (
+                "\n\nFUND THESIS CONTEXT — calibrate relevance_score to this fund:\n"
+                + "\n".join(ctx_lines)
+                + "\n\nScore 8-10 only if the email aligns with the fund's thesis and stage/sector focus. "
+                "Score 1-3 for off-thesis, vendor, recruiter, or spam emails."
+            )
+            system = CLAUDE_SYSTEM + fund_block
+
     prompt = f"Analyze this email for a VC fund:\n\nFrom: {sender_name} <{sender_email}>\nSubject: {subject}\n\nBody:\n{body[:3500]}"
     try:
         msg = await claude_client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=1500,
-            system=CLAUDE_SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
         )
         text = msg.content[0].text.strip()
@@ -500,10 +550,14 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
         }
 
 # ── Deal processing ───────────────────────────────────────────────────────────────
+# Categories to skip entirely — not relevant to any fund
+SKIP_CATEGORIES = {'Spam / irrelevant'}
+
 async def process_and_save_email(
     user_id: Optional[str], sender_name: str, sender_email: str,
     subject: str, body: str, thread_id: str = None,
-    message_id: str = None, received_date: str = None, gmail_link: str = None
+    message_id: str = None, received_date: str = None, gmail_link: str = None,
+    fund_ctx: dict = None,
 ) -> Optional[dict]:
     # Deduplicate
     if user_id and thread_id:
@@ -513,7 +567,12 @@ async def process_and_save_email(
         if existing:
             return None
 
-    ai = await analyze_email(sender_name, sender_email, subject, body)
+    ai = await analyze_email(sender_name, sender_email, subject, body, fund_ctx)
+
+    # Skip spam / irrelevant emails — don't pollute the pipeline
+    if ai.get('category') in SKIP_CATEGORIES:
+        logger.info(f'Skipping spam email: "{subject}" from {sender_email}')
+        return None
     now = datetime.now(timezone.utc).isoformat()
     deal = {
         'id': str(uuid.uuid4()),
@@ -559,6 +618,8 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
     user = users[0]
     if not user.get('refresh_token'):
         return 0
+    # Load this user's fund thesis for relevance calibration
+    fund_ctx = get_fund_settings(user_id)
     try:
         gmail, creds = await asyncio.to_thread(build_gmail_service, user)
         # Refresh token if expired (use try/except to avoid any datetime comparison issues)
@@ -640,7 +701,8 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
                     user_id=user_id, sender_name=from_name,
                     sender_email=from_email, subject=subject,
                     body=body, thread_id=thread_id,
-                    message_id=ref['id'], received_date=received_date, gmail_link=gmail_link,
+                    message_id=ref['id'], received_date=received_date,
+                    gmail_link=gmail_link, fund_ctx=fund_ctx,
                 )
                 if result:
                     processed += 1
@@ -792,12 +854,14 @@ async def process_email_manual(data: dict, current_user: dict = Depends(get_curr
     body = data.get('body', '').strip()
     if not body:
         raise HTTPException(status_code=400, detail="Email body is required")
+    fund_ctx = get_fund_settings(current_user['user_id'])
     result = await process_and_save_email(
         user_id=current_user['user_id'],
         sender_name=data.get('sender_name', 'Unknown'),
         sender_email=data.get('sender_email', ''),
         subject=data.get('subject', '(No Subject)'),
         body=body,
+        fund_ctx=fund_ctx,
     )
     if not result:
         raise HTTPException(status_code=500, detail="Failed to process email")
@@ -854,7 +918,21 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         'picture': u.get('picture'), 'last_synced': u.get('last_synced'),
         'anthropic_key_set': bool(ANTHROPIC_API_KEY),
         'google_client_id_set': bool(GOOGLE_CLIENT_ID),
+        'fund_settings': get_fund_settings(current_user['user_id']),
     }
+
+# Fund settings
+@api_router.get("/fund-settings")
+async def get_fund_settings_route(current_user: dict = Depends(get_current_user)):
+    return get_fund_settings(current_user['user_id'])
+
+@api_router.post("/fund-settings")
+async def save_fund_settings_route(data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    allowed = {'fund_name', 'fund_type', 'thesis', 'stages', 'sectors', 'check_size'}
+    clean = {k: v for k, v in data.items() if k in allowed}
+    save_fund_settings(uid, clean)
+    return {"message": "Fund settings saved", "settings": clean}
 
 # DB status for frontend
 @api_router.get("/status/db")

@@ -1,0 +1,13 @@
+{
+  "d0e72e1d-bf78-4eeb-96d2-250f84499e61": {
+    "fund_name": "Future Frontier Capital",
+    "fund_type": "VC Fund",
+    "thesis": "We invest in pre-seed and seed B2B SaaS and AI companies with strong founder-market fit.",
+    "stages": [
+      "Pre-seed",
+      "Seed"
+    ],
+    "sectors": "Enterprise AI, B2B SaaS, Fintech",
+    "check_size": "$250K - $2M"
+  }
+}
