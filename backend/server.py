@@ -731,10 +731,12 @@ async def disconnect_gmail(current_user: dict = Depends(get_current_user)):
 @api_router.get("/deals")
 async def get_deals(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    user_deals = await sb_select('deals', {'user_id': f'eq.{uid}', 'order': 'created_at.desc', 'limit': '200'})
-    sample_deals = await sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'order': 'created_at.desc'})
-    combined = user_deals + (sample_deals if not user_deals else [])
-    return combined
+    user_deals, sample_deals = await asyncio.gather(
+        sb_select('deals', {'user_id': f'eq.{uid}', 'order': 'created_at.desc', 'limit': '200'}),
+        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'order': 'created_at.desc'}),
+    )
+    # Always show user deals first, then sample deals together
+    return (user_deals or []) + (sample_deals or [])
 
 @api_router.post("/deals/process")
 async def process_email_manual(data: dict, current_user: dict = Depends(get_current_user)):
@@ -758,7 +760,12 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         raise HTTPException(status_code=400, detail="No valid fields to update")
-    ok = await sb_update('deals', update, {'id': f'eq.{deal_id}'})
+    uid = current_user['user_id']
+    # Allow updating own deals or sample deals
+    ok = await sb_update('deals', update, {
+        'id': f'eq.{deal_id}',
+        'user_id': f'in.({uid},{SYSTEM_USER_ID})'
+    })
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update deal")
     return {"message": "Updated"}
@@ -773,9 +780,11 @@ async def trigger_sync(background_tasks: BackgroundTasks, current_user: dict = D
 @api_router.get("/stats")
 async def get_stats(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    user_deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
-    sample_deals = await sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}'})
-    deals = user_deals + (sample_deals if not user_deals else [])
+    user_deals, sample_deals = await asyncio.gather(
+        sb_select('deals', {'user_id': f'eq.{uid}'}),
+        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}'}),
+    )
+    deals = (user_deals or []) + (sample_deals or [])
     if not deals:
         return {'total': 0, 'founder_pitches': 0, 'avg_relevance': 0.0, 'high_score': 0, 'unreviewed': 0}
     pitches = sum(1 for d in deals if d.get('category') in ('Founder pitch', 'Warm intro'))

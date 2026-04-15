@@ -27,10 +27,11 @@ export default function ProcessEmailModal({ onClose, onProcessed }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} style={{zIndex: 0}} />
       <div
         data-testid="process-email-modal"
-        className="relative w-full max-w-lg bg-[#13131c] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl z-10"
+        className="relative w-full max-w-lg bg-[#13131c] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl"
+        style={{zIndex: 1}}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.07)]">
