@@ -58,7 +58,8 @@ scheduler = AsyncIOScheduler()
 claude_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 # In-memory OAuth state store (single-process is fine)
-oauth_states: dict[str, datetime] = {}
+# Stores {state: {'flow': Flow, 'created_at': datetime}}
+oauth_states: dict[str, dict] = {}
 
 # ── Supabase helpers ────────────────────────────────────────────────────────────
 async def sb_select(table: str, params: dict = None) -> list:
@@ -646,11 +647,17 @@ async def root():
 async def auth_google():
     flow = create_oauth_flow()
     state = secrets.token_urlsafe(32)
-    oauth_states[state] = datetime.now(timezone.utc)
     auth_url, _ = flow.authorization_url(
         state=state, access_type='offline',
         include_granted_scopes='true', prompt='consent'
     )
+    # Store the entire flow so code_verifier is preserved for callback
+    oauth_states[state] = {'flow': flow, 'created_at': datetime.now(timezone.utc)}
+    # Clean up stale states older than 10 minutes
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+    stale = [k for k, v in oauth_states.items() if v['created_at'] < cutoff]
+    for k in stale:
+        oauth_states.pop(k, None)
     return RedirectResponse(url=auth_url)
 
 @api_router.get("/auth/callback")
@@ -663,7 +670,14 @@ async def auth_callback(
     if not code:
         return RedirectResponse(url=f'{FRONTEND_URL}/?error=no_code')
     try:
-        flow = create_oauth_flow()
+        # Retrieve the saved flow (contains code_verifier for PKCE)
+        state_data = oauth_states.pop(state, None) if state else None
+        if state_data:
+            flow = state_data['flow']
+        else:
+            # Fallback: create fresh flow (no PKCE, may fail for new Google clients)
+            flow = create_oauth_flow()
+
         await asyncio.to_thread(flow.fetch_token, code=code)
         creds = flow.credentials
 
