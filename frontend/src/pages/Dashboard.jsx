@@ -2,11 +2,13 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
 import { getDeals, getStats, triggerSync, updateDeal } from '../lib/api';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const CATEGORY_STYLES = {
@@ -167,6 +169,20 @@ export default function Dashboard({ user, onLogout }) {
           <LayoutGrid size={12} />
           <span className="hidden sm:inline">Pipeline</span>
         </button>
+        <a
+          data-testid="enable-sending-btn"
+          href={`${BACKEND_URL}/api/auth/google`}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{
+            background: 'rgba(77,166,255,0.08)',
+            border: '1px solid rgba(77,166,255,0.25)',
+            color: '#4da6ff',
+          }}
+          title="Click to grant Gmail send permission — required for one-click email replies"
+        >
+          <Send size={12} />
+          <span className="hidden sm:inline">Enable Sending</span>
+        </a>
         <button
           data-testid="fund-thesis-btn"
           onClick={() => navigate('/settings')}
