@@ -464,6 +464,15 @@ GOOGLE_SCOPES = [
     'https://www.googleapis.com/auth/gmail.send',
 ]
 
+# Scopes used to BUILD existing credentials from stored tokens.
+# Always read-only so sync works regardless of whether the user has granted gmail.send yet.
+GMAIL_SERVICE_SCOPES = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/gmail.readonly',
+]
+
 GOOGLE_CLIENT_CONFIG = {
     "web": {
         "client_id": GOOGLE_CLIENT_ID,
@@ -539,7 +548,7 @@ def build_gmail_service(user: dict):
         token_uri='https://oauth2.googleapis.com/token',
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
-        scopes=GOOGLE_SCOPES,
+        scopes=GMAIL_SERVICE_SCOPES,  # Never include gmail.send here — old tokens break if we do
     )
     return gbuild('gmail', 'v1', credentials=creds), creds
 
@@ -813,7 +822,11 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
         logger.info(f'Synced {processed} new emails for user {user_id}')
         return processed
     except Exception as e:
+        err = str(e)
         logger.error(f'Sync error user {user_id}: {e}')
+        # Propagate auth errors so the caller can surface them to the user
+        if 'invalid_scope' in err or 'invalid_grant' in err or 'unauthorized' in err.lower():
+            raise
         return 0
 
 async def sync_all_users():
@@ -1141,6 +1154,14 @@ async def trigger_sync(current_user: dict = Depends(get_current_user)):
         return {"message": "Sync complete", "new_deals": count or 0, "status": "done"}
     except asyncio.TimeoutError:
         return {"message": "Sync started (large inbox — check back shortly)", "new_deals": 0, "status": "syncing"}
+    except Exception as e:
+        err = str(e)
+        if 'invalid_scope' in err or 'invalid_grant' in err:
+            raise HTTPException(
+                status_code=403,
+                detail="Gmail authorization expired. Please reconnect Gmail from Settings."
+            )
+        raise HTTPException(status_code=500, detail=f"Sync failed: {err[:120]}")
 
 # Stats
 @api_router.get("/stats")

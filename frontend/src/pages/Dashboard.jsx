@@ -52,7 +52,7 @@ export default function Dashboard({ user, onLogout }) {
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null); // {new_deals, status}
+  const [syncResult, setSyncResult] = useState(null); // {new_deals, status} or {error}
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -98,9 +98,11 @@ export default function Dashboard({ user, onLogout }) {
       const result = await triggerSync();
       setSyncResult(result);
       await fetchAll();
-    } catch { /* silent */ } finally {
+    } catch (e) {
+      setSyncResult({ status: 'error', message: e.message || 'Sync failed' });
+    } finally {
       setIsSyncing(false);
-      setTimeout(() => setSyncResult(null), 5000);
+      setTimeout(() => setSyncResult(null), 6000);
     }
   };
 
@@ -247,7 +249,11 @@ export default function Dashboard({ user, onLogout }) {
             onClick={handleSync}
             disabled={isSyncing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-50"
-            style={syncResult?.status === 'done' ? {
+            style={syncResult?.status === 'error' ? {
+              background: 'rgba(240,82,82,0.08)',
+              border: '1px solid rgba(240,82,82,0.25)',
+              color: '#f05252',
+            } : syncResult?.status === 'done' ? {
               background: 'rgba(61,214,140,0.08)',
               border: '1px solid rgba(61,214,140,0.25)',
               color: '#3dd68c',
@@ -256,14 +262,17 @@ export default function Dashboard({ user, onLogout }) {
               border: '1px solid rgba(255,255,255,0.07)',
               background: 'transparent',
             }}
+            title={syncResult?.status === 'error' ? syncResult.message : undefined}
           >
             <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">
               {isSyncing
                 ? 'Syncing...'
-                : syncResult?.status === 'done'
-                  ? `Synced${syncResult.new_deals > 0 ? ` · ${syncResult.new_deals} new` : ' · Up to date'}`
-                  : 'Sync Now'}
+                : syncResult?.status === 'error'
+                  ? 'Sync failed — check Settings'
+                  : syncResult?.status === 'done'
+                    ? `Synced${syncResult.new_deals > 0 ? ` · ${syncResult.new_deals} new` : ' · Up to date'}`
+                    : 'Sync Now'}
             </span>
           </button>
           <button

@@ -93,7 +93,11 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 - ✅ Manual email processing modal
 - ✅ Settings page with Fund Thesis
 
-### 2026-04-15 (Session 4)
+### 2026-04-16 (Bug Fix)
+- ✅ CRITICAL: Fixed `invalid_scope` sync crash — `build_gmail_service` was requesting `gmail.send` scope using stored tokens that were only authorized for `gmail.readonly`, crashing every background sync since the send scope was added
+- ✅ Fix: Introduced `GMAIL_SERVICE_SCOPES` (readonly only) for credential building, `GOOGLE_SCOPES` (full incl. send) only for new OAuth flows
+- ✅ Sync endpoint now surfaces auth errors as HTTP 403 with clear message instead of silently returning 0
+- ✅ Dashboard sync button now shows red "Sync failed — check Settings" state on error
 - ✅ Connect page redesigned — "Your inbox, AI-powered." with 4 feature pillars, split layout
 - ✅ Gmail scope text updated: "Gmail read + send access · Your emails never leave your account"
 - ✅ Pipeline/Kanban view — 4 columns (Inbox, In Review, In Diligence, Passed), deal cards with thesis ring + sector/stage chips + quick move arrows
