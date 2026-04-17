@@ -716,10 +716,15 @@ async def process_and_save_email(
         for f in ('thesis_match_score', 'fit_strengths', 'fit_weaknesses', 'match_reasoning'):
             deal.pop(f, None)
         saved = await sb_insert('deals', deal)
-    return saved or deal
+    if saved:
+        logger.info(f'Saved deal: "{subject}" from {sender_email} | category={ai.get("category")} score={ai.get("relevance_score")}')
+        return saved
+    else:
+        logger.error(f'Failed to save deal: "{subject}" from {sender_email}')
+        return None
 
 # ── Gmail sync ─────────────────────────────────────────────────────────────────────
-async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
+async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_scan: bool = False) -> int:
     users = await sb_select('users', {'id': f'eq.{user_id}'})
     if not users:
         return 0
@@ -759,18 +764,25 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
                 'token_expiry': new_expiry,
             })
 
-        params = {'userId': 'me', 'maxResults': 20 if is_initial else 50, 'labelIds': ['INBOX']}
-        if not is_initial and user.get('last_synced'):
+        # Manual sync (force_full_scan) scans recent 100 messages with NO time filter
+        # so recently sent emails that haven't hit the next scheduled window aren't missed.
+        # Background sync uses after:last_synced for efficiency.
+        params = {'userId': 'me', 'maxResults': 100 if force_full_scan else (20 if is_initial else 50), 'labelIds': ['INBOX']}
+        if not force_full_scan and not is_initial and user.get('last_synced'):
             try:
                 ls = datetime.fromisoformat(user['last_synced'].replace('Z', '+00:00'))
                 params['q'] = f'after:{int(ls.timestamp())}'
+                logger.info(f'Sync user {user_id}: scanning after {user["last_synced"][:19]}')
             except Exception:
                 pass
+        else:
+            logger.info(f'Sync user {user_id}: full scan (force={force_full_scan}, initial={is_initial})')
 
         resp = await asyncio.to_thread(
             lambda: gmail.users().messages().list(**params).execute()
         )
         messages = resp.get('messages', [])
+        logger.info(f'Sync user {user_id}: found {len(messages)} messages to check')
         processed = 0
 
         for ref in messages:
@@ -781,10 +793,15 @@ async def sync_user_emails(user_id: str, is_initial: bool = False) -> int:
                     ).execute()
                 )
                 headers = msg.get('payload', {}).get('headers', [])
+                subject_for_log = get_header(headers, 'Subject') or '(No Subject)'
+
                 if is_newsletter(headers):
+                    logger.debug(f'Skipping newsletter: "{subject_for_log}"')
                     continue
+
                 from_header = get_header(headers, 'From')
                 if user.get('email') and user['email'] in from_header:
+                    logger.debug(f'Skipping self-sent: "{subject_for_log}"')
                     continue
 
                 thread_id = msg.get('threadId', ref['id'])
@@ -1150,7 +1167,11 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
 @api_router.post("/sync")
 async def trigger_sync(current_user: dict = Depends(get_current_user)):
     try:
-        count = await asyncio.wait_for(sync_user_emails(current_user['user_id']), timeout=45)
+        # Manual sync = force_full_scan so emails sent seconds ago are never missed
+        count = await asyncio.wait_for(
+            sync_user_emails(current_user['user_id'], force_full_scan=True),
+            timeout=60
+        )
         return {"message": "Sync complete", "new_deals": count or 0, "status": "done"}
     except asyncio.TimeoutError:
         return {"message": "Sync started (large inbox — check back shortly)", "new_deals": 0, "status": "syncing"}
