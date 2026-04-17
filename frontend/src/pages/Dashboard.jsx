@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
-import { getDeals, getStats, triggerSync, updateDeal } from '../lib/api';
+import { getDeals, getStats, triggerSync, updateDeal, getFundSettings } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -50,6 +50,7 @@ const FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros'];
 export default function Dashboard({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
   const [stats, setStats] = useState({ total: 0, founder_pitches: 0, avg_relevance: 0, high_score: 0, unreviewed: 0 });
+  const [fundName, setFundName] = useState('');
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -61,9 +62,10 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, s] = await Promise.all([getDeals(), getStats()]);
+      const [d, s, f] = await Promise.all([getDeals(), getStats(), getFundSettings()]);
       if (d) setDeals(d);
       if (s) setStats(s);
+      if (f?.fund_name) setFundName(f.fund_name);
     } finally {
       setLoading(false);
     }
@@ -127,10 +129,14 @@ export default function Dashboard({ user, onLogout }) {
             className="w-7 h-7 rounded flex items-center justify-center text-white font-bold text-xs shrink-0"
             style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}
           >
-            FF
+            {fundName
+              ? fundName.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+              : 'VC'}
           </div>
           <div className="hidden sm:block">
-            <span className="text-white font-semibold text-sm">Future Frontier Capital</span>
+            <span className="text-white font-semibold text-sm" data-testid="fund-name-display">
+              {fundName || 'Your Fund'}
+            </span>
             <span className="text-[rgba(255,255,255,0.3)] text-xs ml-2 font-mono tracking-wide">
               deal flow intelligence
             </span>

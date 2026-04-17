@@ -100,7 +100,9 @@ export default function Settings({ user, onLogout }) {
             className="w-6 h-6 rounded flex items-center justify-center text-white font-bold text-xs"
             style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}
           >
-            FF
+            {thesis.fund_name
+              ? thesis.fund_name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+              : 'VC'}
           </div>
           <span className="text-white font-semibold text-sm">Settings</span>
         </div>
