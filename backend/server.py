@@ -86,6 +86,9 @@ claude_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # Stores {state: {'flow': Flow, 'created_at': datetime}}
 oauth_states: dict[str, dict] = {}
 
+# Track which users have an active background sync running
+_syncing_users: set = set()
+
 # ── Supabase helpers ────────────────────────────────────────────────────────────
 async def sb_select(table: str, params: dict = None) -> list:
     async with httpx.AsyncClient(timeout=15) as client:
@@ -1164,25 +1167,24 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
     return {"message": "Email sent", "status": new_status}
 
 # Sync
-@api_router.post("/sync")
-async def trigger_sync(current_user: dict = Depends(get_current_user)):
+async def _run_background_sync(user_id: str):
+    """Run a full inbox scan in the background, releasing the HTTP response immediately."""
     try:
-        # Manual sync = force_full_scan so emails sent seconds ago are never missed
-        count = await asyncio.wait_for(
-            sync_user_emails(current_user['user_id'], force_full_scan=True),
-            timeout=60
-        )
-        return {"message": "Sync complete", "new_deals": count or 0, "status": "done"}
-    except asyncio.TimeoutError:
-        return {"message": "Sync started (large inbox — check back shortly)", "new_deals": 0, "status": "syncing"}
+        count = await sync_user_emails(user_id, force_full_scan=True)
+        logger.info(f'Background sync complete: {count} new deals for user {user_id}')
     except Exception as e:
-        err = str(e)
-        if 'invalid_scope' in err or 'invalid_grant' in err:
-            raise HTTPException(
-                status_code=403,
-                detail="Gmail authorization expired. Please reconnect Gmail from Settings."
-            )
-        raise HTTPException(status_code=500, detail=f"Sync failed: {err[:120]}")
+        logger.error(f'Background sync error for user {user_id}: {e}')
+    finally:
+        _syncing_users.discard(user_id)
+
+@api_router.post("/sync")
+async def trigger_sync(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    user_id = current_user['user_id']
+    if user_id in _syncing_users:
+        return {"message": "Sync already running", "status": "already_syncing", "new_deals": 0}
+    _syncing_users.add(user_id)
+    background_tasks.add_task(_run_background_sync, user_id)
+    return {"message": "Sync started", "status": "started", "new_deals": 0}
 
 # Stats
 @api_router.get("/stats")

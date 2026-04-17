@@ -96,18 +96,37 @@ export default function Dashboard({ user, onLogout }) {
   }, [deals, filter, search]);
 
   const handleSync = async () => {
+    if (isSyncing) return;
     setIsSyncing(true);
     setSyncResult(null);
+    const dealsCountBefore = deals.length;
     try {
-      const result = await triggerSync();
-      setSyncResult(result);
-      await fetchAll();
+      await triggerSync();
     } catch (e) {
-      setSyncResult({ status: 'error', message: e.message || 'Sync failed' });
-    } finally {
-      setIsSyncing(false);
-      setTimeout(() => setSyncResult(null), 6000);
+      // Even if the trigger call itself fails, don't block the user
+      console.warn('Sync trigger error:', e.message);
     }
+    // Sync runs in the background — poll every 10s for up to 2 minutes
+    setSyncResult({ status: 'background' });
+    let polls = 0;
+    const maxPolls = 12; // 12 × 10s = 120s
+    const poll = setInterval(async () => {
+      polls++;
+      try {
+        const [d, s] = await Promise.all([getDeals(), getStats()]);
+        if (d) setDeals(d);
+        if (s) setStats(s);
+        const newDeals = (d || []).length - dealsCountBefore;
+        if (polls >= maxPolls) {
+          clearInterval(poll);
+          setIsSyncing(false);
+          setSyncResult({ status: 'done', new_deals: Math.max(0, newDeals) });
+          setTimeout(() => setSyncResult(null), 6000);
+        }
+      } catch (_) {
+        // ignore poll errors
+      }
+    }, 10000);
   };
 
   const handleProcessed = (newDeal) => {
@@ -271,27 +290,26 @@ export default function Dashboard({ user, onLogout }) {
             onClick={handleSync}
             disabled={isSyncing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-50"
-            style={syncResult?.status === 'error' ? {
-              background: 'rgba(240,82,82,0.08)',
-              border: '1px solid rgba(240,82,82,0.25)',
-              color: '#f05252',
-            } : syncResult?.status === 'done' ? {
+            style={syncResult?.status === 'done' ? {
               background: 'rgba(61,214,140,0.08)',
               border: '1px solid rgba(61,214,140,0.25)',
               color: '#3dd68c',
+            } : syncResult?.status === 'background' ? {
+              background: 'rgba(77,166,255,0.08)',
+              border: '1px solid rgba(77,166,255,0.25)',
+              color: '#4da6ff',
             } : {
               color: 'rgba(255,255,255,0.5)',
               border: '1px solid rgba(255,255,255,0.07)',
               background: 'transparent',
             }}
-            title={syncResult?.status === 'error' ? syncResult.message : undefined}
           >
             <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">
-              {isSyncing
-                ? 'Syncing...'
-                : syncResult?.status === 'error'
-                  ? 'Sync failed — check Settings'
+              {isSyncing && syncResult?.status !== 'background'
+                ? 'Triggering...'
+                : syncResult?.status === 'background'
+                  ? 'Syncing inbox...'
                   : syncResult?.status === 'done'
                     ? `Synced${syncResult.new_deals > 0 ? ` · ${syncResult.new_deals} new` : ' · Up to date'}`
                     : 'Sync Now'}
