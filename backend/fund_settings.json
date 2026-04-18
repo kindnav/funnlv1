@@ -9,5 +9,10 @@
       "Pre-seed",
       "Seed"
     ]
+  },
+  "c054bacc-7256-41ab-b613-1379fb8ee883": {
+    "fund_name": "Test Fund",
+    "thesis": "Test thesis",
+    "onboarding_complete": true
   }
 }

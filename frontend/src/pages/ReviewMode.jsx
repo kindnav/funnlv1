@@ -371,16 +371,30 @@ export default function ReviewMode() {
         style={{ background: '#0c0c12' }}
         data-testid="review-empty-state"
       >
+        <style>{`
+          @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(61,214,140,0.15); }
+            50% { box-shadow: 0 0 0 14px rgba(61,214,140,0); }
+          }
+          @keyframes check-draw {
+            from { stroke-dashoffset: 30; opacity: 0; }
+            to { stroke-dashoffset: 0; opacity: 1; }
+          }
+        `}</style>
         <div
           className="w-20 h-20 rounded-full flex items-center justify-center"
-          style={{ background: 'rgba(61,214,140,0.08)', border: '2px solid rgba(61,214,140,0.25)' }}
+          style={{ background: 'rgba(61,214,140,0.08)', border: '2px solid rgba(61,214,140,0.25)', animation: 'pulse-ring 2.4s ease-in-out infinite' }}
         >
-          <Check size={32} className="text-[#3dd68c]" />
+          <svg viewBox="0 0 32 32" className="w-9 h-9">
+            <polyline points="6,16 13,23 26,9" fill="none" stroke="#3dd68c" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round" strokeDasharray="30"
+              style={{ animation: 'check-draw 0.5s ease 0.1s forwards', opacity: 0 }} />
+          </svg>
         </div>
         <div>
           <h2 className="text-white text-2xl font-bold mb-2">All caught up</h2>
           <p className="text-[rgba(255,255,255,0.4)] text-sm leading-relaxed max-w-xs mx-auto">
-            No unreviewed deals — check back after the next sync
+            No unreviewed deals in your queue. New emails will appear here automatically.
           </p>
           {cleared > 0 && (
             <p className="text-[rgba(255,255,255,0.2)] text-xs mt-2 font-mono">

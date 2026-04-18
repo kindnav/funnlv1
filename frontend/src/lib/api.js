@@ -38,6 +38,9 @@ export const saveFundSettings = (data) =>
 export const getDbStatus = () =>
   fetch(`${API}/status/db`).then((r) => r.json()).catch(() => ({ tables_ready: false }));
 
+export const markOnboardingComplete = () =>
+  fetchJson(`${API}/onboarding-complete`, { method: 'POST' });
+
 export const generateAction = (dealId, actionType) =>
   fetchJson(`${API}/deals/${dealId}/generate-action`, {
     method: 'POST',

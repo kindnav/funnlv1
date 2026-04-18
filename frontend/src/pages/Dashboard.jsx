@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
+import OnboardingChecklist from '../components/OnboardingChecklist';
 import { getDeals, getStats, triggerSync, updateDeal, getFundSettings } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -51,13 +52,17 @@ export default function Dashboard({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
   const [stats, setStats] = useState({ total: 0, founder_pitches: 0, avg_relevance: 0, high_score: 0, unreviewed: 0 });
   const [fundName, setFundName] = useState('');
+  const [fundSettings, setFundSettings] = useState({});
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null); // {new_deals, status} or {error}
+  const [syncResult, setSyncResult] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Onboarding: only show once, only if no deals on first load
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistReady, setChecklistReady] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -74,13 +79,26 @@ export default function Dashboard({ user, onLogout }) {
       const [d, s, f] = await Promise.all([getDeals(), getStats(), getFundSettings()]);
       if (d) setDeals(d);
       if (s) setStats(s);
-      if (f?.fund_name) setFundName(f.fund_name);
+      if (f) {
+        setFundSettings(f);
+        if (f.fund_name) setFundName(f.fund_name);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Decide whether to show onboarding checklist (only on first load)
+  useEffect(() => {
+    if (!loading && !checklistReady) {
+      setChecklistReady(true);
+      if (!fundSettings?.onboarding_complete && deals.length === 0) {
+        setShowChecklist(true);
+      }
+    }
+  }, [loading, checklistReady, fundSettings, deals]);
 
   const filteredDeals = useMemo(() => {
     let list = deals;
@@ -353,22 +371,93 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Deals table */}
-        <div className="flex-1 overflow-auto">
+        {/* Deals table / checklist / empty states */}
+        <div className="flex-1 overflow-auto flex flex-col">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
+            /* ── Loading / first sync state ── */
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
+                style={{ borderColor: 'rgba(124,109,250,0.3)', borderTopColor: '#7c6dfa' }} />
+              <div className="text-center">
+                <p className="text-white text-sm font-medium mb-1">Analyzing your inbox...</p>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  Claude is reading your recent emails. This takes about 30 seconds for the first batch.
+                </p>
+              </div>
+            </div>
+          ) : showChecklist ? (
+            /* ── Onboarding checklist (new users only) ── */
+            <OnboardingChecklist
+              user={user}
+              deals={deals}
+              fundSettings={fundSettings}
+              isSyncing={isSyncing}
+              onDismiss={() => {
+                setShowChecklist(false);
+                setFundSettings(fs => ({ ...fs, onboarding_complete: true }));
+              }}
+              onSyncNow={handleSync}
+              onOpenSettings={() => navigate('/settings')}
+              onProcessEmail={() => setShowModal(true)}
+            />
+          ) : filteredDeals.length === 0 && deals.length === 0 ? (
+            /* ── True empty state — no deals at all ── */
+            <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6 text-center" data-testid="empty-no-deals">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <Inbox size={24} style={{ color: 'rgba(255,255,255,0.2)' }} />
+              </div>
+              <div>
+                <p className="text-white font-semibold mb-1.5">Your deal flow inbox is empty</p>
+                <p className="text-xs leading-relaxed max-w-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  New emails are synced automatically every 15 minutes. Or process an email manually to get started.
+                </p>
+              </div>
               <div className="flex items-center gap-3">
-                <div className="w-5 h-5 rounded-full border-2 border-[#7c6dfa] border-t-transparent animate-spin" />
-                <span className="text-[rgba(255,255,255,0.3)] text-sm font-mono">Loading deals...</span>
+                <button
+                  data-testid="empty-sync-btn"
+                  onClick={handleSync}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border transition-all disabled:opacity-50"
+                  style={{ color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                >
+                  <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
+                  Sync now
+                </button>
+                <button
+                  data-testid="empty-process-btn"
+                  onClick={() => setShowModal(true)}
+                  className="flex items-center gap-1.5 bg-[#7c6dfa] hover:bg-[#6b5ded] text-white text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                >
+                  <Plus size={12} />
+                  Process Email
+                </button>
               </div>
             </div>
           ) : filteredDeals.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-              <Inbox size={36} className="text-[rgba(255,255,255,0.1)]" />
-              <p className="text-[rgba(255,255,255,0.3)] text-sm">No deals match your filter</p>
-              <p className="text-[rgba(255,255,255,0.15)] text-xs">Try adjusting filters or sync your Gmail</p>
+            /* ── Filter empty state — deals exist but filter returns nothing ── */
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center" data-testid="empty-filtered">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <Filter size={20} style={{ color: 'rgba(255,255,255,0.2)' }} />
+              </div>
+              <div>
+                <p className="text-white font-semibold mb-1.5">No deals match this filter</p>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  Try a different filter or search term
+                </p>
+              </div>
+              <button
+                data-testid="clear-filters-btn"
+                onClick={() => { setFilter('All'); setSearch(''); }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border transition-all"
+                style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.08)' }}
+              >
+                Clear filters
+              </button>
             </div>
           ) : (
+            /* ── Normal deals table ── */
             <table className="w-full border-collapse text-left" data-testid="deals-table">
               <thead className="sticky top-0 z-10 bg-[#0c0c12]">
                 <tr>

@@ -1373,10 +1373,20 @@ async def get_fund_settings_route(current_user: dict = Depends(get_current_user)
 @api_router.post("/fund-settings")
 async def save_fund_settings_route(data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    # Merge into existing settings so onboarding_complete survives fund-settings saves
+    existing = get_fund_settings(uid)
     allowed = {'fund_name', 'fund_type', 'thesis', 'stages', 'sectors', 'check_size'}
-    clean = {k: v for k, v in data.items() if k in allowed}
+    clean = {**existing, **{k: v for k, v in data.items() if k in allowed}}
     save_fund_settings(uid, clean)
     return {"message": "Fund settings saved", "settings": clean}
+
+@api_router.post("/onboarding-complete")
+async def mark_onboarding_complete(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    settings = get_fund_settings(uid)
+    settings['onboarding_complete'] = True
+    save_fund_settings(uid, settings)
+    return {"ok": True}
 
 # DB status for frontend
 @api_router.get("/status/db")
