@@ -179,48 +179,53 @@ function StepHowItWorks({ onComplete }) {
   useEffect(() => { setTimeout(() => setVisible(true), 80); }, []);
 
   return (
-    <div className="w-full max-w-lg">
+    <div
+      className="w-full max-w-lg rounded-2xl flex flex-col"
+      style={{
+        background: '#13131c',
+        border: '1px solid rgba(255,255,255,0.09)',
+        maxHeight: 'calc(100vh - 220px)',
+      }}
+    >
+      {/* Fixed header */}
       <div
+        className="px-6 pt-6 pb-3 shrink-0 text-center"
         style={{
           opacity: visible ? 1 : 0,
-          transform: visible ? 'translateY(0)' : 'translateY(16px)',
-          transition: 'opacity 0.5s ease, transform 0.5s ease',
+          transform: visible ? 'translateY(0)' : 'translateY(12px)',
+          transition: 'opacity 0.4s ease, transform 0.4s ease',
         }}
       >
-        <h1 className="text-2xl font-bold text-white mb-1.5 text-center">
-          Here's how Signalflow works
-        </h1>
-        <p className="text-sm mb-8 text-center" style={{ color: 'rgba(255,255,255,0.45)' }}>
+        <h1 className="text-xl font-bold text-white mb-1">Here's how Signalflow works</h1>
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
           Your inbox is being scanned in the background right now.
         </p>
       </div>
 
-      <div className="flex flex-col gap-4 mb-8">
+      {/* Scrollable cards */}
+      <div className="flex flex-col gap-3 px-6 overflow-y-auto" style={{ flex: 1 }}>
         {HOW_IT_WORKS.map((item) => (
           <div
             key={item.step}
             data-testid={`how-it-works-card-${item.step}`}
-            className="flex items-start gap-4 p-5 rounded-xl"
+            className="flex items-start gap-4 p-4 rounded-xl"
             style={{
-              background: '#13131c',
+              background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.07)',
               opacity: visible ? 1 : 0,
-              transform: visible ? 'translateX(0)' : 'translateX(28px)',
-              transition: `opacity 0.55s ease ${item.delay + 120}ms, transform 0.55s ease ${item.delay + 120}ms`,
+              transform: visible ? 'translateX(0)' : 'translateX(20px)',
+              transition: `opacity 0.5s ease ${item.delay + 100}ms, transform 0.5s ease ${item.delay + 100}ms`,
             }}
           >
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: `${item.color}14`, border: `1px solid ${item.color}28` }}
             >
-              <item.icon size={18} style={{ color: item.color }} />
+              <item.icon size={16} style={{ color: item.color }} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className="text-[10px] font-bold"
-                  style={{ color: item.color, fontFamily: 'monospace' }}
-                >
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-bold" style={{ color: item.color, fontFamily: 'monospace' }}>
                   {item.step}
                 </span>
                 <p className="text-sm font-semibold text-white">{item.title}</p>
@@ -233,25 +238,28 @@ function StepHowItWorks({ onComplete }) {
         ))}
       </div>
 
+      {/* Fixed footer — always visible */}
       <div
+        className="px-6 py-4 shrink-0"
         style={{
+          borderTop: '1px solid rgba(255,255,255,0.06)',
           opacity: visible ? 1 : 0,
-          transition: 'opacity 0.5s ease 500ms',
+          transition: 'opacity 0.4s ease 400ms',
         }}
       >
         <button
           data-testid="onboarding-go-dashboard-btn"
           onClick={onComplete}
-          className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.99]"
+          className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.99]"
           style={{
             background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)',
-            boxShadow: '0 0 32px rgba(124,109,250,0.35)',
+            boxShadow: '0 0 24px rgba(124,109,250,0.3)',
           }}
         >
-          <Check size={15} />
+          <Check size={14} />
           Go to my dashboard
         </button>
-        <p className="text-center text-xs mt-3" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
+        <p className="text-center text-xs mt-2" style={{ color: 'rgba(255,255,255,0.18)', fontFamily: 'monospace' }}>
           First sync running in background · deals appear automatically
         </p>
       </div>
