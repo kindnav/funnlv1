@@ -441,12 +441,14 @@ export default function ReviewMode() {
       </div>
 
       {/* ── Card stack ─────────────────────────────────────────────────── */}
-      <div className="flex-1 relative px-4 py-2 overflow-hidden">
+      <div className="flex-1 relative px-4 py-2 overflow-hidden flex items-center justify-center">
+        {/* Constrain card size on large screens */}
+        <div className="relative w-full h-full" style={{ maxHeight: '660px', maxWidth: '520px' }}>
         {/* Background card (next deal preview) */}
         {nextDeal && (
           <div
             ref={nextCardRef}
-            className="absolute inset-x-4 inset-y-2 rounded-2xl"
+            className="absolute inset-x-0 inset-y-0 rounded-2xl"
             style={{
               background: '#13131c',
               border: '1px solid rgba(255,255,255,0.05)',
@@ -464,7 +466,7 @@ export default function ReviewMode() {
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
           onMouseDown={onMouseDown}
-          className="absolute inset-x-4 inset-y-2 rounded-2xl cursor-grab active:cursor-grabbing"
+          className="absolute inset-0 rounded-2xl cursor-grab active:cursor-grabbing"
           style={{
             background: '#13131c',
             border: '1px solid rgba(255,255,255,0.09)',
@@ -494,6 +496,7 @@ export default function ReviewMode() {
           {/* Card content */}
           <CardContent deal={d} />
         </div>
+        </div>{/* end constrained wrapper */}
       </div>
 
       {/* ── Swipe direction hints ───────────────────────────────────────── */}

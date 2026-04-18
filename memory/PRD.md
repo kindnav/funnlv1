@@ -1,8 +1,8 @@
 # VC Deal Flow Intelligence Tool — PRD
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Last Updated**: 2026-04-15  
-**Status**: MVP Complete — Action Engine + Thesis Match Engine live
+**Last Updated**: 2026-04-18  
+**Status**: MVP+ — Review Mode (swipe triage), background sync fix, dynamic fund name live
 
 ---
 
@@ -47,6 +47,26 @@ Build a full-stack VC deal flow intelligence tool that:
 ### 4. Pitch Signal Heuristics (LIVE)
 - `pitch_signal_score()` function pre-screens emails before Claude
 - 20 keyword vocabulary: raising, deck, seed, founder, MRR, valuation, etc.
+
+### 5. Review Mode — Mobile Swipe Triage (LIVE — 2026-04-18)
+- Full-screen card-swipe interface at `/review` route
+- "Review Mode" button in Dashboard nav (prominent, purple glow)
+- Swipe RIGHT → pipeline, LEFT → archive, UP → review; status updated via PATCH immediately
+- 60fps drag animation via direct DOM manipulation (refs), no React re-renders during drag
+- Action overlays: directional gradient + label (green/red/blue)
+- 4-button bar: Archive/Pipeline/Review/Details (48px tap targets)
+- Keyboard shortcuts on desktop (← → ↑ ↵)
+- Progress bar + unreviewed count at top; Empty state when queue is empty
+- Touch events (passive:false) + mouse drag for desktop
+
+### 6. Dynamic Fund Name (LIVE — 2026-04-18)
+- Dashboard nav shows fund name from Settings instead of hardcoded "Future Frontier Capital"
+- Logo initials and nav title computed dynamically from saved fund_name
+
+### 7. Email Sync Background Fix (LIVE — 2026-04-18)
+- POST /api/sync returns instantly as FastAPI BackgroundTask; never times out
+- In-memory lock prevents duplicate concurrent syncs
+- Frontend polls every 10s for up to 2 minutes after trigger
 
 ---
 
