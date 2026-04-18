@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getFundSettings } from '../lib/api';
 
 export default function OAuthCallback({ onToken }) {
   const [error, setError] = useState(null);
@@ -11,13 +12,25 @@ export default function OAuthCallback({ onToken }) {
     const err = params.get('error');
 
     if (token) {
-      onToken(token);
-      navigate('/onboarding');
+      onToken(token); // stores token in localStorage immediately
+      // Decide route: new users → onboarding, returning users → dashboard
+      getFundSettings()
+        .then(settings => {
+          if (settings?.onboarding_complete) {
+            navigate('/');
+          } else {
+            navigate('/onboarding');
+          }
+        })
+        .catch(() => {
+          // Default to onboarding (safe for new users, no harm for returning)
+          navigate('/onboarding');
+        });
     } else {
       setError(err || 'Authentication failed. Please try again.');
       setTimeout(() => navigate('/'), 3000);
     }
-  }, [navigate, onToken]);
+  }, [navigate, onToken]); // eslint-disable-line
 
   return (
     <div className="h-screen w-screen bg-[#0c0c12] flex items-center justify-center">
