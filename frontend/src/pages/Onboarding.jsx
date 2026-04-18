@@ -43,15 +43,23 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
 
   return (
     <div
-      className="w-full max-w-lg rounded-2xl p-6"
-      style={{ background: '#13131c', border: '1px solid rgba(255,255,255,0.09)' }}
+      className="w-full max-w-lg rounded-2xl flex flex-col"
+      style={{
+        background: '#13131c',
+        border: '1px solid rgba(255,255,255,0.09)',
+        maxHeight: 'calc(100vh - 220px)',
+      }}
     >
-      <h1 className="text-xl font-bold text-white mb-1">Set up your fund profile</h1>
-      <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,0.45)' }}>
-        This powers AI-matched scoring for every inbound email.
-      </p>
+      {/* Fixed header */}
+      <div className="px-6 pt-6 pb-3 shrink-0">
+        <h1 className="text-xl font-bold text-white mb-1">Set up your fund profile</h1>
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          This powers AI-matched scoring for every inbound email.
+        </p>
+      </div>
 
-      <div className="flex flex-col gap-4">
+      {/* Scrollable fields */}
+      <div className="flex flex-col gap-4 px-6 overflow-y-auto" style={{ flex: 1 }}>
         {/* Fund name */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
@@ -70,7 +78,7 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
           />
         </div>
 
-        {/* Investment focus — the hero field */}
+        {/* Investment focus */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
             Investment focus
@@ -97,8 +105,8 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
           </p>
         </div>
 
-        {/* Sectors + Stage side by side */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Sectors + Stage */}
+        <div className="grid grid-cols-2 gap-3 pb-1">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
               Sector focus <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>optional</span>
@@ -132,7 +140,11 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-6">
+      {/* Fixed footer — always visible */}
+      <div
+        className="flex items-center justify-between px-6 py-4 shrink-0"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+      >
         <button
           data-testid="onboarding-skip-btn"
           onClick={onSkip}
@@ -147,10 +159,10 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
           data-testid="onboarding-continue-btn"
           onClick={handleNext}
           disabled={saving}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60 active:scale-95"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60 active:scale-95"
           style={{
             background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)',
-            boxShadow: '0 0 24px rgba(124,109,250,0.3)',
+            boxShadow: '0 0 20px rgba(124,109,250,0.3)',
           }}
         >
           {saving ? 'Saving...' : 'Continue'}
