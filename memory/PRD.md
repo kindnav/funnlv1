@@ -2,7 +2,7 @@
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-18  
-**Status**: MVP+ — Review Mode (swipe triage), background sync fix, dynamic fund name live
+**Status**: MVP Complete — Onboarding wizard, Review Mode, background sync, dynamic fund name all live
 
 ---
 
@@ -63,7 +63,14 @@ Build a full-stack VC deal flow intelligence tool that:
 - Dashboard nav shows fund name from Settings instead of hardcoded "Future Frontier Capital"
 - Logo initials and nav title computed dynamically from saved fund_name
 
-### 8. Onboarding — Landing Page, Setup Checklist, Empty States (LIVE — 2026-04-18)
+### 9. Post-Login Onboarding Wizard (LIVE — 2026-04-18)
+- **Route**: `/onboarding` — registered in App.js, protected by `token` only (not requiring `user` object to avoid timing issues)
+- **OAuthCallback** now navigates to `/onboarding` after every successful login
+- **Returning users**: if `onboarding_complete=true` in fund_settings, wizard skips instantly to dashboard
+- **Step 1 — Fund Profile Setup**: Fund name, Investment thesis (required for best Claude scoring), Sector focus, Stage. Saves via `POST /api/fund-settings`. "Skip for now" marks complete + triggers background sync.
+- **Step 2 — How It Works**: 3 animated feature cards (Brain/Target/Zap icons, stagger animation), "Go to my dashboard" button marks `onboarding_complete=true` + navigates to `/`
+- **Step progress dots**: 2-step progress indicator with green checkmark on completed step
+- **Background sync** triggered automatically when thesis is saved (step 1 continue) or skipped
 - **Landing page** replaces old ConnectPage — Signalflow branding, hero with gradient headline, beta banner, HOW IT WORKS (3 steps), FEATURES (6 cards), footer. DM Sans/Mono fonts. Scroll reveal via IntersectionObserver. Mobile responsive.
 - **Setup checklist** shown in Dashboard for new users (0 deals, onboarding not complete). 4 items: Gmail connected / First sync / Fund thesis / First email. Progress bar. Completion state with "Go to Dashboard" CTA. Saves `onboarding_complete` flag via `POST /api/onboarding-complete`.
 - **Empty states**: Loading spinner, no-deals-ever (with Sync Now + Process Email), filter-returns-nothing (with Clear filters), Review Mode animated SVG checkmark "All caught up"
