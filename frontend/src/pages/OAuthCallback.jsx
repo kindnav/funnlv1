@@ -12,7 +12,7 @@ export default function OAuthCallback({ onToken }) {
 
     if (token) {
       onToken(token);
-      navigate('/');
+      navigate('/onboarding');
     } else {
       setError(err || 'Authentication failed. Please try again.');
       setTimeout(() => navigate('/'), 3000);

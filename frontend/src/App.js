@@ -7,6 +7,7 @@ import ConnectPage from './pages/ConnectPage';
 import OAuthCallback from './pages/OAuthCallback';
 import Pipeline from './pages/Pipeline';
 import ReviewMode from './pages/ReviewMode';
+import Onboarding from './pages/Onboarding';
 import { getMe } from './lib/api';
 import { useEffect } from 'react';
 
@@ -59,6 +60,10 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/oauth-callback" element={<OAuthCallback onToken={handleTokenReceived} />} />
+        <Route
+          path="/onboarding"
+          element={token ? <Onboarding /> : <Navigate to="/" />}
+        />
         <Route
           path="/"
           element={token && user ? <Dashboard user={user} onLogout={handleLogout} /> : <ConnectPage />}

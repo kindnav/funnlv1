@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Brain, Target, Zap, Check } from 'lucide-react';
 import { getFundSettings, saveFundSettings, markOnboardingComplete, triggerSync } from '../lib/api';
 
@@ -254,7 +254,6 @@ export default function Onboarding() {
   const [animating, setAnimating] = useState(false);
   const [form, setForm] = useState({ fund_name: '', thesis: '', sectors: '', stages: '' });
   const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     // Inject DM Sans if not already loaded
@@ -274,8 +273,8 @@ export default function Onboarding() {
         sectors: s.sectors || '',
         stages: s.stages || '',
       });
-      // Skip onboarding if already complete AND not a fresh OAuth login
-      if (s.onboarding_complete && !location.state?.fresh) {
+      // Returning users who already finished onboarding go straight to dashboard
+      if (s.onboarding_complete) {
         navigate('/', { replace: true });
       }
     }).catch(() => {});
