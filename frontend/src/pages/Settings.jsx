@@ -135,7 +135,7 @@ export default function Settings({ user, onLogout }) {
             <div>
               <p className="text-white font-semibold text-sm mb-0.5">Set your Fund Thesis first</p>
               <p className="text-[rgba(255,255,255,0.45)] text-xs leading-relaxed">
-                The AI uses your thesis to calibrate relevance scores for every inbound email. Fill in the form below — the more specific, the better your deal scoring.
+                The AI uses your investment focus to calibrate relevance scores for every inbound email. Fill in the form below — the more specific, the better your deal scoring.
               </p>
             </div>
           </div>
@@ -188,9 +188,9 @@ export default function Settings({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Investment thesis */}
+              {/* Investment focus */}
               <div>
-                <label className={labelCls}>Investment Thesis</label>
+                <label className={labelCls}>Investment Focus</label>
                 <textarea
                   data-testid="thesis-input"
                   rows={4}
@@ -260,8 +260,8 @@ export default function Settings({ user, onLogout }) {
               >
                 <Sparkles size={12} className="text-[#7c6dfa] mt-0.5 shrink-0" />
                 <p className="text-[rgba(255,255,255,0.45)] leading-relaxed">
-                  Claude will score emails 8–10 only when they align with your thesis, stage, and sectors.
-                  Spam and off-thesis emails are automatically filtered out before reaching your dashboard.
+                  Claude will score emails 8–10 only when they align with your investment focus, stage, and sectors.
+                  Emails outside your focus are automatically filtered out before reaching your dashboard.
                 </p>
               </div>
 

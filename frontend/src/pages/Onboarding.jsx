@@ -43,18 +43,18 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
 
   return (
     <div
-      className="w-full max-w-lg rounded-2xl p-8"
+      className="w-full max-w-lg rounded-2xl p-6"
       style={{ background: '#13131c', border: '1px solid rgba(255,255,255,0.09)' }}
     >
-      <h1 className="text-2xl font-bold text-white mb-1.5">Set up your fund profile</h1>
-      <p className="text-sm mb-8" style={{ color: 'rgba(255,255,255,0.45)' }}>
-        This is what powers thesis-matched scoring for every inbound email.
+      <h1 className="text-xl font-bold text-white mb-1">Set up your fund profile</h1>
+      <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,0.45)' }}>
+        This powers AI-matched scoring for every inbound email.
       </p>
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         {/* Fund name */}
         <div>
-          <label className="block text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
             Fund name
             <span className="ml-1.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.22)' }}>optional</span>
           </label>
@@ -63,44 +63,44 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
             value={form.fund_name}
             onChange={e => setForm(f => ({ ...f, fund_name: e.target.value }))}
             placeholder="e.g. Future Frontier Capital"
-            className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all duration-200"
+            className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all duration-200"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#fff' }}
             onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.55)')}
             onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.09)')}
           />
         </div>
 
-        {/* Thesis — the hero field */}
+        {/* Investment focus — the hero field */}
         <div>
-          <label className="block text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
-            Investment thesis
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            Investment focus
             <span className="ml-1.5 text-[10px]" style={{ color: '#f05252' }}>required for best results</span>
           </label>
           <textarea
             data-testid="onboarding-thesis"
             value={form.thesis}
             onChange={e => setForm(f => ({ ...f, thesis: e.target.value }))}
-            placeholder="e.g. We invest in pre-seed B2B SaaS companies building AI-native tools for enterprise workflows. We look for founders with 5+ years domain expertise, early traction ($10k+ MRR or 100+ paying customers), and a clear distribution moat..."
-            rows={6}
-            className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none transition-all duration-200"
+            placeholder="e.g. Pre-seed B2B SaaS, AI-native tools for enterprise workflows, founders with domain expertise and early traction..."
+            rows={4}
+            className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none transition-all duration-200"
             style={{
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.09)',
               color: '#fff',
-              lineHeight: 1.65,
+              lineHeight: 1.6,
             }}
             onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.55)')}
             onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.09)')}
           />
-          <p className="mt-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.22)' }}>
-            The more specific, the better Claude scores deals against your thesis.
+          <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.22)' }}>
+            The more specific, the better Claude scores deals against your focus.
           </p>
         </div>
 
         {/* Sectors + Stage side by side */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
               Sector focus <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>optional</span>
             </label>
             <input
@@ -108,14 +108,14 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
               value={form.sectors}
               onChange={e => setForm(f => ({ ...f, sectors: e.target.value }))}
               placeholder="AI, SaaS, Fintech..."
-              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all duration-200"
+              className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all duration-200"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#fff' }}
               onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.45)')}
               onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.09)')}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
               Stage <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>optional</span>
             </label>
             <input
@@ -123,7 +123,7 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
               value={form.stages}
               onChange={e => setForm(f => ({ ...f, stages: e.target.value }))}
               placeholder="Pre-seed, Seed..."
-              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all duration-200"
+              className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all duration-200"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#fff' }}
               onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.45)')}
               onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.09)')}
@@ -132,7 +132,7 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-8">
+      <div className="flex items-center justify-between mt-6">
         <button
           data-testid="onboarding-skip-btn"
           onClick={onSkip}
@@ -331,9 +331,9 @@ export default function Onboarding() {
         }} />
       </div>
 
-      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-5 py-14 sm:py-20">
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-5 py-8 sm:py-12">
         {/* Brand header */}
-        <div className="flex items-center gap-2.5 mb-10">
+        <div className="flex items-center gap-2.5 mb-6">
           <div
             className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white"
             style={{
@@ -347,7 +347,7 @@ export default function Onboarding() {
         </div>
 
         {/* Step progress dots */}
-        <div className="flex items-center gap-3 mb-10">
+        <div className="flex items-center gap-3 mb-6">
           {[1, 2].map((s) => (
             <div key={s} className="flex items-center gap-3">
               <div
