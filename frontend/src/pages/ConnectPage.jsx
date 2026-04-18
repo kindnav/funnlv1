@@ -52,7 +52,7 @@ const STEPS = [
     color: '#4da6ff',
     num: '02',
     title: 'Claude AI reads every email',
-    desc: 'Every inbound email is automatically classified, scored 1–10 for relevance to your fund thesis, and summarized in plain English.',
+    desc: 'Every inbound email is automatically classified, scored 1–10 for relevance to your fund focus, and summarized in plain English.',
   },
   {
     icon: Zap,
@@ -67,8 +67,8 @@ const FEATURES = [
   {
     icon: Target,
     color: '#7c6dfa',
-    title: 'Thesis-matched scoring',
-    desc: 'Every email scored against your specific fund thesis, not a generic algorithm.',
+    title: 'Focus-matched scoring',
+    desc: 'Every email scored against your specific fund focus, not a generic algorithm.',
   },
   {
     icon: Clock,

@@ -168,7 +168,7 @@ export default function Pipeline({ user, onLogout }) {
         <button onClick={() => navigate('/settings')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
           style={{ background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.25)', color: '#7c6dfa' }}>
           <BookOpen size={13} />
-          <span className="hidden sm:inline">Fund Thesis</span>
+          <span className="hidden sm:inline">Fund Focus</span>
         </button>
         <button onClick={onLogout} className="text-[rgba(255,255,255,0.35)] hover:text-white transition-colors p-1">
           <LogOut size={15} />

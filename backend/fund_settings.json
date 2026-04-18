@@ -21,6 +21,7 @@
     "fund_name": "ybk ventures",
     "thesis": "We invest in early-stage deep tech climate startups tackling high-impact decarbonization across energy, industry, and infrastructure. Our focus includes energy storage, advanced materials, industrial process optimization, carbon management, and grid technologies. We prioritize technically defensible solutions with clear commercialization pathways and the potential to scale into large, durable markets.",
     "sectors": "deeptech",
-    "stages": "pre-seed, seed"
+    "stages": "pre-seed, seed",
+    "onboarding_complete": true
   }
 }

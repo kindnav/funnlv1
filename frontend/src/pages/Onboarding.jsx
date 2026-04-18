@@ -16,8 +16,8 @@ const HOW_IT_WORKS = [
     icon: Target,
     color: '#4da6ff',
     step: '02',
-    title: 'Scored against your exact thesis',
-    desc: 'The fund thesis you just entered powers a custom scoring model. A B2C social app won\'t score well if you\'re a deep-tech fund.',
+    title: 'Scored against your exact focus',
+    desc: 'The investment focus you just entered powers a custom scoring model. A B2C social app won\'t score well if you\'re a deep-tech fund.',
     delay: 100,
   },
   {

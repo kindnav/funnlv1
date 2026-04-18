@@ -170,10 +170,10 @@ export default function OnboardingChecklist({
                 />
                 <CheckItem
                   done={thesisAdded}
-                  label="Fund thesis added"
-                  sublabel="Required for thesis-matched scoring"
+                  label="Investment focus added"
+                  sublabel="Required for focus-matched scoring"
                   action={!thesisAdded ? onOpenSettings : null}
-                  actionLabel="Add thesis"
+                  actionLabel="Add focus"
                   actionIcon={BookOpen}
                 />
                 <CheckItem

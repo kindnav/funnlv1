@@ -152,7 +152,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
               <div className="flex items-center gap-2 mb-3">
                 <Target size={13} className="text-[#7c6dfa]" />
                 <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold">
-                  Thesis Match
+                  Focus Match
                 </p>
               </div>
 

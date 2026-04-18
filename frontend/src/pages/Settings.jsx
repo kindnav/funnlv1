@@ -133,7 +133,7 @@ export default function Settings({ user, onLogout }) {
               <Sparkles size={15} className="text-[#7c6dfa]" />
             </div>
             <div>
-              <p className="text-white font-semibold text-sm mb-0.5">Set your Fund Thesis first</p>
+              <p className="text-white font-semibold text-sm mb-0.5">Set your Fund Focus first</p>
               <p className="text-[rgba(255,255,255,0.45)] text-xs leading-relaxed">
                 The AI uses your investment focus to calibrate relevance scores for every inbound email. Fill in the form below — the more specific, the better your deal scoring.
               </p>
@@ -144,7 +144,7 @@ export default function Settings({ user, onLogout }) {
           <div className={cardCls}>
             <div className="flex items-center gap-2 mb-1">
               <BookOpen size={15} className="text-[#7c6dfa]" />
-              <h2 className="text-white font-semibold text-sm">Fund Thesis</h2>
+              <h2 className="text-white font-semibold text-sm">Fund Focus</h2>
               <span className="ml-auto px-2 py-0.5 rounded text-xs font-mono"
                 style={{ background: 'rgba(124,109,250,0.1)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.2)' }}>
                 AI-calibrated
@@ -374,7 +374,7 @@ export default function Settings({ user, onLogout }) {
               <h2 className="text-white font-semibold text-sm">AI Configuration</h2>
             </div>
             <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4">
-              Claude AI extracts deal signals and scores relevance against your fund thesis.
+              Claude AI extracts deal signals and scores relevance against your fund focus.
             </p>
             <div className="space-y-2">
               {[

@@ -261,7 +261,7 @@ export default function Dashboard({ user, onLogout }) {
           }}
         >
           <BookOpen size={13} />
-          <span className="hidden sm:inline">Fund Thesis</span>
+          <span className="hidden sm:inline">Fund Focus</span>
         </button>
         <button
           data-testid="logout-btn"
