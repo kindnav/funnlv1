@@ -101,11 +101,14 @@ async def sb_select(table: str, params: dict = None) -> list:
         logger.error(f'sb_select {table}: {resp.status_code} {resp.text[:300]}')
         return []
 
-async def sb_insert(table: str, data) -> Optional[dict]:
-    async with httpx.AsyncClient(timeout=15) as client:
+async def sb_insert(table: str, data, upsert: bool = False) -> Optional[dict]:
+    async with httpx.AsyncClient(timeout=20) as client:
+        prefer = 'return=representation'
+        if upsert:
+            prefer = 'return=representation,resolution=merge-duplicates'
         resp = await client.post(
             f'{SUPABASE_URL}/rest/v1/{table}',
-            headers={**SB_HEADERS, 'Prefer': 'return=representation'},
+            headers={**SB_HEADERS, 'Prefer': prefer},
             json=data
         )
         if resp.status_code in (200, 201):
@@ -120,6 +123,15 @@ async def sb_update(table: str, data: dict, params: dict) -> bool:
             f'{SUPABASE_URL}/rest/v1/{table}',
             headers={**SB_HEADERS, 'Prefer': 'return=minimal'},
             params=params, json=data
+        )
+        return resp.status_code in (200, 204)
+
+async def sb_delete(table: str, params: dict) -> bool:
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.delete(
+            f'{SUPABASE_URL}/rest/v1/{table}',
+            headers={**SB_HEADERS, 'Prefer': 'return=minimal'},
+            params=params
         )
         return resp.status_code in (200, 204)
 
@@ -619,6 +631,7 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
 
     prompt = f"Analyze this email for a VC fund:\n\nFrom: {sender_name} <{sender_email}>\nSubject: {subject}\n\nBody:\n{body[:3500]}"
     try:
+        logger.info(f'[CLAUDE] Analyzing: "{subject}" from {sender_email}')
         msg = await claude_client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=1500,
@@ -626,16 +639,25 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
             messages=[{"role": "user", "content": prompt}],
         )
         text = msg.content[0].text.strip()
+        logger.debug(f'[CLAUDE] Raw response for "{subject}": {text[:200]}')
         text = re.sub(r'^```(?:json)?\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
-        return json.loads(text)
+        result = json.loads(text)
+        logger.info(f'[CLAUDE] Result for "{subject}": category={result.get("category")} score={result.get("relevance_score")}')
+        return result
     except Exception as e:
-        logger.error(f"Claude error: {e}")
+        logger.error(f'[CLAUDE] Analysis FAILED for "{subject}" from {sender_email}: {e}')
         return {
-            "category": "Other", "summary": "AI analysis pending.",
-            "relevance_score": 5, "urgency_score": 5,
-            "next_action": "Review now", "confidence": "Low", "tags": [],
+            "category": "Unprocessed",
+            "summary": "AI extraction failed — review manually",
+            "relevance_score": 0,
+            "urgency_score": 0,
+            "next_action": "Review now",
+            "confidence": "Low",
+            "tags": [],
             "warm_or_cold": "Unknown",
+            "deck_attached": False,
+            "traction_mentioned": False,
         }
 
 # ── Deal processing ───────────────────────────────────────────────────────────────
@@ -659,22 +681,29 @@ async def process_and_save_email(
     user_id: Optional[str], sender_name: str, sender_email: str,
     subject: str, body: str, thread_id: str = None,
     message_id: str = None, received_date: str = None, gmail_link: str = None,
-    fund_ctx: dict = None,
+    fund_ctx: dict = None, skip_dedup: bool = False, force_replace: bool = False,
 ) -> Optional[dict]:
-    # Deduplicate
-    if user_id and thread_id:
+    # Deduplicate (only if not already checked by caller's pre-fetched set)
+    if not skip_dedup and user_id and thread_id:
         existing = await sb_select('deals', {
             'user_id': f'eq.{user_id}', 'thread_id': f'eq.{thread_id}'
         })
         if existing:
+            logger.debug(f'[DEDUP] Thread {thread_id} already exists, skipping: "{subject}"')
             return None
+
+    # In force_replace mode: upsert will update the existing record via the unique constraint
+    # (user_id, thread_id) — no explicit delete needed
 
     ai = await analyze_email(sender_name, sender_email, subject, body, fund_ctx)
 
-    # Skip spam / irrelevant emails — don't pollute the pipeline
-    if ai.get('category') in SKIP_CATEGORIES:
-        logger.info(f'Skipping spam email: "{subject}" from {sender_email}')
-        return None
+    # NOTE: We NO LONGER drop spam emails at ingestion.
+    # Spam is saved to DB so nothing is permanently lost.
+    # The get_deals endpoint filters spam out of the dashboard display.
+    # This ensures test emails are never silently discarded.
+    if ai.get('category') == 'Spam / irrelevant':
+        logger.info(f'[PROCESS] Classified as spam: "{subject}" from {sender_email} — saving to DB (filtered from dashboard)')
+
     now = datetime.now(timezone.utc).isoformat()
     deal = {
         'id': str(uuid.uuid4()),
@@ -700,8 +729,8 @@ async def process_and_save_email(
         'traction_mentioned': bool(ai.get('traction_mentioned', False)),
         'intro_source': ai.get('intro_source'),
         'summary': ai.get('summary', ''),
-        'relevance_score': int(ai.get('relevance_score', 5)),
-        'urgency_score': int(ai.get('urgency_score', 5)),
+        'relevance_score': int(ai.get('relevance_score') or 0),
+        'urgency_score': int(ai.get('urgency_score') or 0),
         'next_action': ai.get('next_action', 'Review now'),
         'confidence': ai.get('confidence', 'Medium'),
         'tags': ai.get('tags', []),
@@ -713,40 +742,46 @@ async def process_and_save_email(
         'processed_at': now,
         'created_at': now,
     }
-    saved = await sb_insert('deals', deal)
+    saved = await sb_insert('deals', deal, upsert=force_replace)
     if not saved:
         # Fallback: retry without new schema fields if columns don't exist yet
         for f in ('thesis_match_score', 'fit_strengths', 'fit_weaknesses', 'match_reasoning'):
             deal.pop(f, None)
-        saved = await sb_insert('deals', deal)
+        saved = await sb_insert('deals', deal, upsert=force_replace)
     if saved:
-        logger.info(f'Saved deal: "{subject}" from {sender_email} | category={ai.get("category")} score={ai.get("relevance_score")}')
+        logger.info(f'[PROCESS] Saved: "{subject}" from {sender_email} | category={ai.get("category")} score={ai.get("relevance_score")}')
         return saved
     else:
-        logger.error(f'Failed to save deal: "{subject}" from {sender_email}')
+        logger.error(f'[PROCESS] FAILED to save: "{subject}" from {sender_email}')
         return None
 
 # ── Gmail sync ─────────────────────────────────────────────────────────────────────
-async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_scan: bool = False) -> int:
+async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_scan: bool = False, force_reprocess: bool = False) -> int:
     users = await sb_select('users', {'id': f'eq.{user_id}'})
     if not users:
+        logger.warning(f'[SYNC] User {user_id} not found in DB')
         return 0
     user = users[0]
+    logger.info(f'[SYNC] ── Starting sync for user: {user.get("email", user_id)} ──')
+    logger.info(f'[SYNC] Token expiry in DB: {user.get("token_expiry", "not set")}')
+
     if not user.get('refresh_token'):
+        logger.warning(f'[SYNC] No refresh token for {user.get("email")} — cannot sync. User must re-authenticate.')
         return 0
-    # Load this user's fund thesis for relevance calibration
+
     fund_ctx = get_fund_settings(user_id)
     try:
         gmail, creds = await asyncio.to_thread(build_gmail_service, user)
-        # Refresh token if expired (use try/except to avoid any datetime comparison issues)
-        try:
-            needs_refresh = creds.expired and creds.refresh_token
-        except Exception:
-            needs_refresh = bool(creds.refresh_token)  # Assume refresh needed if unsure
 
-        if needs_refresh:
+        # Always refresh token proactively — avoids mid-sync expiry
+        try:
+            needs_refresh = creds.expired or not creds.token
+        except Exception:
+            needs_refresh = True
+
+        if needs_refresh and creds.refresh_token:
+            logger.info(f'[SYNC] Refreshing access token for {user.get("email")}')
             await asyncio.to_thread(creds.refresh, GoogleRequest())
-            # Store expiry as naive UTC string for compatibility
             new_expiry = None
             if creds.expiry:
                 try:
@@ -760,35 +795,52 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                 'access_token': creds.token,
                 'token_expiry': new_expiry,
             }, {'id': f'eq.{user_id}'})
-            # Rebuild service with refreshed credentials
             gmail, creds = await asyncio.to_thread(build_gmail_service, {
                 **user,
                 'access_token': creds.token,
                 'token_expiry': new_expiry,
             })
+            logger.info(f'[SYNC] Token refreshed successfully. New expiry: {new_expiry}')
 
-        # Manual sync (force_full_scan) scans recent 100 messages with NO time filter
-        # so recently sent emails that haven't hit the next scheduled window aren't missed.
-        # Background sync uses after:last_synced for efficiency.
-        params = {'userId': 'me', 'maxResults': 100 if force_full_scan else (20 if is_initial else 50), 'labelIds': ['INBOX']}
-        if not force_full_scan and not is_initial and user.get('last_synced'):
+        # Build Gmail query params
+        params = {'userId': 'me', 'maxResults': 10 if force_reprocess else 100, 'labelIds': ['INBOX']}
+        if not force_full_scan and not is_initial and not force_reprocess and user.get('last_synced'):
             try:
                 ls = datetime.fromisoformat(user['last_synced'].replace('Z', '+00:00'))
                 params['q'] = f'after:{int(ls.timestamp())}'
-                logger.info(f'Sync user {user_id}: scanning after {user["last_synced"][:19]}')
-            except Exception:
-                pass
+                logger.info(f'[SYNC] Incremental scan after {user["last_synced"][:19]}')
+            except Exception as e:
+                logger.warning(f'[SYNC] Could not parse last_synced ({e}), falling back to full scan')
         else:
-            logger.info(f'Sync user {user_id}: full scan (force={force_full_scan}, initial={is_initial})')
+            logger.info(f'[SYNC] Full scan (force_full={force_full_scan}, initial={is_initial}, force_reprocess={force_reprocess})')
 
+        logger.info(f'[SYNC] Fetching messages from Gmail API...')
         resp = await asyncio.to_thread(
             lambda: gmail.users().messages().list(**params).execute()
         )
         messages = resp.get('messages', [])
-        logger.info(f'Sync user {user_id}: found {len(messages)} messages to check')
-        processed = 0
+        logger.info(f'[SYNC] Gmail API returned {len(messages)} messages to check')
 
-        for ref in messages:
+        if not messages:
+            await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
+            logger.info(f'[SYNC] No messages in Gmail response — inbox empty or no new mail since last sync')
+            return 0
+
+        # ── PRE-FETCH all existing thread IDs in ONE query (avoids 100 round-trip HTTP calls) ──
+        if not force_reprocess:
+            all_deals = await sb_select('deals', {'user_id': f'eq.{user_id}', 'select': 'thread_id'})
+            existing_thread_ids: set = {d['thread_id'] for d in (all_deals or []) if d.get('thread_id')}
+            logger.info(f'[SYNC] Pre-fetched {len(existing_thread_ids)} existing thread IDs (dedup set ready)')
+        else:
+            existing_thread_ids = set()
+            logger.info(f'[SYNC] force_reprocess=True — deduplication bypassed, reprocessing all messages')
+
+        processed = 0
+        skipped_dup = 0
+        skipped_newsletter = 0
+        errors = 0
+
+        for i, ref in enumerate(messages):
             try:
                 msg = await asyncio.to_thread(
                     lambda mid=ref['id']: gmail.users().messages().get(
@@ -797,17 +849,22 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                 )
                 headers = msg.get('payload', {}).get('headers', [])
                 subject_for_log = get_header(headers, 'Subject') or '(No Subject)'
-
-                if is_newsletter(headers):
-                    logger.debug(f'Skipping newsletter: "{subject_for_log}"')
-                    continue
-
-                from_header = get_header(headers, 'From')
-                if user.get('email') and user['email'] in from_header:
-                    logger.debug(f'Skipping self-sent: "{subject_for_log}"')
-                    continue
-
                 thread_id = msg.get('threadId', ref['id'])
+
+                # Fast O(1) deduplication using pre-fetched set
+                if thread_id in existing_thread_ids:
+                    logger.debug(f'[SYNC] [{i+1}/{len(messages)}] SKIP (dup) thread={thread_id}: "{subject_for_log}"')
+                    skipped_dup += 1
+                    continue
+
+                # Skip newsletters (unsubscribe headers etc.)
+                if is_newsletter(headers):
+                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SKIP (newsletter): "{subject_for_log}"')
+                    existing_thread_ids.add(thread_id)
+                    skipped_newsletter += 1
+                    continue
+
+                from_header = get_header(headers, 'From') or ''
                 raw_from = from_header
                 if '<' in raw_from:
                     from_name = raw_from.split('<')[0].strip().strip('"')
@@ -815,6 +872,9 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                 else:
                     from_email = raw_from.strip()
                     from_name = from_email.split('@')[0] if '@' in from_email else from_email
+
+                # NOTE: Self-sent filter REMOVED. Users may send test pitch emails from their own
+                # account and expect them to appear. Claude will classify content appropriately.
 
                 subject = get_header(headers, 'Subject') or '(No Subject)'
                 date_str = get_header(headers, 'Date')
@@ -825,26 +885,40 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
 
                 body = extract_body(msg.get('payload', {}))
                 gmail_link = f'https://mail.google.com/mail/u/0/#inbox/{thread_id}'
+
+                logger.info(f'[SYNC] [{i+1}/{len(messages)}] NEW — processing: "{subject}" from {from_email}')
+
                 result = await process_and_save_email(
                     user_id=user_id, sender_name=from_name,
                     sender_email=from_email, subject=subject,
                     body=body, thread_id=thread_id,
                     message_id=ref['id'], received_date=received_date,
                     gmail_link=gmail_link, fund_ctx=fund_ctx,
+                    skip_dedup=True,  # dedup already done above with the set
+                    force_replace=force_reprocess,  # delete-before-insert when force=true
                 )
+                # Always add to set so we don't reprocess same thread in this batch
+                existing_thread_ids.add(thread_id)
                 if result:
                     processed += 1
+                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED deal: "{subject}" | category={result.get("category")}')
+                else:
+                    logger.warning(f'[SYNC] [{i+1}/{len(messages)}] Save returned None for: "{subject}"')
             except Exception as e:
-                logger.error(f'Email {ref["id"]} error: {e}')
+                logger.error(f'[SYNC] [{i+1}/{len(messages)}] Error processing message {ref["id"]}: {e}')
+                errors += 1
                 continue
 
         await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
-        logger.info(f'Synced {processed} new emails for user {user_id}')
+        logger.info(
+            f'[SYNC] ── Complete for {user.get("email")} — '
+            f'saved={processed}, skipped_dup={skipped_dup}, '
+            f'skipped_newsletter={skipped_newsletter}, errors={errors} ──'
+        )
         return processed
     except Exception as e:
         err = str(e)
-        logger.error(f'Sync error user {user_id}: {e}')
-        # Propagate auth errors so the caller can surface them to the user
+        logger.error(f'[SYNC] FATAL error for {user_id}: {e}')
         if 'invalid_scope' in err or 'invalid_grant' in err or 'unauthorized' in err.lower():
             raise
         return 0
@@ -960,6 +1034,73 @@ async def send_gmail_message(
 @api_router.get("/")
 async def root():
     return {"message": "VC Deal Flow API", "status": "healthy"}
+
+# ── Diagnostic test endpoints ──────────────────────────────────────────────────
+@api_router.get("/test-gmail")
+async def test_gmail(current_user: dict = Depends(get_current_user)):
+    """Diagnostic: make a raw Gmail API call and return the 5 most recent messages."""
+    uid = current_user['user_id']
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    if not users:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = users[0]
+    if not user.get('refresh_token'):
+        return {"error": "No refresh token stored — user must re-authenticate", "has_access_token": bool(user.get('access_token')), "has_refresh_token": False}
+    try:
+        gmail, creds = await asyncio.to_thread(build_gmail_service, user)
+        # Force refresh
+        if creds.refresh_token:
+            await asyncio.to_thread(creds.refresh, GoogleRequest())
+        resp = await asyncio.to_thread(
+            lambda: gmail.users().messages().list(userId='me', maxResults=5, labelIds=['INBOX']).execute()
+        )
+        messages = resp.get('messages', [])
+        details = []
+        for ref in messages:
+            msg = await asyncio.to_thread(
+                lambda mid=ref['id']: gmail.users().messages().get(userId='me', id=mid, format='metadata', metadataHeaders=['Subject', 'From', 'Date']).execute()
+            )
+            h = {hdr['name']: hdr['value'] for hdr in msg.get('payload', {}).get('headers', [])}
+            details.append({'id': ref['id'], 'threadId': msg.get('threadId'), 'subject': h.get('Subject', ''), 'from': h.get('From', ''), 'date': h.get('Date', '')})
+        return {"ok": True, "message_count": len(messages), "messages": details, "user_email": user.get('email'), "token_expiry": user.get('token_expiry')}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "user_email": user.get('email')}
+
+@api_router.post("/test-insert")
+async def test_insert(current_user: dict = Depends(get_current_user)):
+    """Diagnostic: insert a hardcoded test deal row and return success/error."""
+    uid = current_user['user_id']
+    now = datetime.now(timezone.utc).isoformat()
+    test_deal = {
+        'id': str(uuid.uuid4()),
+        'user_id': uid,
+        'thread_id': f'test-thread-{now}',
+        'message_id': f'test-msg-{now}',
+        'received_date': now,
+        'sender_name': 'Test Sender',
+        'sender_email': 'test@example.com',
+        'subject': f'[TEST INSERT] Diagnostic deal {now[:19]}',
+        'body_preview': 'This is a test deal inserted by the /api/test-insert endpoint.',
+        'gmail_thread_link': '#',
+        'category': 'Founder pitch',
+        'warm_or_cold': 'Cold',
+        'summary': 'Test deal inserted for diagnostic purposes.',
+        'relevance_score': 7,
+        'urgency_score': 5,
+        'next_action': 'Review now',
+        'confidence': 'High',
+        'tags': ['test'],
+        'status': 'New',
+        'deck_attached': False,
+        'traction_mentioned': False,
+        'processed_at': now,
+        'created_at': now,
+    }
+    saved = await sb_insert('deals', test_deal)
+    if saved:
+        return {"ok": True, "deal_id": saved.get('id', test_deal['id']), "subject": test_deal['subject'], "message": "Test row inserted successfully — it should now appear in /api/deals"}
+    else:
+        return {"ok": False, "message": "Supabase insert failed — check backend logs for error details"}
 
 # Auth
 @api_router.get("/auth/google")
@@ -1167,23 +1308,28 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
     return {"message": "Email sent", "status": new_status}
 
 # Sync
-async def _run_background_sync(user_id: str):
+async def _run_background_sync(user_id: str, force_reprocess: bool = False):
     """Run a full inbox scan in the background, releasing the HTTP response immediately."""
     try:
-        count = await sync_user_emails(user_id, force_full_scan=True)
-        logger.info(f'Background sync complete: {count} new deals for user {user_id}')
+        count = await sync_user_emails(user_id, force_full_scan=True, force_reprocess=force_reprocess)
+        logger.info(f'[SYNC] Background sync complete: {count} new deals for user {user_id}')
     except Exception as e:
-        logger.error(f'Background sync error for user {user_id}: {e}')
+        logger.error(f'[SYNC] Background sync error for user {user_id}: {e}')
     finally:
         _syncing_users.discard(user_id)
 
 @api_router.post("/sync")
-async def trigger_sync(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+async def trigger_sync(
+    background_tasks: BackgroundTasks,
+    force: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
     user_id = current_user['user_id']
     if user_id in _syncing_users:
         return {"message": "Sync already running", "status": "already_syncing", "new_deals": 0}
     _syncing_users.add(user_id)
-    background_tasks.add_task(_run_background_sync, user_id)
+    background_tasks.add_task(_run_background_sync, user_id, force)
+    logger.info(f'[SYNC] Triggered for user {user_id} (force_reprocess={force})')
     return {"message": "Sync started", "status": "started", "new_deals": 0}
 
 # Stats

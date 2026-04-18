@@ -63,10 +63,20 @@ Build a full-stack VC deal flow intelligence tool that:
 - Dashboard nav shows fund name from Settings instead of hardcoded "Future Frontier Capital"
 - Logo initials and nav title computed dynamically from saved fund_name
 
-### 7. Email Sync Background Fix (LIVE — 2026-04-18)
-- POST /api/sync returns instantly as FastAPI BackgroundTask; never times out
-- In-memory lock prevents duplicate concurrent syncs
-- Frontend polls every 10s for up to 2 minutes after trigger
+### 7. Email Sync — Full Root-Cause Fix (LIVE — 2026-04-18)
+**Root causes diagnosed and fixed:**
+1. Self-sent email filter removed — users testing with their own Gmail were silently dropping all test emails
+2. Per-email Supabase dedup (100 HTTP requests → 1) — sync now runs in seconds, not 3+ minutes
+3. Spam emails no longer dropped at ingestion — saved to DB with spam category, filtered at display layer
+4. Claude error fallback: 'Unprocessed' category instead of silent drop
+5. Frontend polling extended from 120s to 240s (sync with pre-fetch completes in ~30s now)
+6. Upsert support in sb_insert for force=true reprocessing
+7. Comprehensive [SYNC]/[CLAUDE]/[PROCESS] logging for all decisions
+
+**Diagnostic endpoints added:**
+- GET /api/test-gmail — raw Gmail API test showing last 5 inbox messages
+- POST /api/test-insert — inserts a hardcoded test deal to validate Supabase writes
+- POST /api/sync?force=true — reprocesses last 10 emails (upsert, bypass dedup)
 
 ---
 

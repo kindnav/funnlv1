@@ -115,10 +115,10 @@ export default function Dashboard({ user, onLogout }) {
       // Even if the trigger call itself fails, don't block the user
       console.warn('Sync trigger error:', e.message);
     }
-    // Sync runs in the background — poll every 10s for up to 2 minutes
+    // Sync runs in the background — poll every 10s for up to 4 minutes
     setSyncResult({ status: 'background' });
     let polls = 0;
-    const maxPolls = 12; // 12 × 10s = 120s
+    const maxPolls = 24; // 24 × 10s = 240s (sync can take ~3min for large inboxes)
     const poll = setInterval(async () => {
       polls++;
       try {
