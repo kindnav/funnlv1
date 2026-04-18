@@ -6,6 +6,7 @@ import Settings from './pages/Settings';
 import ConnectPage from './pages/ConnectPage';
 import OAuthCallback from './pages/OAuthCallback';
 import Pipeline from './pages/Pipeline';
+import ReviewMode from './pages/ReviewMode';
 import { getMe } from './lib/api';
 import { useEffect } from 'react';
 
@@ -77,6 +78,10 @@ function App() {
               ? <Pipeline user={user} onLogout={handleLogout} />
               : <Navigate to="/" />
           }
+        />
+        <Route
+          path="/review"
+          element={token && user ? <ReviewMode /> : <Navigate to="/" />}
         />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

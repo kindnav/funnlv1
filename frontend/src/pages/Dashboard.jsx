@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -59,6 +59,15 @@ export default function Dashboard({ user, onLogout }) {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Auto-open deal detail if returning from ReviewMode with a deal ID
+  useEffect(() => {
+    if (location.state?.openDealId && deals.length > 0) {
+      const deal = deals.find(d => d.id === location.state.openDealId);
+      if (deal) setSelectedDeal(deal);
+    }
+  }, [location.state, deals]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -193,6 +202,21 @@ export default function Dashboard({ user, onLogout }) {
         >
           <LayoutGrid size={12} />
           <span className="hidden sm:inline">Pipeline</span>
+        </button>
+        <button
+          data-testid="review-mode-btn"
+          onClick={() => navigate('/review')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124,109,250,0.18), rgba(91,77,232,0.1))',
+            border: '1px solid rgba(124,109,250,0.4)',
+            color: '#a89cf7',
+            boxShadow: '0 0 12px rgba(124,109,250,0.15)',
+          }}
+        >
+          <Layers size={12} />
+          <span className="hidden sm:inline">Review Mode</span>
+          <span className="sm:hidden">Review</span>
         </button>
         <a
           data-testid="enable-sending-btn"
