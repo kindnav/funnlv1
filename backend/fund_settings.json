@@ -13,7 +13,7 @@
   "c054bacc-7256-41ab-b613-1379fb8ee883": {
     "fund_name": "Test Fund",
     "thesis": "We invest in pre-seed B2B SaaS",
-    "onboarding_complete": false,
+    "onboarding_complete": true,
     "sectors": "",
     "stages": ""
   },

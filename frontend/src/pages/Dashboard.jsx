@@ -7,6 +7,7 @@ import {
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
 import OnboardingChecklist from '../components/OnboardingChecklist';
+import ProductTour from '../components/ProductTour';
 import { getDeals, getStats, triggerSync, updateDeal, getFundSettings } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -63,6 +64,8 @@ export default function Dashboard({ user, onLogout }) {
   // Onboarding: only show once, only if no deals on first load
   const [showChecklist, setShowChecklist] = useState(false);
   const [checklistReady, setChecklistReady] = useState(false);
+  // Product tour
+  const [showTour, setShowTour] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -73,6 +76,14 @@ export default function Dashboard({ user, onLogout }) {
       if (deal) setSelectedDeal(deal);
     }
   }, [location.state, deals]);
+
+  // Product tour: show after deals load, if not yet dismissed
+  useEffect(() => {
+    if (deals.length > 0 && !showTour && localStorage.getItem('vc_tour_dismissed') !== '1') {
+      const t = setTimeout(() => setShowTour(true), 900);
+      return () => clearTimeout(t);
+    }
+  }, [deals.length]); // eslint-disable-line
 
   const fetchAll = useCallback(async () => {
     try {
@@ -464,6 +475,7 @@ export default function Dashboard({ user, onLogout }) {
                   {['', 'Score', 'Fit %', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action', 'Date'].map((h) => (
                     <th
                       key={h}
+                      data-testid={h === 'Fit %' ? 'fit-pct-header' : undefined}
                       className="border-b border-[rgba(255,255,255,0.07)] px-3 py-2.5 text-[rgba(255,255,255,0.4)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
                     >
                       {h}
@@ -569,6 +581,14 @@ export default function Dashboard({ user, onLogout }) {
       {/* Process email modal */}
       {showModal && (
         <ProcessEmailModal onClose={() => setShowModal(false)} onProcessed={handleProcessed} />
+      )}
+
+      {/* Product tour */}
+      {showTour && (
+        <ProductTour
+          firstDealId={deals[0]?.id}
+          onDismiss={() => setShowTour(false)}
+        />
       )}
     </div>
   );
