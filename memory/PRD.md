@@ -63,7 +63,10 @@ Build a full-stack VC deal flow intelligence tool that:
 - Dashboard nav shows fund name from Settings instead of hardcoded "Future Frontier Capital"
 - Logo initials and nav title computed dynamically from saved fund_name
 
-### 7. Email Sync — Full Root-Cause Fix (LIVE — 2026-04-18)
+### 8. Onboarding — Landing Page, Setup Checklist, Empty States (LIVE — 2026-04-18)
+- **Landing page** replaces old ConnectPage — Signalflow branding, hero with gradient headline, beta banner, HOW IT WORKS (3 steps), FEATURES (6 cards), footer. DM Sans/Mono fonts. Scroll reveal via IntersectionObserver. Mobile responsive.
+- **Setup checklist** shown in Dashboard for new users (0 deals, onboarding not complete). 4 items: Gmail connected / First sync / Fund thesis / First email. Progress bar. Completion state with "Go to Dashboard" CTA. Saves `onboarding_complete` flag via `POST /api/onboarding-complete`.
+- **Empty states**: Loading spinner, no-deals-ever (with Sync Now + Process Email), filter-returns-nothing (with Clear filters), Review Mode animated SVG checkmark "All caught up"
 **Root causes diagnosed and fixed:**
 1. Self-sent email filter removed — users testing with their own Gmail were silently dropping all test emails
 2. Per-email Supabase dedup (100 HTTP requests → 1) — sync now runs in seconds, not 3+ minutes
