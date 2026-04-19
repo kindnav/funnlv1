@@ -130,7 +130,14 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## What's Been Implemented
 
-### 2026-04-19 (Session 4 — Pipeline & Categorization Fix)
+### 2026-04-19 (Session 5 — Contacts System Full Fix)
+- ✅ ROOT CAUSE FOUND: DetailPanel had 2 disconnected sections — 'Save Contact' (only saved contact, didn't update deal) and 'Move Deal To' (only updated deal, never created contact)
+- ✅ FIX: Merged into single 'Categorize Deal' section — 'Add to Pipeline' and 'Save for Review' now do BOTH: update deal status AND call upsertContact in one click
+- ✅ ReviewMode: swipe right (Pipeline) and swipe up (Review) now also call upsertContact
+- ✅ Added backend logging: '[Contact] upsert triggered — user=... email=... status=...'
+- ✅ Contacts page: error banner on fetch failure, console.log diagnostics, Test Contact dev button
+- ✅ 100% test pass rate (9/9 tests passed, 1 skipped due to no New deals in test data)
+
 - ✅ Pipeline Kanban: added Pipeline and Archived columns (deals no longer disappear after swiping)
 - ✅ ReviewMode: fixed status case (`pipeline` → `Pipeline`, `archived` → `Archived`, `Reviewed` → `In Review`)
 - ✅ ReviewMode: toast notifications after each swipe with "View Pipeline" / "View Archived" / "View In Review" action links
