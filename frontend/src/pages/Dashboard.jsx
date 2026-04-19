@@ -181,23 +181,28 @@ export default function Dashboard({ user, onLogout }) {
     <div className="h-screen w-screen flex flex-col bg-[#0c0c12] overflow-hidden" data-testid="dashboard">
       {/* Top Nav */}
       <nav className="h-14 shrink-0 border-b border-[rgba(255,255,255,0.07)] flex items-center px-5 gap-4 bg-[#0c0c12]">
-        <div className="flex items-center gap-2.5 mr-auto">
-          <div
-            className="w-7 h-7 rounded flex items-center justify-center text-white font-bold text-xs shrink-0"
-            style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}
+        {/* Brand — funnl */}
+        <div className="flex items-center gap-2 mr-auto">
+          <span
+            className="text-white font-bold tracking-tight select-none"
+            style={{ fontSize: 22, letterSpacing: '-0.03em' }}
           >
-            {fundName
-              ? fundName.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
-              : 'VC'}
-          </div>
-          <div className="hidden sm:block">
-            <span className="text-white font-semibold text-sm" data-testid="fund-name-display">
-              {fundName || 'Your Fund'}
-            </span>
-            <span className="text-[rgba(255,255,255,0.3)] text-xs ml-2 font-mono tracking-wide">
-              deal flow intelligence
-            </span>
-          </div>
+            funnl
+          </span>
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: '#7c6dfa',
+              border: '1px solid rgba(124,109,250,0.35)',
+              borderRadius: 4,
+              padding: '1px 5px',
+              letterSpacing: '0.08em',
+              lineHeight: 1.8,
+            }}
+          >
+            BETA
+          </span>
         </div>
 
         {/* Gmail status */}

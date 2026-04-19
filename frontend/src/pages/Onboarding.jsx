@@ -196,7 +196,7 @@ function StepHowItWorks({ onComplete }) {
           transition: 'opacity 0.4s ease, transform 0.4s ease',
         }}
       >
-        <h1 className="text-xl font-bold text-white mb-1">Here's how Signalflow works</h1>
+        <h1 className="text-xl font-bold text-white mb-1">Here's how funnl works</h1>
         <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
           Your inbox is being scanned in the background right now.
         </p>
@@ -353,17 +353,22 @@ export default function Onboarding() {
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-5 py-8 sm:py-12">
         {/* Brand header */}
-        <div className="flex items-center gap-2.5 mb-6">
-          <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white"
+        <div className="flex items-center gap-2 mb-6">
+          <span
+            className="text-white font-bold tracking-tight"
+            style={{ fontSize: 22, letterSpacing: '-0.03em' }}
+          >
+            funnl
+          </span>
+          <span
             style={{
-              background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)',
-              boxShadow: '0 0 20px rgba(124,109,250,0.4)',
+              fontSize: 9, fontWeight: 700, color: '#7c6dfa',
+              border: '1px solid rgba(124,109,250,0.35)', borderRadius: 4,
+              padding: '1px 5px', letterSpacing: '0.08em', lineHeight: 1.8,
             }}
           >
-            S
-          </div>
-          <span className="text-white font-semibold">Signalflow</span>
+            BETA
+          </span>
         </div>
 
         {/* Step progress dots */}

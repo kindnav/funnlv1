@@ -178,14 +178,9 @@ export default function ConnectPage() {
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs"
-            style={{ background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)', boxShadow: '0 0 16px rgba(124,109,250,0.4)' }}>
-            S
-          </div>
-          <span className="text-white font-semibold text-sm tracking-tight">Signalflow</span>
-          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ml-1"
-            style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.2)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-white font-bold tracking-tight" style={{ fontSize: 20, letterSpacing: '-0.03em' }}>funnl</span>
+          <span className="px-1.5 py-0.5 rounded" style={{ fontSize: 9, fontWeight: 700, color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.35)', letterSpacing: '0.08em', lineHeight: 1.8 }}>
             BETA
           </span>
         </div>
@@ -296,7 +291,7 @@ export default function ConnectPage() {
               </span>
             </div>
             <p className="text-white font-medium mb-2">
-              Signalflow is free during beta.
+              funnl is free during beta.
             </p>
             <p className="text-sm mb-6" style={{ color: 'rgba(255,255,255,0.45)' }}>
               Connect your Gmail and start triaging your deal flow in under 2 minutes.
@@ -429,7 +424,7 @@ export default function ConnectPage() {
         <footer className="px-6 py-8 text-center"
           style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: "'DM Mono', monospace" }}>
-            Signalflow &nbsp;·&nbsp; Built for emerging fund managers &nbsp;·&nbsp; Privacy &nbsp;·&nbsp; Terms
+            funnl &nbsp;·&nbsp; Built for emerging fund managers &nbsp;·&nbsp; Privacy &nbsp;·&nbsp; Terms
           </p>
         </footer>
       </div>

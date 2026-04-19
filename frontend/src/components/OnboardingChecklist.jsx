@@ -143,7 +143,7 @@ export default function OnboardingChecklist({
             /* ── Checklist state ── */
             <>
               <div className="flex items-center justify-between mb-1">
-                <h2 className="text-white text-lg font-bold">Welcome to Signalflow</h2>
+                <h2 className="text-white text-lg font-bold">Welcome to funnl</h2>
                 <span className="text-xs font-medium"
                   style={{ color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
                   {completedCount}/{totalCount}
