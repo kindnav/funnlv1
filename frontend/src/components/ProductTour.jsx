@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowRight, X, Check } from 'lucide-react';
 
 const PAD = 8;          // px of breathing room around the spotlight
@@ -8,22 +8,32 @@ const STEPS = [
   {
     testId: 'fund-thesis-btn',
     title: 'Fund Focus',
-    body: 'Your investment criteria live here. Claude uses this to score every inbound pitch 0–100 against your specific focus — not a generic algorithm.',
+    body: 'Set your investment thesis here. Claude uses this to score every inbound pitch 0–100 against your specific focus — not a generic algorithm.',
   },
   {
     testId: 'fit-pct-header',
-    title: 'Focus Match Score',
-    body: 'Every email gets a score showing how closely it aligns with your fund focus. Once you set your focus, this shows 0–100. Until then it shows a 1–10 signal quality score.',
+    title: 'AI Match Score',
+    body: 'Every email gets a 0–100 score showing how closely it aligns with your fund focus. Green = strong fit, amber = partial, red = low fit.',
   },
   {
-    testId: '__first_deal__', // swapped out dynamically
-    title: 'One-click Actions',
-    body: 'Click any row to open the deal detail panel. Reject, request more info, or forward to a partner — Claude drafts the email for you in one click.',
+    testId: 'deals-table',
+    title: 'Categorize Deals',
+    body: 'Click any row to open the deal panel. Add to Pipeline, Save for Review, Pass, or Archive — each action automatically saves the founder to your Contacts.',
+  },
+  {
+    testId: 'pipeline-btn',
+    title: 'Pipeline View',
+    body: 'Every categorized deal lives here — Pipeline, In Review, Archived, and Passed — organized as a Kanban board. Nothing ever gets lost.',
+  },
+  {
+    testId: 'contacts-btn',
+    title: 'Contacts',
+    body: 'Founders are automatically saved here whenever you add a deal to Pipeline or Review. Search, add notes, track deal counts, and export to CSV.',
   },
   {
     testId: 'review-mode-btn',
     title: 'Review Mode',
-    body: 'Swipe through pre-scored deals like Tinder. Right = pipeline, left = archive. Fastest way to clear your deal inbox — works great on mobile too.',
+    body: 'Swipe through pre-scored pitches fast. Swipe right → Pipeline, swipe up → Save for Review, swipe left → Archive. Built for mobile triage.',
   },
 ];
 
@@ -45,18 +55,13 @@ function calcTooltipPos(rect) {
   return { top, left };
 }
 
-export default function ProductTour({ firstDealId, onDismiss }) {
+export default function ProductTour({ onDismiss }) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState(null);
   const [visible, setVisible] = useState(false);
 
-  // Swap in the real first-deal testId for step 2 — memoised to avoid
-  // recreating the array on every render (which would break the useEffect deps)
-  const steps = useMemo(() =>
-    STEPS.map((s, i) =>
-      i === 2 ? { ...s, testId: firstDealId ? `deal-row-${firstDealId}` : null } : s
-    ).filter(s => s.testId),
-  [firstDealId]);
+  // All steps have static testIds now
+  const steps = STEPS;
 
   const measure = useCallback(() => {
     const el = document.querySelector(`[data-testid="${steps[step]?.testId}"]`);
@@ -86,12 +91,13 @@ export default function ProductTour({ firstDealId, onDismiss }) {
     else handleDismiss();
   };
 
-  // Close tour — does not persist, so it reappears on next login
+  // "Got it, don't show again" — called when user finishes the last step
   const handleDismiss = () => {
+    localStorage.setItem('vc_tour_dismissed', '1');
     onDismiss();
   };
 
-  // X button — same as dismiss
+  // X button or "Skip tour" — session-only, tour shows again next login
   const handleClose = () => onDismiss();
 
   if (!steps[step]) return null;
@@ -213,7 +219,7 @@ export default function ProductTour({ firstDealId, onDismiss }) {
               }}
             >
               {isLast
-                ? <><Check size={12} /> Got it</>
+                ? <><Check size={12} /> Got it, don't show again</>
                 : <>Next <ArrowRight size={12} /></>
               }
             </button>

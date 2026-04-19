@@ -77,14 +77,9 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [location.state, deals]);
 
-  // Product tour — show every login once deals are loaded
-  // Clear any old "dismissed" flag so every session shows the tour
+  // Product tour — show on every login until user clicks "Got it, don't show again"
   useEffect(() => {
-    localStorage.removeItem('vc_tour_dismissed');
-  }, []);
-
-  useEffect(() => {
-    if (deals.length > 0 && !showTour) {
+    if (deals.length > 0 && !showTour && localStorage.getItem('vc_tour_dismissed') !== '1') {
       const t = setTimeout(() => setShowTour(true), 900);
       return () => clearTimeout(t);
     }
@@ -594,10 +589,7 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Product tour */}
       {showTour && (
-        <ProductTour
-          firstDealId={deals[0]?.id}
-          onDismiss={() => setShowTour(false)}
-        />
+        <ProductTour onDismiss={() => setShowTour(false)} />
       )}
     </div>
   );

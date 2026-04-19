@@ -130,7 +130,13 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## What's Been Implemented
 
-### 2026-04-19 (Session 6 — Product Tour always-on)
+### 2026-04-19 (Session 7 — Updated Product Tour)
+- ✅ Tour expanded from 4 → 6 steps: Fund Focus → AI Match Score → Categorize Deals → Pipeline View → Contacts → Review Mode
+- ✅ "Got it, don't show again" restored on the final step (writes vc_tour_dismissed to localStorage)
+- ✅ X button and "Skip tour" remain session-only (tour reappears next login)
+- ✅ Removed dependency on firstDealId — deals-table used instead of dynamic deal-row selector
+- ✅ Confirmed via screenshots: step 1 (Fund Focus spotlight) and step 6 (Review Mode + "Got it, don't show again" button)
+
 - ✅ Tour now shows on EVERY login (removed localStorage gate + cleared old dismissed flag)
 - ✅ "Don't show again" replaced with "Skip tour" (session-only close, no persistence)
 - ✅ "Got it, don't show again" final button renamed to "Got it"
