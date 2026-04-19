@@ -7,6 +7,12 @@ import { updateDeal, upsertContact } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 
+const normalizeStatus = (s) => {
+  if (!s) return 'New';
+  const m = { pipeline: 'Pipeline', archived: 'Archived', Reviewed: 'In Review', reviewed: 'In Review' };
+  return m[s] || s;
+};
+
 const CATEGORY_STYLES = {
   'Founder pitch': 'bg-[#7c6dfa]/10 text-[#7c6dfa] border-[#7c6dfa]/30',
   'Warm intro': 'bg-[#4da6ff]/10 text-[#4da6ff] border-[#4da6ff]/30',
@@ -377,26 +383,86 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
           {/* Status actions */}
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] space-y-2">
             <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
-              Status
+              Move Deal To
             </p>
             <button
-              data-testid="action-mark-reviewed"
-              onClick={() => handleAction('status', 'Reviewed', 'reviewed')}
-              disabled={saving === 'reviewed' || deal.status === 'Reviewed'}
-              className="w-full flex items-center gap-2 bg-[#3dd68c]/10 hover:bg-[#3dd68c]/15 border border-[#3dd68c]/20 text-[#3dd68c] text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              data-testid="action-add-pipeline"
+              onClick={() => handleAction('status', 'Pipeline', 'pipeline')}
+              disabled={saving === 'pipeline' || deal.status === 'Pipeline'}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              style={
+                normalizeStatus(deal.status) === 'Pipeline'
+                  ? { background: 'rgba(124,109,250,0.2)', border: '1px solid rgba(124,109,250,0.5)', color: '#a89cf7' }
+                  : { background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.2)', color: '#7c6dfa' }
+              }
             >
               <Check size={14} />
-              {deal.status === 'Reviewed' ? 'Already Reviewed' : 'Mark as Reviewed'}
+              {normalizeStatus(deal.status) === 'Pipeline' ? '✓ In Pipeline' : 'Add to Pipeline'}
+            </button>
+            <button
+              data-testid="action-mark-reviewed"
+              onClick={() => handleAction('status', 'In Review', 'reviewed')}
+              disabled={saving === 'reviewed' || normalizeStatus(deal.status) === 'In Review'}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              style={
+                normalizeStatus(deal.status) === 'In Review'
+                  ? { background: 'rgba(245,166,35,0.18)', border: '1px solid rgba(245,166,35,0.5)', color: '#f5a623' }
+                  : { background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.2)', color: '#f5a623' }
+              }
+            >
+              <Check size={14} />
+              {normalizeStatus(deal.status) === 'In Review' ? '✓ In Review' : 'Save for Review'}
+            </button>
+            <button
+              data-testid="action-pass"
+              onClick={() => handleAction('status', 'Passed', 'passed')}
+              disabled={saving === 'passed' || normalizeStatus(deal.status) === 'Passed'}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              style={
+                normalizeStatus(deal.status) === 'Passed'
+                  ? { background: 'rgba(240,82,82,0.15)', border: '1px solid rgba(240,82,82,0.4)', color: '#f05252' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }
+              }
+            >
+              <XCircle size={14} />
+              {normalizeStatus(deal.status) === 'Passed' ? '✓ Passed' : 'Pass'}
             </button>
             <button
               data-testid="action-archive"
               onClick={() => handleAction('status', 'Archived', 'archive')}
-              disabled={saving === 'archive' || deal.status === 'Archived'}
-              className="w-full flex items-center gap-2 bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.07)] text-[rgba(255,255,255,0.5)] hover:text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              disabled={saving === 'archive' || normalizeStatus(deal.status) === 'Archived'}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
+              style={
+                normalizeStatus(deal.status) === 'Archived'
+                  ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.6)' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)' }
+              }
             >
               <Archive size={14} />
-              {deal.status === 'Archived' ? 'Already Archived' : 'Archive'}
+              {normalizeStatus(deal.status) === 'Archived' ? '✓ Archived' : 'Archive'}
             </button>
+            {normalizeStatus(deal.status) === 'Archived' && (
+              <button
+                data-testid="action-restore"
+                onClick={() => handleAction('status', 'New', 'restore')}
+                disabled={saving === 'restore'}
+                className="w-full flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                style={{ background: 'rgba(124,109,250,0.06)', border: '1px solid rgba(124,109,250,0.15)', color: 'rgba(255,255,255,0.4)' }}
+              >
+                <Check size={12} /> Restore to Inbox
+              </button>
+            )}
+            {normalizeStatus(deal.status) === 'Passed' && (
+              <button
+                data-testid="action-reconsider"
+                onClick={() => handleAction('status', 'In Review', 'reconsider')}
+                disabled={saving === 'reconsider'}
+                className="w-full flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)', color: 'rgba(255,255,255,0.4)' }}
+              >
+                <Check size={12} /> Reconsider — move to In Review
+              </button>
+            )}
           </div>
 
           {/* Open in Gmail */}

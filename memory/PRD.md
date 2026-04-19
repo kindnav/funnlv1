@@ -130,7 +130,14 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## What's Been Implemented
 
-### 2026-04-19 (Session 3 — Contacts System)
+### 2026-04-19 (Session 4 — Pipeline & Categorization Fix)
+- ✅ Pipeline Kanban: added Pipeline and Archived columns (deals no longer disappear after swiping)
+- ✅ ReviewMode: fixed status case (`pipeline` → `Pipeline`, `archived` → `Archived`, `Reviewed` → `In Review`)
+- ✅ ReviewMode: toast notifications after each swipe with "View Pipeline" / "View Archived" / "View In Review" action links
+- ✅ DetailPanel: "Status" section replaced with "Move Deal To" — 4 buttons (Add to Pipeline, Save for Review, Pass, Archive) with active-state highlighting + Restore/Reconsider
+- ✅ Pipeline.jsx: `normalizeStatus()` helper handles old lowercase status values for backward compat
+- ✅ No deal is ever lost — every status maps to a visible Pipeline column
+
 - ✅ Contacts system fully implemented and tested
 - ✅ Contacts table created in Supabase (SQL run manually)
 - ✅ POST /api/contacts/upsert — creates or updates contact from deal, dedup by email, increments deal_count

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, X, Star, ArrowUp, ChevronRight } from 'lucide-react';
 import { getDeals, updateDeal } from '../lib/api';
+import { toast } from '../components/ui/sonner';
 
 const SWIPE_X = 110;
 const SWIPE_Y = 90;
@@ -175,8 +176,22 @@ export default function ReviewMode() {
     setAnimating(true);
 
     // Optimistic API update
-    const statusMap = { pipeline: 'pipeline', archive: 'archived', review: 'Reviewed' };
+    const statusMap = { pipeline: 'Pipeline', archive: 'Archived', review: 'In Review' };
     updateDeal(deal.id, { status: statusMap[action] }).catch(console.error);
+
+    // Toast notification
+    const toastConfig = {
+      pipeline: { msg: 'Added to Pipeline', label: 'View Pipeline', bg: '#3dd68c' },
+      archive:  { msg: 'Archived', label: 'View Archived', bg: '#f05252' },
+      review:   { msg: 'Saved for Review', label: 'View In Review', bg: '#f5a623' },
+    };
+    const tc = toastConfig[action];
+    if (tc) {
+      toast(tc.msg, {
+        action: { label: tc.label, onClick: () => navigate('/pipeline') },
+        duration: 3500,
+      });
+    }
 
     // Fly-off animation
     const card = cardRef.current;
@@ -243,10 +258,10 @@ export default function ReviewMode() {
       label.textContent = 'Archived ✕';
       label.style.color = '#f05252';
     } else if (isUp) {
-      overlay.style.background = 'linear-gradient(to bottom, rgba(77,166,255,0.45) 0%, rgba(77,166,255,0.1) 60%, transparent 100%)';
+      overlay.style.background = 'linear-gradient(to bottom, rgba(245,166,35,0.45) 0%, rgba(245,166,35,0.1) 60%, transparent 100%)';
       overlay.style.opacity = opacity;
-      label.textContent = 'Marked for Review ↑';
-      label.style.color = '#4da6ff';
+      label.textContent = 'Saved for Review ✓';
+      label.style.color = '#f5a623';
     } else {
       overlay.style.opacity = '0';
     }
