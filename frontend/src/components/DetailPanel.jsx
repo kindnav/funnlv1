@@ -301,49 +301,6 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             </div>
           )}
 
-          {/* ── Contact actions ── */}
-          <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] space-y-2">
-            <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
-              Save Contact
-            </p>
-            <button
-              data-testid="contact-add-pipeline-btn"
-              disabled={saving === 'pipeline'}
-              onClick={async () => {
-                setSaving('pipeline');
-                try {
-                  const res = await upsertContact(deal, 'In Pipeline');
-                  if (res?.returning) toast.info('Returning founder — contact updated');
-                  else toast.success(`Contact saved: ${res?.name || 'Founder'} from ${res?.company || 'their company'}`);
-                } catch { toast.error('Could not save contact'); }
-                setSaving(null);
-              }}
-              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-50"
-              style={{ background: 'rgba(124,109,250,0.1)', border: '1px solid rgba(124,109,250,0.3)', color: '#7c6dfa' }}
-            >
-              <UserPlus size={14} />
-              {saving === 'pipeline' ? 'Saving…' : 'Add to Pipeline'}
-            </button>
-            <button
-              data-testid="contact-save-review-btn"
-              disabled={saving === 'review'}
-              onClick={async () => {
-                setSaving('review');
-                try {
-                  const res = await upsertContact(deal, 'In Review');
-                  if (res?.returning) toast.info('Returning founder — contact updated');
-                  else toast.success(`Contact saved: ${res?.name || 'Founder'} from ${res?.company || 'their company'}`);
-                } catch { toast.error('Could not save contact'); }
-                setSaving(null);
-              }}
-              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-50"
-              style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)', color: '#f5a623' }}
-            >
-              <Bookmark size={14} />
-              {saving === 'review' ? 'Saving…' : 'Save for Review'}
-            </button>
-          </div>
-
           {/* ── One-click Actions ── */}
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
             <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
@@ -380,29 +337,63 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             </div>
           </div>
 
-          {/* Status actions */}
+          {/* ── Categorize Deal (also saves contact) ── */}
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] space-y-2">
             <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
-              Move Deal To
+              Categorize Deal
             </p>
+            {/* Add to Pipeline — also creates/updates contact */}
             <button
               data-testid="action-add-pipeline"
-              onClick={() => handleAction('status', 'Pipeline', 'pipeline')}
-              disabled={saving === 'pipeline' || deal.status === 'Pipeline'}
+              disabled={saving === 'pipeline'}
+              onClick={async () => {
+                if (saving === 'pipeline') return;
+                setSaving('pipeline');
+                try {
+                  console.log('[Contact] Add to Pipeline triggered for:', deal.sender_email, 'deal:', deal.id);
+                  await updateDeal(deal.id, { status: 'Pipeline' });
+                  onDealUpdated({ ...deal, status: 'Pipeline' });
+                  const res = await upsertContact(deal, 'In Pipeline');
+                  console.log('[Contact] Upsert result:', res);
+                  if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
+                  else toast.success(`Added to Pipeline · Contact saved`);
+                } catch (e) {
+                  console.error('[Contact] Add to Pipeline error:', e);
+                  toast.error('Action failed — check console');
+                }
+                setSaving(null);
+              }}
               className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
               style={
                 normalizeStatus(deal.status) === 'Pipeline'
                   ? { background: 'rgba(124,109,250,0.2)', border: '1px solid rgba(124,109,250,0.5)', color: '#a89cf7' }
-                  : { background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.2)', color: '#7c6dfa' }
+                  : { background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.25)', color: '#7c6dfa' }
               }
             >
-              <Check size={14} />
-              {normalizeStatus(deal.status) === 'Pipeline' ? '✓ In Pipeline' : 'Add to Pipeline'}
+              <UserPlus size={14} />
+              {saving === 'pipeline' ? 'Saving…' : normalizeStatus(deal.status) === 'Pipeline' ? '✓ In Pipeline' : 'Add to Pipeline'}
             </button>
+            {/* Save for Review — also creates/updates contact */}
             <button
               data-testid="action-mark-reviewed"
-              onClick={() => handleAction('status', 'In Review', 'reviewed')}
-              disabled={saving === 'reviewed' || normalizeStatus(deal.status) === 'In Review'}
+              disabled={saving === 'reviewed'}
+              onClick={async () => {
+                if (saving === 'reviewed') return;
+                setSaving('reviewed');
+                try {
+                  console.log('[Contact] Save for Review triggered for:', deal.sender_email, 'deal:', deal.id);
+                  await updateDeal(deal.id, { status: 'In Review' });
+                  onDealUpdated({ ...deal, status: 'In Review' });
+                  const res = await upsertContact(deal, 'In Review');
+                  console.log('[Contact] Upsert result:', res);
+                  if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
+                  else toast.success(`Saved for Review · Contact saved`);
+                } catch (e) {
+                  console.error('[Contact] Save for Review error:', e);
+                  toast.error('Action failed — check console');
+                }
+                setSaving(null);
+              }}
               className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-40"
               style={
                 normalizeStatus(deal.status) === 'In Review'
@@ -410,9 +401,10 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
                   : { background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.2)', color: '#f5a623' }
               }
             >
-              <Check size={14} />
-              {normalizeStatus(deal.status) === 'In Review' ? '✓ In Review' : 'Save for Review'}
+              <Bookmark size={14} />
+              {saving === 'reviewed' ? 'Saving…' : normalizeStatus(deal.status) === 'In Review' ? '✓ In Review' : 'Save for Review'}
             </button>
+            {/* Pass */}
             <button
               data-testid="action-pass"
               onClick={() => handleAction('status', 'Passed', 'passed')}
@@ -427,6 +419,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
               <XCircle size={14} />
               {normalizeStatus(deal.status) === 'Passed' ? '✓ Passed' : 'Pass'}
             </button>
+            {/* Archive */}
             <button
               data-testid="action-archive"
               onClick={() => handleAction('status', 'Archived', 'archive')}

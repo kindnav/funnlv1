@@ -1327,10 +1327,14 @@ async def upsert_contact(data: dict, current_user: dict = Depends(get_current_us
     deal = data.get('deal', {})
 
     email = deal.get('sender_email') or deal.get('founder_email')
+    logger.info(f'[Contact] upsert triggered — user={uid} email={email} status={contact_status}')
+
     if not email:
+        logger.warning(f'[Contact] Skipping — no email in deal payload: {list(deal.keys())}')
         raise HTTPException(status_code=400, detail="No email found on deal")
 
     existing = await sb_select('contacts', {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
+    logger.info(f'[Contact] Existing contacts found: {len(existing) if existing else 0}')
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -1368,6 +1372,10 @@ async def upsert_contact(data: dict, current_user: dict = Depends(get_current_us
             'deal_count': 1,
         }
         result = await sb_insert('contacts', new_contact)
+        if result:
+            logger.info(f'[Contact] Created successfully: id={result.get("id")} name={new_contact.get("name")}')
+        else:
+            logger.error(f'[Contact] Insert returned None — check Supabase logs')
         contact_id = result.get('id') if result else None
         return {'status': 'created', 'contact_id': contact_id, 'returning': False,
                 'name': new_contact['name'], 'company': new_contact['company']}

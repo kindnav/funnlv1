@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Download, Users, LogOut, BookOpen, Settings as SettingsIcon,
-  LayoutGrid, RefreshCw,
+  LayoutGrid, RefreshCw, FlaskConical,
 } from 'lucide-react';
-import { getContacts, getFundSettings } from '../lib/api';
+import { getContacts, getFundSettings, upsertContact } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ContactDetailPanel from '../components/ContactDetailPanel';
 
@@ -38,14 +38,49 @@ export default function Contacts({ user, onLogout }) {
   const [filter, setFilter] = useState('All');
   const [selectedContact, setSelectedContact] = useState(null);
   const [fundName, setFundName] = useState('');
+  const [fetchError, setFetchError] = useState(null);
+  const [testingContact, setTestingContact] = useState(false);
 
   const loadContacts = useCallback(() => {
     setLoading(true);
+    setFetchError(null);
+    console.log('[Contacts] Fetching contacts for user...');
     getContacts()
-      .then(data => setContacts(data || []))
-      .catch(() => toast.error('Failed to load contacts'))
+      .then(data => {
+        console.log('[Contacts] Supabase returned:', (data || []).length, 'contacts');
+        if (data?.length) console.log('[Contacts] First contact:', data[0]);
+        setContacts(data || []);
+      })
+      .catch(err => {
+        console.error('[Contacts] Fetch error:', err);
+        setFetchError(err?.message || 'Failed to load contacts');
+        toast.error('Failed to load contacts');
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  // Test contact creation button — creates a hardcoded contact directly
+  const createTestContact = async () => {
+    setTestingContact(true);
+    try {
+      const fakeDeal = {
+        sender_email: `test-${Date.now()}@testcompany.com`,
+        sender_name: 'Test Founder',
+        company_name: 'Test Company',
+        relevance_score: 8,
+        received_date: new Date().toISOString(),
+      };
+      console.log('[Contacts] Creating test contact with deal:', fakeDeal);
+      const res = await upsertContact(fakeDeal, 'In Pipeline');
+      console.log('[Contacts] Test contact result:', res);
+      toast.success(`Test contact created: ${res?.name} (${res?.status})`);
+      loadContacts();
+    } catch (e) {
+      console.error('[Contacts] Test contact error:', e);
+      toast.error(`Test failed: ${e?.message || 'Unknown error'}`);
+    }
+    setTestingContact(false);
+  };
 
   useEffect(() => {
     loadContacts();
@@ -141,7 +176,17 @@ export default function Contacts({ user, onLogout }) {
             <span className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{s.label}</span>
           </div>
         ))}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            data-testid="test-contact-btn"
+            onClick={createTestContact}
+            disabled={testingContact}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs border transition-all disabled:opacity-50"
+            style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)', background: 'rgba(124,109,250,0.06)' }}
+            title="Dev tool: create a test contact directly in Supabase"
+          >
+            <FlaskConical size={11} /> {testingContact ? 'Creating…' : 'Test Contact'}
+          </button>
           <button onClick={loadContacts} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs border transition-all" style={{ color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.07)' }}>
             <RefreshCw size={11} /> Refresh
           </button>
@@ -200,6 +245,12 @@ export default function Contacts({ user, onLogout }) {
             </div>
           </div>
 
+          {/* Error banner */}
+          {fetchError && (
+            <div className="mx-4 mt-3 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(240,82,82,0.08)', border: '1px solid rgba(240,82,82,0.3)', color: '#f05252' }}>
+              <strong>Fetch error:</strong> {fetchError} — check browser console for details
+            </div>
+          )}
           {/* Table */}
           <div className="flex-1 overflow-auto">
             {loading ? (

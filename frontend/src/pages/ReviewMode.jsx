@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, X, Star, ArrowUp, ChevronRight } from 'lucide-react';
-import { getDeals, updateDeal } from '../lib/api';
+import { getDeals, updateDeal, upsertContact } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 
 const SWIPE_X = 110;
@@ -178,6 +178,15 @@ export default function ReviewMode() {
     // Optimistic API update
     const statusMap = { pipeline: 'Pipeline', archive: 'Archived', review: 'In Review' };
     updateDeal(deal.id, { status: statusMap[action] }).catch(console.error);
+
+    // Create/update contact for pipeline and review actions
+    if (action === 'pipeline' || action === 'review') {
+      const contactStatus = action === 'pipeline' ? 'In Pipeline' : 'In Review';
+      console.log('[Contact] ReviewMode trigger:', action, 'for:', deal.sender_email);
+      upsertContact(deal, contactStatus)
+        .then(res => console.log('[Contact] ReviewMode upsert result:', res))
+        .catch(e => console.error('[Contact] ReviewMode upsert error:', e));
+    }
 
     // Toast notification
     const toastConfig = {
