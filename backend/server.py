@@ -1071,7 +1071,14 @@ async def sync_status_endpoint(current_user: dict = Depends(get_current_user)):
     progress = _sync_progress.get(uid, {})
     users = await sb_select('users', {'id': f'eq.{uid}'})
     last_synced = users[0].get('last_synced') if users else None
-    return {**progress, 'last_synced': last_synced, 'is_syncing': uid in _syncing_users}
+    return {
+        'step': progress.get('step', 0),
+        'message': progress.get('message', ''),
+        'total': progress.get('total', 0),
+        'current': progress.get('current', 0),
+        'last_synced': last_synced,
+        'is_syncing': uid in _syncing_users,
+    }
 
 
 

@@ -130,6 +130,21 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## What's Been Implemented
 
+### 2026-04-19 (Session 8 — Gmail Pipeline Rebuild & AI Extraction Validation)
+- ✅ Noise filters: List-Unsubscribe header check, automated sender detection (exact list + prefix + name keywords), noisy subject keywords, body < 50 chars, self-sent
+- ✅ Gmail query updated: `in:inbox -from:me -category:promotions -category:social -category:updates`, maxResults=50
+- ✅ Claude prompt rebuilt: 13-field extraction (category, relevance_score, warm_or_cold, traction_mentioned, deck_attached, stage, check_size_requested, founder background, urgency_score, next_action, summary, tags, confidence) + thesis fields
+- ✅ Removed "Cold outreach" category — cold founder pitches now use "Founder pitch" (warm/cold captured via warm_or_cold field separately)
+- ✅ deck_attached=true now includes verbal offers ("happy to send the deck") in addition to actual attachments/links
+- ✅ /api/test-extraction endpoint: 10 hardcoded test emails, 10/10 pass rate validated
+- ✅ /api/sync/status: always returns step/message/total/current/last_synced/is_syncing (even when idle)
+- ✅ Real-time sync progress: _run_background_sync sets step 1 ("Connecting"), sync_user_emails sets step 2 ("Found N emails"), step 3 per email ("Processing..."), step 5 ("Complete")
+- ✅ Dashboard sync button: polls /sync/status every 5s, shows live message during sync, "synced X ago" in toolbar
+- ✅ 500ms rate limit delay between email Claude calls
+- ✅ Claude fallback: if Claude fails → category="Unprocessed", relevance_score=0, no silent drops
+
+
+
 ### 2026-04-19 (Session 7 — Updated Product Tour)
 - ✅ Tour expanded from 4 → 6 steps: Fund Focus → AI Match Score → Categorize Deals → Pipeline View → Contacts → Review Mode
 - ✅ "Got it, don't show again" restored on the final step (writes vc_tour_dismissed to localStorage)
