@@ -388,28 +388,10 @@ async def init_database():
     exists = await sb_table_exists('users')
     if exists:
         logger.info("Database tables verified")
-        await migrate_schema()
         await migrate_sample_thesis()
         await seed_sample_data()
         return True
-
-    # Try Management API with service_role key
-    logger.info("Tables not found – attempting auto-creation via Management API...")
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f'https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query',
-            headers={'Authorization': f'Bearer {SUPABASE_KEY}', 'Content-Type': 'application/json'},
-            json={'query': MIGRATION_SQL}
-        )
-        if resp.status_code in (200, 201):
-            logger.info("Tables created via Management API")
-            await seed_sample_data()
-            return True
-
-    logger.warning("=" * 60)
-    logger.warning("DB SETUP REQUIRED – Run this SQL in Supabase Dashboard > SQL Editor:")
-    logger.warning(MIGRATION_SQL)
-    logger.warning("=" * 60)
+    logger.warning("DB tables not found — please run the schema SQL in Supabase SQL Editor")
     return False
 
 async def seed_sample_data():
@@ -425,53 +407,6 @@ async def seed_sample_data():
         await sb_insert('deals', deal)
     logger.info("Sample data seeded")
 
-SCHEMA_MIGRATION_SQL = """
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS thesis_match_score INTEGER;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_strengths TEXT[];
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_weaknesses TEXT[];
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
-
-CREATE TABLE IF NOT EXISTS contacts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) NOT NULL,
-  name TEXT,
-  email TEXT,
-  company TEXT,
-  role TEXT,
-  sector TEXT,
-  stage TEXT,
-  geography TEXT,
-  intro_source TEXT,
-  warm_or_cold TEXT,
-  contact_status TEXT DEFAULT 'In Review',
-  relevance_score INTEGER,
-  notes TEXT,
-  tags TEXT[],
-  deal_count INTEGER DEFAULT 1,
-  first_contacted TIMESTAMPTZ,
-  last_contacted TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, email)
-);
-"""
-
-SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', SUPABASE_KEY)
-
-async def migrate_schema():
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f'https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query',
-                headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}', 'Content-Type': 'application/json'},
-                json={'query': SCHEMA_MIGRATION_SQL}
-            )
-            if resp.status_code in (200, 201):
-                logger.info("Schema migration applied")
-            else:
-                logger.warning(f"Schema migration may need manual SQL: {resp.status_code}")
-    except Exception as e:
-        logger.error(f"Schema migration error: {e}")
 
 SAMPLE_THESIS = {
     "00000000-0000-0000-0001-000000000001": {
@@ -1467,6 +1402,7 @@ async def get_contact_deals(contact_id: str, current_user: dict = Depends(get_cu
 
 
 
+@api_router.get("/stats")
 async def get_stats(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     IRRELEVANT_CATS = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
