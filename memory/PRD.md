@@ -130,7 +130,12 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## What's Been Implemented
 
-### 2026-04-19 (Session 5 — Contacts System Full Fix)
+### 2026-04-19 (Session 6 — Product Tour always-on)
+- ✅ Tour now shows on EVERY login (removed localStorage gate + cleared old dismissed flag)
+- ✅ "Don't show again" replaced with "Skip tour" (session-only close, no persistence)
+- ✅ "Got it, don't show again" final button renamed to "Got it"
+- ✅ Confirmed via screenshot: tour spotlight fires correctly on Fund Focus (step 1 of 4)
+
 - ✅ ROOT CAUSE FOUND: DetailPanel had 2 disconnected sections — 'Save Contact' (only saved contact, didn't update deal) and 'Move Deal To' (only updated deal, never created contact)
 - ✅ FIX: Merged into single 'Categorize Deal' section — 'Add to Pipeline' and 'Save for Review' now do BOTH: update deal status AND call upsertContact in one click
 - ✅ ReviewMode: swipe right (Pipeline) and swipe up (Review) now also call upsertContact

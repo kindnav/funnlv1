@@ -77,9 +77,14 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [location.state, deals]);
 
-  // Product tour: show after deals load, if not yet dismissed
+  // Product tour — show every login once deals are loaded
+  // Clear any old "dismissed" flag so every session shows the tour
   useEffect(() => {
-    if (deals.length > 0 && !showTour && localStorage.getItem('vc_tour_dismissed') !== '1') {
+    localStorage.removeItem('vc_tour_dismissed');
+  }, []);
+
+  useEffect(() => {
+    if (deals.length > 0 && !showTour) {
       const t = setTimeout(() => setShowTour(true), 900);
       return () => clearTimeout(t);
     }

@@ -86,13 +86,12 @@ export default function ProductTour({ firstDealId, onDismiss }) {
     else handleDismiss();
   };
 
-  // "Got it, don't show again" — sets the flag permanently
+  // Close tour — does not persist, so it reappears on next login
   const handleDismiss = () => {
-    localStorage.setItem('vc_tour_dismissed', '1');
     onDismiss();
   };
 
-  // X button — close without setting flag (reappears next login)
+  // X button — same as dismiss
   const handleClose = () => onDismiss();
 
   if (!steps[step]) return null;
@@ -162,7 +161,7 @@ export default function ProductTour({ firstDealId, onDismiss }) {
             <button
               data-testid="tour-close-btn"
               onClick={handleClose}
-              title="Close — shows again next login"
+              title="Close tour"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.22)', padding: 0, lineHeight: 1 }}
             >
               <X size={13} />
@@ -194,11 +193,11 @@ export default function ProductTour({ firstDealId, onDismiss }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {!isLast ? (
               <button
-                data-testid="tour-dont-show-btn"
+                data-testid="tour-skip-btn"
                 onClick={handleDismiss}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.2)', padding: 0 }}
               >
-                Don't show again
+                Skip tour
               </button>
             ) : <span />}
 
@@ -214,7 +213,7 @@ export default function ProductTour({ firstDealId, onDismiss }) {
               }}
             >
               {isLast
-                ? <><Check size={12} /> Got it, don't show again</>
+                ? <><Check size={12} /> Got it</>
                 : <>Next <ArrowRight size={12} /></>
               }
             </button>
