@@ -31,6 +31,7 @@ export const processEmail = (data) =>
 export const updateDeal = (id, data) =>
   fetchJson(`${API}/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 export const triggerSync = () => fetchJson(`${API}/sync`, { method: 'POST' });
+export const getSyncStatus = () => fetchJson(`${API}/sync/status`);
 export const getSettings = () => fetchJson(`${API}/settings`);
 export const getFundSettings = () => fetchJson(`${API}/fund-settings`);
 export const saveFundSettings = (data) =>

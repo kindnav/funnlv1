@@ -89,6 +89,16 @@ oauth_states: dict[str, dict] = {}
 # Track which users have an active background sync running
 _syncing_users: set = set()
 
+# Real-time sync progress per user — polled by frontend
+_sync_progress: dict = {}
+
+def _set_sync_progress(user_id: str, step: int, message: str, total: int = 0, current: int = 0):
+    _sync_progress[user_id] = {
+        'step': step, 'message': message,
+        'total': total, 'current': current,
+        'ts': datetime.now(timezone.utc).isoformat(),
+    }
+
 # ── Supabase helpers ────────────────────────────────────────────────────────────
 async def sb_select(table: str, params: dict = None) -> list:
     async with httpx.AsyncClient(timeout=15) as client:
@@ -552,98 +562,205 @@ def build_gmail_service(user: dict):
     )
     return gbuild('gmail', 'v1', credentials=creds), creds
 
-# ── Claude AI ────────────────────────────────────────────────────────────────────
-CLAUDE_SYSTEM = (
-    "You are an AI analyst for a venture capital fund. Analyze inbound emails and extract "
-    "structured data. Return ONLY valid JSON, no markdown, no preamble.\n\n"
-    "Extract these fields:\n"
-    "- company_name: string or null\n"
-    "- founder_name: string or null\n"
-    "- founder_role: string or null\n"
-    '- category: one of "Founder pitch","Warm intro","Cold outreach","LP / investor relations",'
-    '"Portfolio company update","Service provider / vendor","Recruiter / hiring","Press / media",'
-    '"Event invitation","Student / informational request","Spam / irrelevant","Other"\n'
-    '- warm_or_cold: "Warm","Cold","Unknown"\n'
-    "- sector: string or null\n"
-    "- stage: string or null\n"
-    "- check_size_requested: string or null\n"
-    "- geography: string or null\n"
-    "- deck_attached: boolean\n"
-    "- traction_mentioned: boolean\n"
-    "- intro_source: string or null\n"
-    "- summary: 2-3 sentence string\n"
-    "- relevance_score: 1-10 integer (8-10=strong pitch/warm intro,5-7=cold pitch/LP,2-4=vendor/recruiter,1=spam)\n"
-    "- urgency_score: 1-10 integer\n"
-    '- next_action: one of "Review now","Forward to partner","Archive","Ignore","Request more info",'
-    '"Schedule meeting","Add to pipeline","Follow up later"\n'
-    '- confidence: "High","Medium","Low"\n'
-    "- tags: array of up to 5 strings\n"
-    "- thesis_match_score: 0-100 integer or null (only output when fund thesis context is provided; "
-    "80+=strong fit, 50=neutral, 30-=poor fit; null if no thesis provided)\n"
-    "- fit_strengths: array of 2-3 short strings — specific reasons this deal FITS the fund thesis "
-    "(empty array if no thesis provided)\n"
-    "- fit_weaknesses: array of 2-3 short strings — specific reasons this deal does NOT fit the fund thesis "
-    "(empty array if no thesis provided)\n"
-    "- match_reasoning: 1-2 sentence string summarizing overall thesis alignment (null if no thesis provided)"
+# ── Noise filters ──────────────────────────────────────────────────────────────
+# Exact known automated sender addresses to always skip
+AUTOMATED_SENDERS_EXACT = frozenset([
+    'no-reply@accounts.google.com', 'noreply@accounts.google.com',
+    'no-reply@google.com', 'noreply@google.com', 'no-reply@notifications.google.com',
+    'no-reply@mail.google.com', 'no-reply@security.google.com',
+    'no-reply@linkedin.com', 'notifications-noreply@linkedin.com',
+    'messages-noreply@linkedin.com', 'jobs-noreply@linkedin.com',
+    'notification@linkedin.com', 'noreply@twitter.com', 'noreply@facebook.com',
+    'noreply@instagram.com', 'noreply@github.com', 'noreply@notion.so',
+    'noreply@slack.com', 'noreply@zoom.us', 'noreply@calendly.com',
+    'noreply@eventbrite.com', 'noreply@dropbox.com', 'noreply@docusign.com',
+    'noreply@stripe.com', 'noreply@docsend.com',
+])
+
+# Email address prefixes that always indicate automated senders
+AUTOMATED_EMAIL_PREFIXES = (
+    'noreply@', 'no-reply@', 'donotreply@', 'do-not-reply@',
+    'notifications@', 'alerts@', 'mailer@', 'bounce@',
+    'system@', 'automated@', 'automailer@', 'auto@',
 )
 
-async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str, fund_ctx: dict = None) -> dict:
-    # Build fund-aware system prompt
-    system = CLAUDE_SYSTEM
-    if fund_ctx:
-        ctx_lines = []
-        if fund_ctx.get('fund_name'):
-            ctx_lines.append(f"Fund Name: {fund_ctx['fund_name']}")
-        if fund_ctx.get('fund_type'):
-            ctx_lines.append(f"Fund Type: {fund_ctx['fund_type']}")
-        if fund_ctx.get('thesis'):
-            ctx_lines.append(f"Investment Thesis: {fund_ctx['thesis']}")
-        if fund_ctx.get('stages'):
-            stages = fund_ctx['stages'] if isinstance(fund_ctx['stages'], str) else ', '.join(fund_ctx['stages'])
-            ctx_lines.append(f"Preferred Stages: {stages}")
-        if fund_ctx.get('sectors'):
-            ctx_lines.append(f"Sector Focus: {fund_ctx['sectors']}")
-        if fund_ctx.get('check_size'):
-            ctx_lines.append(f"Typical Check Size: {fund_ctx['check_size']}")
-        if ctx_lines:
-            fund_block = (
-                "\n\nFUND THESIS CONTEXT — calibrate relevance_score to this fund:\n"
-                + "\n".join(ctx_lines)
-                + "\n\nScore 8-10 only if the email aligns with the fund's thesis and stage/sector focus. "
-                "Score 1-3 for off-thesis, vendor, recruiter, or spam emails."
-            )
-            system = CLAUDE_SYSTEM + fund_block
+# Sender name keywords that indicate automated / non-human senders
+AUTOMATED_NAME_KEYWORDS = (
+    'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+    'notifications', 'mailer-daemon', 'mailer daemon',
+    'system', 'automated', 'auto-mailer',
+)
 
-    prompt = f"Analyze this email for a VC fund:\n\nFrom: {sender_name} <{sender_email}>\nSubject: {subject}\n\nBody:\n{body[:3500]}"
+# Subject line keywords that indicate noise (case-insensitive)
+NOISY_SUBJECT_KEYWORDS = (
+    'unsubscribe', 'weekly digest', 'monthly digest', 'newsletter',
+    'your receipt', 'order confirmation', 'invoice #', 'payment confirmation',
+    'verify your email', 'confirm your email', 'password reset',
+    'security alert', 'sign-in attempt', '[automated]', 'auto-reply',
+    'out of office', 'on vacation', 'automatic reply',
+)
+
+def is_automated_sender(from_email: str, from_name: str) -> bool:
+    """Return True only if the sender is clearly automated/bot — never block real humans."""
+    email_l = from_email.lower().strip()
+    name_l = (from_name or '').lower().strip()
+    # Exact match against known automated addresses
+    if email_l in AUTOMATED_SENDERS_EXACT:
+        return True
+    # Email starts with no-reply / system prefix
+    if any(email_l.startswith(p) for p in AUTOMATED_EMAIL_PREFIXES):
+        return True
+    # Name contains hard automated keywords
+    if any(kw in name_l for kw in AUTOMATED_NAME_KEYWORDS):
+        return True
+    return False
+
+def is_noisy_subject(subject: str) -> bool:
+    """Return True if subject indicates an automated/irrelevant email."""
+    s = subject.lower()
+    return any(kw in s for kw in NOISY_SUBJECT_KEYWORDS)
+
+MIN_BODY_LENGTH = 50  # skip near-empty automated pings
+CLAUDE_SYSTEM = """You are an expert venture capital analyst with 10 years of experience at top-tier venture funds. Your job is to analyze inbound emails received by VC funds, angel investors, student-run venture funds, and startup accelerators.
+
+You understand the difference between a high-signal founder pitch and noise. You know what warm intros look like. You can identify LP communications, portfolio updates, service vendors, and recruiters instantly.
+
+Your output will be used to automatically triage and score deal flow for investment professionals. Accuracy is critical.
+
+Return ONLY valid JSON. No markdown. No explanation. No preamble. Just the raw JSON object."""
+
+async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str,
+                        received_date: str = None, attachments: str = None,
+                        fund_ctx: dict = None) -> dict:
+    # Build fund context block
+    fund_block_lines = []
+    if fund_ctx:
+        if fund_ctx.get('fund_name'):   fund_block_lines.append(f"Fund Name: {fund_ctx['fund_name']}")
+        if fund_ctx.get('fund_type'):   fund_block_lines.append(f"Fund Type: {fund_ctx['fund_type']}")
+        if fund_ctx.get('thesis'):      fund_block_lines.append(f"Investment Thesis: {fund_ctx['thesis']}")
+        if fund_ctx.get('stages'):
+            s = fund_ctx['stages'] if isinstance(fund_ctx['stages'], str) else ', '.join(fund_ctx['stages'])
+            fund_block_lines.append(f"Preferred Stages: {s}")
+        if fund_ctx.get('sectors'):     fund_block_lines.append(f"Sector Focus: {fund_ctx['sectors']}")
+        if fund_ctx.get('check_size'):  fund_block_lines.append(f"Typical Check Size: {fund_ctx['check_size']}")
+
+    fund_block = "\n".join(fund_block_lines) if fund_block_lines else (
+        "This fund receives emails from founders seeking investment, LPs, warm intro connections, "
+        "portfolio companies, service vendors, recruiters, press, event organizers, co-investors, "
+        "and students seeking advice."
+    )
+
+    thesis_instruction = ""
+    if fund_block_lines:
+        thesis_instruction = (
+            "\nAlso compute fund-fit fields:\n"
+            "- thesis_match_score: 0-100 integer (80+=strong fit, 50=neutral, 30-=poor). null if no thesis.\n"
+            "- fit_strengths: array of 2-3 short strings why this fits the thesis. [] if no thesis.\n"
+            "- fit_weaknesses: array of 2-3 short strings of thesis gaps. [] if no thesis.\n"
+            "- match_reasoning: 1-2 sentence thesis alignment summary. null if no thesis."
+        )
+
+    prompt = (
+        "Analyze this email received by an investment fund and extract every piece of relevant information.\n\n"
+        f"EMAIL METADATA:\nReceived: {received_date or 'Unknown'}\n"
+        f"From: {sender_name} <{sender_email}>\nSubject: {subject}\n"
+        f"Attachments: {attachments or 'none'}\n\n"
+        f"EMAIL BODY:\n{body[:2500]}\n\n"
+        f"FUND CONTEXT:\n{fund_block}\n\n"
+        "EXTRACTION INSTRUCTIONS:\n\n"
+        "1. CATEGORY — classify into exactly one:\n"
+        '"Founder pitch" — founder directly pitching their startup for investment\n'
+        '"Warm intro" — email from a mutual connection introducing a founder/company\n'
+        '"Cold outreach" — founder emailing with no mutual connection mentioned\n'
+        '"LP / investor relations" — LP, potential LP, or investor relations communication\n'
+        '"Portfolio company update" — update from a company the fund has invested in\n'
+        '"Accelerator / program application" — startup applying to an accelerator program\n'
+        '"Co-investor / syndicate" — another fund or angel about co-investing\n'
+        '"Service provider / vendor" — company selling services to the fund or portfolio\n'
+        '"Recruiter / hiring" — recruiter about placing candidates or finding talent\n'
+        '"Press / media" — journalist or media outlet requesting interview or comment\n'
+        '"Event invitation" — conference, demo day, networking event, pitch competition\n'
+        '"Student / informational request" — student requesting a call or advice about VC\n'
+        '"Spam / irrelevant" — mass outreach, automated emails, completely irrelevant\n'
+        '"Other" — anything that does not fit above\n\n'
+        "2. RELEVANCE SCORING (1-10):\n"
+        "9-10: Warm intro from credible source to strong founder with traction. Repeat founder with prior exit. Top co-investor.\n"
+        "7-8: Cold pitch with traction or strong team. Warm intro from known connection. Strong portfolio update. LP from credible investor.\n"
+        "5-6: Cold pitch with interesting idea but no traction. Mixed portfolio update. Accelerator application with potential.\n"
+        "3-4: Student request. Press inquiry. Relevant event invitation. General ecosystem networking.\n"
+        "1-2: Service vendor/recruiter cold outreach. Spam. Automated notifications.\n\n"
+        '3. warm_or_cold: "Warm" if mentions mutual connection/prior meeting/referral/third-party intro. "Cold" if pure cold outreach. "Unknown" if unclear.\n\n'
+        "4. traction_mentioned=true if email mentions MRR, ARR, GMV, revenue, customer counts, growth rates, retention, named customers, waitlist, downloads, press coverage, or any growth metric.\n\n"
+        "5. deck_attached=true if any attachment is .pdf/.pptx/.ppt/.key or filename contains deck/pitch/presentation/overview/memo, OR body links to docsend.com, pitch.com, canva.com/deck, slides.google.com.\n\n"
+        '6. stage: "Pre-idea", "Pre-seed", "Seed", "Series A", "Series B+", "Growth", or "Unknown"\n\n'
+        "7. check_size_requested: dollar amount if mentioned (e.g. '$2,000,000' or '$2M seed'), null if not.\n\n"
+        "8. urgency_score 1-10: 8-10=closing imminently/this week. 5-7=active fundraise/timeline. 2-4=general interest. 1=no urgency.\n\n"
+        "9. next_action — exactly one of: 'Review now', 'Schedule meeting', 'Forward to partner', 'Request more info', 'Add to pipeline', 'Follow up later', 'Archive', 'Ignore'\n\n"
+        "10. summary: 2-3 sentences. Reference actual company name, founder name, most important signal (traction number, intro source, prior exit, red flag). Be specific not generic.\n"
+        'BAD: "A founder is pitching their startup."\n'
+        'GOOD: "Marcus Chen, 2nd-time founder with a prior Salesforce exit, is raising a $3M seed for VaultAI — AI contract intelligence. Introduced by Priya Sharma. Claims $45k MRR growing 40% MoM. Strong warm signal, high priority."\n\n'
+        "11. tags: Up to 6 short descriptive tags. Good examples: 'YC founder', 'repeat founder', 'prior exit', 'enterprise SaaS', 'B2B', 'climate tech', 'fintech', 'health tech', 'AI infrastructure', 'strong traction', 'warm intro', 'seed round'. BAD: 'startup', 'founder', 'email', 'pitch'.\n\n"
+        '12. confidence: "High" (clear signals), "Medium" (some ambiguity), "Low" (very short/unclear).\n'
+        f"{thesis_instruction}\n"
+        "RETURN THIS EXACT JSON STRUCTURE AND NOTHING ELSE:\n"
+        '{\n'
+        '  "company_name": string or null,\n'
+        '  "founder_name": string or null,\n'
+        '  "founder_role": string or null,\n'
+        '  "category": string,\n'
+        '  "warm_or_cold": string,\n'
+        '  "sector": string or null,\n'
+        '  "stage": string or null,\n'
+        '  "check_size_requested": string or null,\n'
+        '  "geography": string or null,\n'
+        '  "deck_attached": boolean,\n'
+        '  "traction_mentioned": boolean,\n'
+        '  "intro_source": string or null,\n'
+        '  "summary": string,\n'
+        '  "relevance_score": integer 1-10,\n'
+        '  "urgency_score": integer 1-10,\n'
+        '  "next_action": string,\n'
+        '  "confidence": string,\n'
+        '  "tags": array of strings,\n'
+        '  "thesis_match_score": integer 0-100 or null,\n'
+        '  "fit_strengths": array of strings,\n'
+        '  "fit_weaknesses": array of strings,\n'
+        '  "match_reasoning": string or null\n'
+        '}'
+    )
+
     try:
-        logger.info(f'[CLAUDE] Analyzing: "{subject}" from {sender_email}')
+        logger.info(f'[CLAUDE] Processing: "{subject}" from {sender_email}')
         msg = await claude_client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=1500,
-            system=system,
+            model="claude-sonnet-4-20250514",
+            max_tokens=1200,
+            system=CLAUDE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
         text = msg.content[0].text.strip()
-        logger.debug(f'[CLAUDE] Raw response for "{subject}": {text[:200]}')
         text = re.sub(r'^```(?:json)?\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
         result = json.loads(text)
-        logger.info(f'[CLAUDE] Result for "{subject}": category={result.get("category")} score={result.get("relevance_score")}')
+        logger.info(f'[CLAUDE] Success: "{subject}" | category={result.get("category")} score={result.get("relevance_score")} confidence={result.get("confidence")}')
         return result
+    except json.JSONDecodeError as e:
+        logger.error(f'[CLAUDE] JSON parse FAILED for "{subject}": {e}')
+        return _claude_fallback()
     except Exception as e:
-        logger.error(f'[CLAUDE] Analysis FAILED for "{subject}" from {sender_email}: {e}')
-        return {
-            "category": "Unprocessed",
-            "summary": "AI extraction failed — review manually",
-            "relevance_score": 0,
-            "urgency_score": 0,
-            "next_action": "Review now",
-            "confidence": "Low",
-            "tags": [],
-            "warm_or_cold": "Unknown",
-            "deck_attached": False,
-            "traction_mentioned": False,
-        }
+        logger.error(f'[CLAUDE] FAILED for "{subject}" from {sender_email}: {e}')
+        return _claude_fallback()
+
+def _claude_fallback() -> dict:
+    return {
+        "category": "Unprocessed", "summary": "AI extraction failed — review manually",
+        "relevance_score": 0, "urgency_score": 0, "next_action": "Review now",
+        "confidence": "Low", "tags": [], "warm_or_cold": "Unknown",
+        "deck_attached": False, "traction_mentioned": False,
+        "thesis_match_score": None, "fit_strengths": [], "fit_weaknesses": [], "match_reasoning": None,
+        "company_name": None, "founder_name": None, "founder_role": None,
+        "sector": None, "stage": None, "check_size_requested": None,
+        "geography": None, "intro_source": None,
+    }
 
 # ── Deal processing ───────────────────────────────────────────────────────────────
 # Categories to skip entirely — not relevant to any fund
@@ -680,7 +797,12 @@ async def process_and_save_email(
     # In force_replace mode: upsert will update the existing record via the unique constraint
     # (user_id, thread_id) — no explicit delete needed
 
-    ai = await analyze_email(sender_name, sender_email, subject, body, fund_ctx)
+    ai = await analyze_email(
+        sender_name=sender_name, sender_email=sender_email,
+        subject=subject, body=body,
+        received_date=received_date,
+        fund_ctx=fund_ctx,
+    )
 
     # NOTE: We NO LONGER drop spam emails at ingestion.
     # Spam is saved to DB so nothing is permanently lost.
@@ -787,16 +909,19 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
             })
             logger.info(f'[SYNC] Token refreshed successfully. New expiry: {new_expiry}')
 
-        # Build Gmail query params
-        params = {'userId': 'me', 'maxResults': 10 if force_reprocess else 100, 'labelIds': ['INBOX']}
+        # Build Gmail query params — optimized for investment fund inboxes
+        base_q = 'in:inbox -from:me -category:promotions -category:social -category:updates'
+        params = {'userId': 'me', 'maxResults': 50, 'labelIds': ['INBOX']}
         if not force_full_scan and not is_initial and not force_reprocess and user.get('last_synced'):
             try:
                 ls = datetime.fromisoformat(user['last_synced'].replace('Z', '+00:00'))
-                params['q'] = f'after:{int(ls.timestamp())}'
+                params['q'] = f'{base_q} after:{int(ls.timestamp())}'
                 logger.info(f'[SYNC] Incremental scan after {user["last_synced"][:19]}')
             except Exception as e:
                 logger.warning(f'[SYNC] Could not parse last_synced ({e}), falling back to full scan')
+                params['q'] = base_q
         else:
+            params['q'] = base_q
             logger.info(f'[SYNC] Full scan (force_full={force_full_scan}, initial={is_initial}, force_reprocess={force_reprocess})')
 
         logger.info(f'[SYNC] Fetching messages from Gmail API...')
@@ -822,7 +947,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
 
         processed = 0
         skipped_dup = 0
-        skipped_newsletter = 0
+        skipped_noise = 0
         errors = 0
 
         for i, ref in enumerate(messages):
@@ -842,36 +967,63 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                     skipped_dup += 1
                     continue
 
-                # Skip newsletters (unsubscribe headers etc.)
-                if is_newsletter(headers):
-                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SKIP (newsletter): "{subject_for_log}"')
-                    existing_thread_ids.add(thread_id)
-                    skipped_newsletter += 1
-                    continue
-
                 from_header = get_header(headers, 'From') or ''
-                raw_from = from_header
-                if '<' in raw_from:
-                    from_name = raw_from.split('<')[0].strip().strip('"')
-                    from_email = raw_from.split('<')[1].strip('> ')
+                if '<' in from_header:
+                    from_name = from_header.split('<')[0].strip().strip('"')
+                    from_email = from_header.split('<')[1].strip('> ')
                 else:
-                    from_email = raw_from.strip()
+                    from_email = from_header.strip()
                     from_name = from_email.split('@')[0] if '@' in from_email else from_email
 
-                # NOTE: Self-sent filter REMOVED. Users may send test pitch emails from their own
-                # account and expect them to appear. Claude will classify content appropriately.
-
                 subject = get_header(headers, 'Subject') or '(No Subject)'
+                body = extract_body(msg.get('payload', {}))
+
+                # ── NOISE FILTERS — run BEFORE Claude to save API credits ──
+                # Filter 1: List-Unsubscribe header (bulk/marketing emails)
+                if is_newsletter(headers):
+                    logger.info(f'[SYNC] [{i+1}] SKIP (unsubscribe-header): "{subject_for_log}"')
+                    existing_thread_ids.add(thread_id)
+                    skipped_noise += 1
+                    continue
+
+                # Filter 2: Known automated sender address or name pattern
+                if is_automated_sender(from_email, from_name):
+                    logger.info(f'[SYNC] [{i+1}] SKIP (automated-sender): {from_email}')
+                    existing_thread_ids.add(thread_id)
+                    skipped_noise += 1
+                    continue
+
+                # Filter 3: Noisy subject line keywords
+                if is_noisy_subject(subject):
+                    logger.info(f'[SYNC] [{i+1}] SKIP (noisy-subject): "{subject_for_log}"')
+                    existing_thread_ids.add(thread_id)
+                    skipped_noise += 1
+                    continue
+
+                # Filter 4: Body too short (automated pings / empty notifications)
+                if len(body.strip()) < MIN_BODY_LENGTH:
+                    logger.info(f'[SYNC] [{i+1}] SKIP (body-too-short {len(body.strip())} chars): "{subject_for_log}"')
+                    existing_thread_ids.add(thread_id)
+                    skipped_noise += 1
+                    continue
+
+                # Filter 5: Self-sent (exact email match)
+                if from_email.lower() == (user.get('email') or '').lower():
+                    logger.info(f'[SYNC] [{i+1}] SKIP (self-sent): "{subject_for_log}"')
+                    existing_thread_ids.add(thread_id)
+                    skipped_noise += 1
+                    continue
+
                 date_str = get_header(headers, 'Date')
                 try:
                     received_date = parsedate_to_datetime(date_str).isoformat() if date_str else None
                 except Exception:
                     received_date = None
 
-                body = extract_body(msg.get('payload', {}))
                 gmail_link = f'https://mail.google.com/mail/u/0/#inbox/{thread_id}'
 
-                logger.info(f'[SYNC] [{i+1}/{len(messages)}] NEW — processing: "{subject}" from {from_email}')
+                logger.info(f'[SYNC] [{i+1}/{len(messages)}] SENDING TO CLAUDE: "{subject}" from {from_email}')
+                _set_sync_progress(user_id, 3, f'Processing: "{subject[:60]}"', len(messages), i + 1)
 
                 result = await process_and_save_email(
                     user_id=user_id, sender_name=from_name,
@@ -879,27 +1031,31 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                     body=body, thread_id=thread_id,
                     message_id=ref['id'], received_date=received_date,
                     gmail_link=gmail_link, fund_ctx=fund_ctx,
-                    skip_dedup=True,  # dedup already done above with the set
-                    force_replace=force_reprocess,  # delete-before-insert when force=true
+                    skip_dedup=True,
+                    force_replace=force_reprocess,
                 )
-                # Always add to set so we don't reprocess same thread in this batch
                 existing_thread_ids.add(thread_id)
                 if result:
                     processed += 1
-                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED deal: "{subject}" | category={result.get("category")}')
+                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED: "{subject}" | category={result.get("category")}')
                 else:
                     logger.warning(f'[SYNC] [{i+1}/{len(messages)}] Save returned None for: "{subject}"')
+                # 500ms delay between emails to avoid rate limits
+                await asyncio.sleep(0.5)
             except Exception as e:
                 logger.error(f'[SYNC] [{i+1}/{len(messages)}] Error processing message {ref["id"]}: {e}')
                 errors += 1
                 continue
 
         await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
+        fetched = len(messages)
         logger.info(
             f'[SYNC] ── Complete for {user.get("email")} — '
-            f'saved={processed}, skipped_dup={skipped_dup}, '
-            f'skipped_newsletter={skipped_newsletter}, errors={errors} ──'
+            f'fetched={fetched}, saved={processed}, skipped_dup={skipped_dup}, '
+            f'filtered_noise={skipped_noise}, errors={errors} ──'
         )
+        logger.info(f'[SYNC] Fetched: {fetched} emails from Gmail | Filtered as noise: {skipped_noise} | Sending to Claude: {fetched - skipped_dup - skipped_noise}')
+        _set_sync_progress(user_id, 5, f'Sync complete — {processed} new deal{"s" if processed != 1 else ""} added', processed, processed)
         return processed
     except Exception as e:
         err = str(e)
@@ -907,6 +1063,17 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         if 'invalid_scope' in err or 'invalid_grant' in err or 'unauthorized' in err.lower():
             raise
         return 0
+
+@api_router.get("/sync/status")
+async def sync_status_endpoint(current_user: dict = Depends(get_current_user)):
+    """Returns current sync progress + last_synced time for the nav bar."""
+    uid = current_user['user_id']
+    progress = _sync_progress.get(uid, {})
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    last_synced = users[0].get('last_synced') if users else None
+    return {**progress, 'last_synced': last_synced, 'is_syncing': uid in _syncing_users}
+
+
 
 async def sync_all_users():
     users = await sb_select('users', {'refresh_token': 'not.is.null'})
@@ -1476,6 +1643,92 @@ async def mark_onboarding_complete(current_user: dict = Depends(get_current_user
 async def db_status():
     exists = await sb_table_exists('users')
     return {"tables_ready": exists}
+
+TEST_EMAILS = [
+    {"id": 1, "name": "Strong warm intro", "from": "sarah@topfund.vc", "name_str": "Sarah Partner",
+     "subject": "Intro: Marcus Chen / VaultAI",
+     "body": "Hi, wanted to connect you with Marcus who is building VaultAI. Former Google PM, 2nd time founder, prior exit to Salesforce. $45k MRR growing 40% MoM. Raising $3M seed. I've known Marcus for 5 years and think very highly of him.",
+     "expected": {"category": "Warm intro", "relevance_score_min": 9, "warm_or_cold": "Warm", "traction_mentioned": True}},
+    {"id": 2, "name": "Cold pitch with traction", "from": "anika@greenloop.io", "name_str": "Anika Patel",
+     "subject": "GreenLoop — B2B climate infrastructure, raising seed",
+     "body": "Hi, I'm building GreenLoop, a B2B marketplace connecting industrial waste producers with circular economy processors. Former Google PM and Stanford Climate Fellow. 15 paying customers, $20k MRR, growing 3x quarter over quarter. Raising $1.5M pre-seed. Happy to send our deck.",
+     "expected": {"category": "Founder pitch", "relevance_score_min": 7, "warm_or_cold": "Cold", "traction_mentioned": True}},
+    {"id": 3, "name": "Weak cold pitch no traction", "from": "idea@gmail.com", "name_str": "Idea Guy",
+     "subject": "Revolutionary app idea looking for funding",
+     "body": "Hi I have an amazing idea for an app that will completely disrupt the food delivery space. I need $500k to build it. Please let me know if you are interested in being my investor.",
+     "expected": {"category": "Founder pitch", "relevance_score_max": 3, "warm_or_cold": "Cold", "traction_mentioned": False}},
+    {"id": 4, "name": "Service vendor", "from": "sales@accountingfirm.com", "name_str": "Sales Team",
+     "subject": "Accounting services for your portfolio companies",
+     "body": "Hi, we provide accounting and tax services specifically for VC-backed startups. We work with over 200 portfolio companies across top tier funds. Book a free 15 minute consultation today.",
+     "expected": {"category": "Service provider / vendor", "relevance_score_max": 2}},
+    {"id": 5, "name": "LP communication", "from": "david@familyoffice.com", "name_str": "David Kim",
+     "subject": "Re: Fund III Q2 update questions",
+     "body": "Hi, following up on the Q2 update you sent last month. Had a few questions about the portfolio performance metrics and wanted to discuss a potential commitment to Fund IV.",
+     "expected": {"category": "LP / investor relations", "relevance_score_min": 6, "warm_or_cold": "Warm"}},
+    {"id": 6, "name": "Portfolio update", "from": "ceo@portfolioco.com", "name_str": "CEO Portfolioco",
+     "subject": "Acme Co Monthly Update March",
+     "body": "Hi team, sharing our March update. ARR hit $1.2M, up 22% MoM. Hired 3 engineers this month. Closing our Series A in June, 2 term sheets already in hand. Would love introductions to healthcare focused growth funds.",
+     "expected": {"category": "Portfolio company update", "traction_mentioned": True}},
+    {"id": 7, "name": "Recruiter", "from": "jordan@talentfirm.com", "name_str": "Jordan Recruiter",
+     "subject": "Top ML engineers available for your portfolio companies",
+     "body": "Hi, I have 12 senior ML engineers available for immediate placement at Series A to C companies. All ex-FAANG. No placement fee for your first hire this quarter.",
+     "expected": {"category": "Recruiter / hiring", "relevance_score_max": 2}},
+    {"id": 8, "name": "Event invitation", "from": "events@techsummit.com", "name_str": "TechSummit Events",
+     "subject": "Speaking invitation TechSummit 2026",
+     "body": "We would love to invite you to speak on an early stage investing panel at TechSummit 2026 in San Francisco on June 15th. 500 attendees expected including founders and investors from across the ecosystem.",
+     "expected": {"category": "Event invitation", "relevance_score_max": 4}},
+    {"id": 9, "name": "Student request", "from": "student@stanford.edu", "name_str": "Stanford Student",
+     "subject": "Coffee chat request learning about venture capital",
+     "body": "Hi, I am a junior at Stanford studying computer science and I am very interested in breaking into venture capital after graduation. Would you be open to a 20 minute Zoom call to share your experience and any advice you might have?",
+     "expected": {"category": "Student / informational request", "relevance_score_max": 3}},
+    {"id": 10, "name": "Co-investor", "from": "partner@angelnetwork.com", "name_str": "Angel Partner",
+     "subject": "Co-invest opportunity climate tech seed round",
+     "body": "Hi, we have a deal we think you would be a great fit to co-invest on. Climate infrastructure company, $8M seed round, we are leading with $3M and looking for $1M to $2M from strategic co-investors. Strong team with 2 prior climate exits. Happy to send the deck and set up a call this week.",
+     "expected": {"category": "Co-investor / syndicate", "relevance_score_min": 7, "deck_attached": True}},
+]
+
+@api_router.get("/test-extraction")
+async def test_extraction(current_user: dict = Depends(get_current_user)):
+    """Run all 10 benchmark emails through Claude and return pass/fail results."""
+    results = []
+    for t in TEST_EMAILS:
+        try:
+            ai = await analyze_email(
+                sender_name=t["name_str"], sender_email=t["from"],
+                subject=t["subject"], body=t["body"],
+            )
+            expected = t["expected"]
+            checks = {}
+            if "category" in expected:
+                checks["category"] = {"pass": ai.get("category") == expected["category"],
+                                       "expected": expected["category"], "actual": ai.get("category")}
+            if "relevance_score_min" in expected:
+                checks["relevance_score_min"] = {"pass": (ai.get("relevance_score") or 0) >= expected["relevance_score_min"],
+                                                   "expected": f">= {expected['relevance_score_min']}", "actual": ai.get("relevance_score")}
+            if "relevance_score_max" in expected:
+                checks["relevance_score_max"] = {"pass": (ai.get("relevance_score") or 99) <= expected["relevance_score_max"],
+                                                   "expected": f"<= {expected['relevance_score_max']}", "actual": ai.get("relevance_score")}
+            if "warm_or_cold" in expected:
+                checks["warm_or_cold"] = {"pass": ai.get("warm_or_cold") == expected["warm_or_cold"],
+                                           "expected": expected["warm_or_cold"], "actual": ai.get("warm_or_cold")}
+            if "traction_mentioned" in expected:
+                checks["traction_mentioned"] = {"pass": ai.get("traction_mentioned") == expected["traction_mentioned"],
+                                                  "expected": expected["traction_mentioned"], "actual": ai.get("traction_mentioned")}
+            if "deck_attached" in expected:
+                checks["deck_attached"] = {"pass": ai.get("deck_attached") == expected["deck_attached"],
+                                             "expected": expected["deck_attached"], "actual": ai.get("deck_attached")}
+            all_pass = all(c["pass"] for c in checks.values())
+            results.append({
+                "test_id": t["id"], "name": t["name"], "overall_pass": all_pass,
+                "checks": checks, "ai_output": ai,
+            })
+        except Exception as e:
+            results.append({"test_id": t["id"], "name": t["name"], "overall_pass": False,
+                             "error": str(e), "checks": {}, "ai_output": {}})
+    passed = sum(1 for r in results if r["overall_pass"])
+    return {"passed": passed, "total": len(results), "pass_rate": f"{passed}/{len(results)}", "results": results}
+
+
 
 # ── App setup ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)

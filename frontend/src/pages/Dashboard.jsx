@@ -8,7 +8,7 @@ import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
 import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
-import { getDeals, getStats, triggerSync, updateDeal, getFundSettings } from '../lib/api';
+import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -39,6 +39,15 @@ const StatusDot = ({ status }) => {
   return <div className="w-2 h-2 rounded-full bg-[rgba(255,255,255,0.15)]" />;
 };
 
+const fmtLastSynced = (ts) => {
+  if (!ts) return null;
+  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
 const fmtDate = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
@@ -59,6 +68,8 @@ export default function Dashboard({ user, onLogout }) {
   const [search, setSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const [syncMessage, setSyncMessage] = useState('');
+  const [lastSynced, setLastSynced] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   // Onboarding: only show once, only if no deals on first load
@@ -87,13 +98,14 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, s, f] = await Promise.all([getDeals(), getStats(), getFundSettings()]);
+      const [d, s, f, status] = await Promise.all([getDeals(), getStats(), getFundSettings(), getSyncStatus().catch(() => null)]);
       if (d) setDeals(d);
       if (s) setStats(s);
       if (f) {
         setFundSettings(f);
         if (f.fund_name) setFundName(f.fund_name);
       }
+      if (status?.last_synced) setLastSynced(status.last_synced);
     } finally {
       setLoading(false);
     }
@@ -137,34 +149,38 @@ export default function Dashboard({ user, onLogout }) {
     if (isSyncing) return;
     setIsSyncing(true);
     setSyncResult(null);
+    setSyncMessage('Connecting to Gmail...');
     const dealsCountBefore = deals.length;
     try {
       await triggerSync();
     } catch (e) {
-      // Even if the trigger call itself fails, don't block the user
       console.warn('Sync trigger error:', e.message);
     }
-    // Sync runs in the background — poll every 10s for up to 4 minutes
-    setSyncResult({ status: 'background' });
     let polls = 0;
-    const maxPolls = 24; // 24 × 10s = 240s (sync can take ~3min for large inboxes)
+    const maxPolls = 36; // 36 × 5s = 180s
     const poll = setInterval(async () => {
       polls++;
       try {
-        const [d, s] = await Promise.all([getDeals(), getStats()]);
+        const [status, d, s] = await Promise.all([
+          getSyncStatus().catch(() => null),
+          getDeals(),
+          getStats(),
+        ]);
+        if (status?.message) setSyncMessage(status.message);
+        if (status?.last_synced) setLastSynced(status.last_synced);
         if (d) setDeals(d);
         if (s) setStats(s);
-        const newDeals = (d || []).length - dealsCountBefore;
-        if (polls >= maxPolls) {
+        const newDeals = Math.max(0, (d || []).length - dealsCountBefore);
+        const done = polls >= maxPolls || status?.step === 5;
+        if (done) {
           clearInterval(poll);
           setIsSyncing(false);
-          setSyncResult({ status: 'done', new_deals: Math.max(0, newDeals) });
-          setTimeout(() => setSyncResult(null), 6000);
+          setSyncResult({ status: 'done', new_deals: newDeals });
+          setSyncMessage(newDeals > 0 ? `${newDeals} new deal${newDeals !== 1 ? 's' : ''} added` : 'All caught up');
+          setTimeout(() => { setSyncResult(null); setSyncMessage(''); }, 8000);
         }
-      } catch (_) {
-        // ignore poll errors
-      }
-    }, 10000);
+      } catch (_) {}
+    }, 5000);
   };
 
   const handleProcessed = (newDeal) => {
@@ -352,6 +368,12 @@ export default function Dashboard({ user, onLogout }) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Last synced time */}
+          {lastSynced && !isSyncing && (
+            <span className="text-[10px] font-mono hidden md:block" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              synced {fmtLastSynced(lastSynced)}
+            </span>
+          )}
           <button
             data-testid="sync-now-btn"
             onClick={handleSync}
@@ -361,7 +383,7 @@ export default function Dashboard({ user, onLogout }) {
               background: 'rgba(61,214,140,0.08)',
               border: '1px solid rgba(61,214,140,0.25)',
               color: '#3dd68c',
-            } : syncResult?.status === 'background' ? {
+            } : isSyncing ? {
               background: 'rgba(77,166,255,0.08)',
               border: '1px solid rgba(77,166,255,0.25)',
               color: '#4da6ff',
@@ -372,14 +394,12 @@ export default function Dashboard({ user, onLogout }) {
             }}
           >
             <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">
-              {isSyncing && syncResult?.status !== 'background'
-                ? 'Triggering...'
-                : syncResult?.status === 'background'
-                  ? 'Syncing inbox...'
-                  : syncResult?.status === 'done'
-                    ? `Synced${syncResult.new_deals > 0 ? ` · ${syncResult.new_deals} new` : ' · Up to date'}`
-                    : 'Sync Now'}
+            <span className="hidden sm:inline max-w-[160px] truncate">
+              {isSyncing
+                ? (syncMessage || 'Connecting to Gmail...')
+                : syncResult?.status === 'done'
+                  ? `Synced · ${syncMessage || (syncResult.new_deals > 0 ? `${syncResult.new_deals} new` : 'Up to date')}`
+                  : 'Sync Now'}
             </span>
           </button>
           <button
