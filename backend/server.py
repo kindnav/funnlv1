@@ -669,9 +669,8 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
         f"FUND CONTEXT:\n{fund_block}\n\n"
         "EXTRACTION INSTRUCTIONS:\n\n"
         "1. CATEGORY — classify into exactly one:\n"
-        '"Founder pitch" — founder directly pitching their startup for investment\n'
-        '"Warm intro" — email from a mutual connection introducing a founder/company\n'
-        '"Cold outreach" — founder emailing with no mutual connection mentioned\n'
+        '"Founder pitch" — founder directly pitching their startup for investment, whether cold or warm. Use this whenever the primary intent is to raise capital from a founder, regardless of how they found you.\n'
+        '"Warm intro" — email from a THIRD PARTY (mutual connection, advisor, existing investor) introducing a founder/company. The email is written by the introducer, not the founder.\n'
         '"LP / investor relations" — LP, potential LP, or investor relations communication\n'
         '"Portfolio company update" — update from a company the fund has invested in\n'
         '"Accelerator / program application" — startup applying to an accelerator program\n'
@@ -691,7 +690,7 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
         "1-2: Service vendor/recruiter cold outreach. Spam. Automated notifications.\n\n"
         '3. warm_or_cold: "Warm" if mentions mutual connection/prior meeting/referral/third-party intro. "Cold" if pure cold outreach. "Unknown" if unclear.\n\n'
         "4. traction_mentioned=true if email mentions MRR, ARR, GMV, revenue, customer counts, growth rates, retention, named customers, waitlist, downloads, press coverage, or any growth metric.\n\n"
-        "5. deck_attached=true if any attachment is .pdf/.pptx/.ppt/.key or filename contains deck/pitch/presentation/overview/memo, OR body links to docsend.com, pitch.com, canva.com/deck, slides.google.com.\n\n"
+        "5. deck_attached=true if: (a) any attachment is .pdf/.pptx/.ppt/.key or filename contains deck/pitch/presentation/overview/memo, OR (b) body links to docsend.com, pitch.com, canva.com/deck, slides.google.com, OR (c) body mentions 'happy to send the deck', 'can share our deck', 'send you our pitch', 'deck attached', 'sending the deck', 'share the deck', 'link to our deck', or similar offers/offers to provide a pitch deck.\n\n"
         '6. stage: "Pre-idea", "Pre-seed", "Seed", "Series A", "Series B+", "Growth", or "Unknown"\n\n'
         "7. check_size_requested: dollar amount if mentioned (e.g. '$2,000,000' or '$2M seed'), null if not.\n\n"
         "8. urgency_score 1-10: 8-10=closing imminently/this week. 5-7=active fundraise/timeline. 2-4=general interest. 1=no urgency.\n\n"
@@ -930,6 +929,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         )
         messages = resp.get('messages', [])
         logger.info(f'[SYNC] Gmail API returned {len(messages)} messages to check')
+        _set_sync_progress(user_id, 2, f'Found {len(messages)} emails — filtering noise...', len(messages), 0)
 
         if not messages:
             await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
@@ -1463,6 +1463,7 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
 async def _run_background_sync(user_id: str, force_reprocess: bool = False):
     """Run a full inbox scan in the background, releasing the HTTP response immediately."""
     try:
+        _set_sync_progress(user_id, 1, 'Connecting to Gmail...')
         count = await sync_user_emails(user_id, force_full_scan=True, force_reprocess=force_reprocess)
         logger.info(f'[SYNC] Background sync complete: {count} new deals for user {user_id}')
     except Exception as e:
