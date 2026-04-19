@@ -1345,11 +1345,17 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     if not deals:
         return {'total': 0, 'founder_pitches': 0, 'avg_relevance': 0.0, 'high_score': 0, 'unreviewed': 0}
     pitches = sum(1 for d in deals if d.get('category') in ('Founder pitch', 'Warm intro'))
-    scores = [d['relevance_score'] for d in deals if isinstance(d.get('relevance_score'), int)]
-    avg = round(sum(scores) / len(scores), 1) if scores else 0.0
-    high = sum(1 for d in deals if isinstance(d.get('relevance_score'), int) and d['relevance_score'] >= 8)
     new = sum(1 for d in deals if d.get('status') == 'New')
-    return {'total': len(deals), 'founder_pitches': pitches, 'avg_relevance': avg, 'high_score': high, 'unreviewed': new}
+    # Use thesis_match_score (0-100) when available, fall back to relevance_score (1-10)
+    thesis_scores = [d['thesis_match_score'] for d in deals if isinstance(d.get('thesis_match_score'), int)]
+    if thesis_scores:
+        avg = round(sum(thesis_scores) / len(thesis_scores), 1)
+        high = sum(1 for d in deals if isinstance(d.get('thesis_match_score'), int) and d['thesis_match_score'] >= 70)
+    else:
+        rel_scores = [d['relevance_score'] for d in deals if isinstance(d.get('relevance_score'), int)]
+        avg = round(sum(rel_scores) / len(rel_scores), 1) if rel_scores else 0.0
+        high = sum(1 for d in deals if isinstance(d.get('relevance_score'), int) and d['relevance_score'] >= 8)
+    return {'total': len(deals), 'founder_pitches': pitches, 'avg_score': avg, 'high_score': high, 'unreviewed': new}
 
 # Settings
 @api_router.get("/settings")

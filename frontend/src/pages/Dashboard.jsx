@@ -293,8 +293,8 @@ export default function Dashboard({ user, onLogout }) {
         {[
           { label: 'Total Inbound', value: stats.total, color: 'rgba(255,255,255,0.7)' },
           { label: 'Founder Pitches', value: stats.founder_pitches, color: '#7c6dfa' },
-          { label: 'Avg Relevance', value: stats.avg_relevance, color: '#f5a623' },
-          { label: 'Score ≥ 8', value: stats.high_score, color: '#3dd68c' },
+          { label: 'Avg Score', value: stats.avg_score, color: '#f5a623' },
+          { label: 'Strong Fit', value: stats.high_score, color: '#3dd68c' },
           { label: 'Unreviewed', value: stats.unreviewed, color: '#4da6ff' },
         ].map(({ label, value, color }, i) => (
           <div key={label} className="flex-1 flex flex-col items-center justify-center">
