@@ -52,3 +52,16 @@ export const sendAction = (dealId, data) =>
     method: 'POST',
     body: JSON.stringify(data),
   });
+
+export const upsertContact = (deal, contactStatus) =>
+  fetchJson(`${API}/contacts/upsert`, {
+    method: 'POST',
+    body: JSON.stringify({ deal, contact_status: contactStatus }),
+  });
+
+export const getContacts = () => fetchJson(`${API}/contacts`);
+
+export const updateContact = (id, data) =>
+  fetchJson(`${API}/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+
+export const getContactDeals = (id) => fetchJson(`${API}/contacts/${id}/deals`);

@@ -197,6 +197,30 @@ CREATE TABLE IF NOT EXISTS deals (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, thread_id)
 );
+
+CREATE TABLE IF NOT EXISTS contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  name TEXT,
+  email TEXT,
+  company TEXT,
+  role TEXT,
+  sector TEXT,
+  stage TEXT,
+  geography TEXT,
+  intro_source TEXT,
+  warm_or_cold TEXT,
+  contact_status TEXT DEFAULT 'In Review',
+  relevance_score INTEGER,
+  notes TEXT,
+  tags TEXT[],
+  deal_count INTEGER DEFAULT 1,
+  first_contacted TIMESTAMPTZ,
+  last_contacted TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, email)
+);
 """
 
 SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -406,14 +430,40 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS thesis_match_score INTEGER;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_strengths TEXT[];
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS fit_weaknesses TEXT[];
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
+
+CREATE TABLE IF NOT EXISTS contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  name TEXT,
+  email TEXT,
+  company TEXT,
+  role TEXT,
+  sector TEXT,
+  stage TEXT,
+  geography TEXT,
+  intro_source TEXT,
+  warm_or_cold TEXT,
+  contact_status TEXT DEFAULT 'In Review',
+  relevance_score INTEGER,
+  notes TEXT,
+  tags TEXT[],
+  deal_count INTEGER DEFAULT 1,
+  first_contacted TIMESTAMPTZ,
+  last_contacted TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, email)
+);
 """
+
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', SUPABASE_KEY)
 
 async def migrate_schema():
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f'https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query',
-                headers={'Authorization': f'Bearer {SUPABASE_KEY}', 'Content-Type': 'application/json'},
+                headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}', 'Content-Type': 'application/json'},
                 json={'query': SCHEMA_MIGRATION_SQL}
             )
             if resp.status_code in (200, 201):
@@ -1333,7 +1383,90 @@ async def trigger_sync(
     return {"message": "Sync started", "status": "started", "new_deals": 0}
 
 # Stats
-@api_router.get("/stats")
+# ── Contacts ─────────────────────────────────────────────────────────────────
+
+@api_router.post("/contacts/upsert")
+async def upsert_contact(data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    contact_status = data.get('contact_status', 'In Review')
+    deal = data.get('deal', {})
+
+    email = deal.get('sender_email') or deal.get('founder_email')
+    if not email:
+        raise HTTPException(status_code=400, detail="No email found on deal")
+
+    existing = await sb_select('contacts', {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if existing:
+        contact = existing[0]
+        new_score = deal.get('thesis_match_score') or deal.get('relevance_score') or 0
+        existing_score = contact.get('relevance_score') or 0
+        update_data = {
+            'last_contacted': deal.get('received_date') or now_iso,
+            'deal_count': (contact.get('deal_count') or 1) + 1,
+            'updated_at': now_iso,
+        }
+        if new_score > existing_score:
+            update_data['relevance_score'] = new_score
+        await sb_update('contacts', update_data, {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
+        return {'status': 'updated', 'contact_id': contact['id'], 'returning': True,
+                'name': contact.get('name'), 'company': contact.get('company')}
+    else:
+        new_contact = {
+            'user_id': uid,
+            'name': deal.get('sender_name') or deal.get('founder_name'),
+            'email': email,
+            'company': deal.get('company_name'),
+            'role': deal.get('founder_role'),
+            'sector': deal.get('sector'),
+            'stage': deal.get('stage'),
+            'geography': deal.get('geography'),
+            'intro_source': deal.get('intro_source'),
+            'warm_or_cold': deal.get('warm_or_cold'),
+            'relevance_score': deal.get('thesis_match_score') or deal.get('relevance_score'),
+            'tags': deal.get('tags') or [],
+            'contact_status': contact_status,
+            'first_contacted': deal.get('received_date') or now_iso,
+            'last_contacted': deal.get('received_date') or now_iso,
+            'deal_count': 1,
+        }
+        result = await sb_insert('contacts', new_contact)
+        contact_id = result.get('id') if result else None
+        return {'status': 'created', 'contact_id': contact_id, 'returning': False,
+                'name': new_contact['name'], 'company': new_contact['company']}
+
+
+@api_router.get("/contacts")
+async def get_contacts(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}', 'order': 'last_contacted.desc'})
+    return contacts or []
+
+
+@api_router.patch("/contacts/{contact_id}")
+async def update_contact(contact_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    data['updated_at'] = datetime.now(timezone.utc).isoformat()
+    await sb_update('contacts', data, {'id': f'eq.{contact_id}', 'user_id': f'eq.{uid}'})
+    return {'status': 'updated'}
+
+
+@api_router.get("/contacts/{contact_id}/deals")
+async def get_contact_deals(contact_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    contacts = await sb_select('contacts', {'id': f'eq.{contact_id}', 'user_id': f'eq.{uid}'})
+    if not contacts:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    email = contacts[0].get('email')
+    if not email:
+        return []
+    deals = await sb_select('deals', {'user_id': f'eq.{uid}', 'sender_email': f'eq.{email}'})
+    return deals or []
+
+
+
 async def get_stats(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     IRRELEVANT_CATS = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}

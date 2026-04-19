@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, Archive, ChevronRight,
-  XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText,
+  XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, UserPlus, Bookmark,
 } from 'lucide-react';
-import { updateDeal } from '../lib/api';
+import { updateDeal, upsertContact } from '../lib/api';
+import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 
 const CATEGORY_STYLES = {
@@ -282,7 +283,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             />
           </div>
 
-          {/* Recommended action */}
+          {deal.next_action && (
             <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
               <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-2">
                 Recommended Action
@@ -293,6 +294,49 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
               </div>
             </div>
           )}
+
+          {/* ── Contact actions ── */}
+          <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] space-y-2">
+            <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
+              Save Contact
+            </p>
+            <button
+              data-testid="contact-add-pipeline-btn"
+              disabled={saving === 'pipeline'}
+              onClick={async () => {
+                setSaving('pipeline');
+                try {
+                  const res = await upsertContact(deal, 'In Pipeline');
+                  if (res?.returning) toast.info('Returning founder — contact updated');
+                  else toast.success(`Contact saved: ${res?.name || 'Founder'} from ${res?.company || 'their company'}`);
+                } catch { toast.error('Could not save contact'); }
+                setSaving(null);
+              }}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-50"
+              style={{ background: 'rgba(124,109,250,0.1)', border: '1px solid rgba(124,109,250,0.3)', color: '#7c6dfa' }}
+            >
+              <UserPlus size={14} />
+              {saving === 'pipeline' ? 'Saving…' : 'Add to Pipeline'}
+            </button>
+            <button
+              data-testid="contact-save-review-btn"
+              disabled={saving === 'review'}
+              onClick={async () => {
+                setSaving('review');
+                try {
+                  const res = await upsertContact(deal, 'In Review');
+                  if (res?.returning) toast.info('Returning founder — contact updated');
+                  else toast.success(`Contact saved: ${res?.name || 'Founder'} from ${res?.company || 'their company'}`);
+                } catch { toast.error('Could not save contact'); }
+                setSaving(null);
+              }}
+              className="w-full flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all disabled:opacity-50"
+              style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)', color: '#f5a623' }}
+            >
+              <Bookmark size={14} />
+              {saving === 'review' ? 'Saving…' : 'Save for Review'}
+            </button>
+          </div>
 
           {/* ── One-click Actions ── */}
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">

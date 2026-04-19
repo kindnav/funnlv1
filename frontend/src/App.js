@@ -8,6 +8,8 @@ import OAuthCallback from './pages/OAuthCallback';
 import Pipeline from './pages/Pipeline';
 import ReviewMode from './pages/ReviewMode';
 import Onboarding from './pages/Onboarding';
+import Contacts from './pages/Contacts';
+import { Toaster } from './components/ui/sonner';
 import { getMe } from './lib/api';
 import { useEffect } from 'react';
 
@@ -65,6 +67,10 @@ function App() {
           element={token ? <Onboarding /> : <Navigate to="/" />}
         />
         <Route
+          path="/contacts"
+          element={token && user ? <Contacts user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
+        />
+        <Route
           path="/"
           element={token && user ? <Dashboard user={user} onLogout={handleLogout} /> : <ConnectPage />}
         />
@@ -90,6 +96,7 @@ function App() {
         />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
+      <Toaster position="bottom-right" richColors />
     </BrowserRouter>
   );
 }

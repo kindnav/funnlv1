@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -228,6 +228,15 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         )}
 
+        <button
+          data-testid="contacts-btn"
+          onClick={() => navigate('/contacts')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}
+        >
+          <Users size={12} />
+          <span className="hidden sm:inline">Contacts</span>
+        </button>
         <button
           data-testid="pipeline-btn"
           onClick={() => navigate('/pipeline')}
