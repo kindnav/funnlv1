@@ -121,10 +121,30 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 - `GET /api/stats` — Dashboard stats (filtered)
 - `POST /api/sync` — Trigger Gmail sync
 - `GET/POST /api/fund-settings` — Fund thesis CRUD
+- `POST /api/contacts/upsert` — Create or update contact from deal (dedup by email)
+- `GET /api/contacts` — Get user contacts
+- `PATCH /api/contacts/{id}` — Update contact notes/tags/status
+- `GET /api/contacts/{id}/deals` — Get deals linked to a contact
 
 ---
 
 ## What's Been Implemented
+
+### 2026-04-19 (Session 3 — Contacts System)
+- ✅ Contacts system fully implemented and tested
+- ✅ Contacts table created in Supabase (SQL run manually)
+- ✅ POST /api/contacts/upsert — creates or updates contact from deal, dedup by email, increments deal_count
+- ✅ GET /api/contacts — fetch user contacts ordered by last_contacted
+- ✅ PATCH /api/contacts/{id} — update notes, tags, contact_status
+- ✅ GET /api/contacts/{id}/deals — linked deals via sender_email match
+- ✅ Contacts page (/contacts) — stats bar, searchable/filterable datatable, detail panel
+- ✅ ContactDetailPanel — notes, tags, status buttons, linked deals, score bar
+- ✅ Export CSV → contacts-export-{date}.csv with 15 columns
+- ✅ "Add to Pipeline" & "Save for Review" in DetailPanel → upsertContact API call
+- ✅ Returning founder detection (deal_count > 1 → "Returning" badge)
+- ✅ CRITICAL FIX: /api/stats was missing @api_router.get('/stats') decorator → dashboard was broken
+- ✅ Cleaned up failing auto-migration code (SCHEMA_MIGRATION_SQL, migrate_schema removed from server.py)
+- ✅ Backend startup now clean — no migration errors
 
 ### 2026-04-15 (Session 1)
 - ✅ Gmail OAuth + background sync (15-min APScheduler)
@@ -164,19 +184,15 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 
 ## Prioritized Backlog
 
-### P0 (Required for full thesis match to show)
-- [ ] Run schema migration SQL in Supabase SQL Editor (4 ALTER TABLE statements)
-- [ ] Existing connected Gmail users must reconnect to grant `gmail.send` scope
+### P0 (DONE ✅)
+- ✅ Contacts table created in Supabase
+- ✅ Full Contacts system implemented and tested
 
 ### P1 (Next features)
-- [ ] Deal notes — editable text note on each deal in detail panel
-- [ ] Pipeline/Kanban view — deals by stage
-- [ ] Sync Now — visual success confirmation after sync completes
-- [ ] Email thread view — full conversation history
+- [ ] Deal CSV export (user mentioned for deals table)
+- [ ] Slack webhook for high-score deals (score ≥ 70)
 
 ### P2 (Future)
-- [ ] CSV export
-- [ ] Slack webhook for high-score deals (>8)
-- [ ] Mobile responsive layout
-- [ ] Bulk actions
+- [ ] Email thread view — full conversation history
+- [ ] Bulk actions (multi-select deals)
 - [ ] Team collaboration (multi-user per fund)
