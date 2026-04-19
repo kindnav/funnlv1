@@ -13,7 +13,7 @@ const STEPS = [
   {
     testId: 'fit-pct-header',
     title: 'Focus Match Score',
-    body: 'Every email gets a 0–100 score showing how closely it aligns with your fund focus. Green = strong match. Sort by this column to surface your best deals instantly.',
+    body: 'Every email gets a score showing how closely it aligns with your fund focus. Once you set your focus, this shows 0–100. Until then it shows a 1–10 signal quality score.',
   },
   {
     testId: '__first_deal__', // swapped out dynamically
