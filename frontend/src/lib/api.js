@@ -79,8 +79,8 @@ export const deleteFund = (fundId) => fetchJson(`${API}/funds/${fundId}`, { meth
 export const getFundDeals = () => fetchJson(`${API}/deals/fund`);
 
 // ── Deal collaboration ──────────────────────────────────────────────────────────
-export const updateDealStage = (dealId, stage) =>
-  fetchJson(`${API}/deals/${dealId}/stage`, { method: 'PATCH', body: JSON.stringify({ stage }) });
+export const updateDealStage = (dealId, stage, extra = {}) =>
+  fetchJson(`${API}/deals/${dealId}/stage`, { method: 'PATCH', body: JSON.stringify({ stage, ...extra }) });
 export const assignDeal = (dealId, data) =>
   fetchJson(`${API}/deals/${dealId}/assign`, { method: 'POST', body: JSON.stringify(data) });
 export const getDealVotes = (dealId) => fetchJson(`${API}/deals/${dealId}/votes`);

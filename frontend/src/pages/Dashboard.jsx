@@ -60,12 +60,13 @@ const fmtDate = (d) => {
 const FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros', 'Assigned to me'];
 
 const STAGE_STYLES = {
-  'New':                  { bg: 'rgba(255,255,255,0.05)',   color: 'rgba(255,255,255,0.4)',   border: 'rgba(255,255,255,0.1)' },
-  'Assigned':             { bg: 'rgba(77,166,255,0.1)',     color: '#4da6ff',                  border: 'rgba(77,166,255,0.3)' },
-  'Under Review':         { bg: 'rgba(245,166,35,0.1)',     color: '#f5a623',                  border: 'rgba(245,166,35,0.3)' },
-  'Committee Decision':   { bg: 'rgba(124,109,250,0.1)',    color: '#7c6dfa',                  border: 'rgba(124,109,250,0.3)' },
-  'Invested':             { bg: 'rgba(61,214,140,0.1)',     color: '#3dd68c',                  border: 'rgba(61,214,140,0.3)' },
-  'Passed':               { bg: 'rgba(255,255,255,0.04)',   color: 'rgba(255,255,255,0.3)',   border: 'rgba(255,255,255,0.08)' },
+  'Inbound':          { bg: 'rgba(124,109,250,0.1)',   color: '#7c6dfa',                  border: 'rgba(124,109,250,0.3)' },
+  'First Look':       { bg: 'rgba(77,166,255,0.1)',    color: '#4da6ff',                  border: 'rgba(77,166,255,0.3)' },
+  'In Conversation':  { bg: 'rgba(245,166,35,0.1)',    color: '#f5a623',                  border: 'rgba(245,166,35,0.3)' },
+  'Due Diligence':    { bg: 'rgba(61,214,140,0.12)',   color: '#3dd68c',                  border: 'rgba(61,214,140,0.3)' },
+  'Closed':           { bg: 'rgba(61,214,140,0.18)',   color: '#22c55e',                  border: 'rgba(61,214,140,0.4)' },
+  'Passed':           { bg: 'rgba(255,255,255,0.04)',  color: 'rgba(255,255,255,0.3)',    border: 'rgba(255,255,255,0.08)' },
+  'Watch List':       { bg: 'rgba(251,191,36,0.1)',    color: '#fbbf24',                  border: 'rgba(251,191,36,0.3)' },
 };
 
 // ── Component ────────────────────────────────────────────────────────────────

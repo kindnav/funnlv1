@@ -396,10 +396,31 @@ SAMPLE_DEALS = [
     },
 ]
 
+async def migrate_deal_stages():
+    """Migrate old deal stage names to new VC-native 7-stage system."""
+    stage_map = {
+        'New':                'Inbound',
+        'Assigned':           'First Look',
+        'Under Review':       'In Conversation',
+        'Committee Decision': 'Due Diligence',
+        'Invested':           'Closed',
+    }
+    for old, new in stage_map.items():
+        try:
+            await sb_update('deals', {'deal_stage': new}, {'deal_stage': f'eq.{old}'})
+        except Exception as e:
+            logger.warning(f'[MIGRATE] Stage {old}→{new}: {e}')
+    try:
+        await sb_update('deals', {'deal_stage': 'Inbound'}, {'deal_stage': 'is.null'})
+    except Exception as e:
+        logger.warning(f'[MIGRATE] Null stage→Inbound: {e}')
+    logger.info("[MIGRATE] Deal stages migrated to 7-stage VC system")
+
 async def init_database():
     exists = await sb_table_exists('users')
     if exists:
         logger.info("Database tables verified")
+        await migrate_deal_stages()
         await migrate_sample_thesis()
         await seed_sample_data()
         return True
@@ -847,6 +868,7 @@ async def process_and_save_email(
         'fit_weaknesses': ai.get('fit_weaknesses', []),
         'match_reasoning': ai.get('match_reasoning'),
         'status': 'New',
+        'deal_stage': 'Inbound',
         'processed_at': now,
         'created_at': now,
     }
@@ -1252,6 +1274,7 @@ async def test_insert(current_user: dict = Depends(get_current_user)):
         'confidence': 'High',
         'tags': ['test'],
         'status': 'New',
+        'deal_stage': 'Inbound',
         'deck_attached': False,
         'traction_mentioned': False,
         'processed_at': now,
@@ -1901,7 +1924,12 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
     new_stage = (data.get('stage') or '').strip()
     if not new_stage:
         raise HTTPException(status_code=400, detail="stage is required")
-    await sb_update('deals', {'deal_stage': new_stage}, {'id': f'eq.{deal_id}'})
+    update_data = {'deal_stage': new_stage}
+    if 'pass_reason' in data:
+        update_data['pass_reason'] = data['pass_reason']
+    if 'watchlist_revisit_date' in data:
+        update_data['watchlist_revisit_date'] = data['watchlist_revisit_date']
+    await sb_update('deals', update_data, {'id': f'eq.{deal_id}'})
     fund_info = await get_user_fund_info(uid)
     if fund_info:
         u = await sb_select('users', {'id': f'eq.{uid}'})
@@ -1922,7 +1950,7 @@ async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get
         raise HTTPException(status_code=403, detail="Must be in a fund to assign deals.")
     fund_id = fund_info['fund']['id']
     update_data = {'assigned_to': assignee_id, 'fund_id': fund_id,
-                   'deal_stage': 'Assigned' if assignee_id else 'New'}
+                   'deal_stage': 'First Look' if assignee_id else 'Inbound'}
     await sb_update('deals', update_data, {'id': f'eq.{deal_id}'})
     u_by = await sb_select('users', {'id': f'eq.{uid}'})
     name_by = u_by[0].get('name', 'Someone') if u_by else 'Someone'

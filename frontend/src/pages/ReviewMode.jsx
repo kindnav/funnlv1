@@ -1,11 +1,27 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, X, Star, ArrowUp, ChevronRight } from 'lucide-react';
-import { getDeals, updateDeal, upsertContact } from '../lib/api';
+import { ArrowLeft, Check, X, Star, ArrowDown, ChevronRight } from 'lucide-react';
+import { getDeals, updateDealStage } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 
 const SWIPE_X = 110;
 const SWIPE_Y = 90;
+
+const PASS_PRESETS = [
+  'Team not right',
+  'Market too small',
+  'Too early',
+  'Not in thesis',
+  'No traction',
+  'Valuation too high',
+];
+
+const WATCHLIST_PRESETS = [
+  { label: '1 month', months: 1 },
+  { label: '3 months', months: 3 },
+  { label: '6 months', months: 6 },
+  { label: '1 year', months: 12 },
+];
 
 const scoreColor = (s) => {
   if (s == null) return 'rgba(255,255,255,0.3)';
@@ -14,11 +30,156 @@ const scoreColor = (s) => {
   return '#f05252';
 };
 
-// ── Card Content (pure presentational) ──────────────────────────────────────
+function addMonths(months) {
+  const d = new Date();
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+// ── Pass Reason Modal ─────────────────────────────────────────────────────────
+function PassModal({ deal, onSubmit, onSkip }) {
+  const [reason, setReason] = useState('');
+  return (
+    <div
+      data-testid="pass-modal"
+      className="absolute inset-0 z-50 flex items-end justify-center pb-6 px-4"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+    >
+      <div
+        className="w-full rounded-2xl p-5"
+        style={{ background: '#1a1a26', border: '1px solid rgba(240,82,82,0.25)', maxWidth: '520px' }}
+      >
+        <p className="text-white font-semibold text-sm mb-1">Why are you passing?</p>
+        <p className="text-[rgba(255,255,255,0.4)] text-xs mb-4">
+          {deal?.company_name || deal?.sender_name || 'This deal'}
+        </p>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {PASS_PRESETS.map((p) => (
+            <button
+              key={p}
+              data-testid={`pass-preset-${p.toLowerCase().replace(/ /g,'-')}`}
+              onClick={() => setReason(p)}
+              className="px-2.5 py-1 rounded-lg text-xs transition-all"
+              style={reason === p ? {
+                background: 'rgba(240,82,82,0.2)', color: '#f05252',
+                border: '1px solid rgba(240,82,82,0.4)',
+              } : {
+                background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <input
+          data-testid="pass-reason-text"
+          type="text"
+          placeholder="Or type a custom reason..."
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.1)] rounded-lg px-3 py-2 text-xs text-white placeholder-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[#f05252] transition-colors mb-3"
+        />
+        <div className="flex gap-2">
+          <button
+            data-testid="pass-submit-btn"
+            onClick={() => onSubmit(reason)}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+            style={{ background: 'rgba(240,82,82,0.15)', color: '#f05252', border: '1px solid rgba(240,82,82,0.35)' }}
+          >
+            Confirm Pass
+          </button>
+          <button
+            data-testid="pass-skip-btn"
+            onClick={onSkip}
+            className="px-4 py-2.5 rounded-xl text-xs transition-all"
+            style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Watch List Modal ──────────────────────────────────────────────────────────
+function WatchlistModal({ deal, onSubmit, onSkip }) {
+  const [selectedDate, setSelectedDate] = useState('');
+  const [customDate, setCustomDate] = useState('');
+  const activeDate = customDate || selectedDate;
+  return (
+    <div
+      data-testid="watchlist-modal"
+      className="absolute inset-0 z-50 flex items-end justify-center pb-6 px-4"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+    >
+      <div
+        className="w-full rounded-2xl p-5"
+        style={{ background: '#1a1a26', border: '1px solid rgba(251,191,36,0.25)', maxWidth: '520px' }}
+      >
+        <p className="text-white font-semibold text-sm mb-1">When should we revisit?</p>
+        <p className="text-[rgba(255,255,255,0.4)] text-xs mb-4">
+          {deal?.company_name || deal?.sender_name || 'This deal'}
+        </p>
+        <div className="flex gap-2 mb-3">
+          {WATCHLIST_PRESETS.map(({ label, months }) => {
+            const d = addMonths(months);
+            return (
+              <button
+                key={label}
+                data-testid={`watchlist-preset-${label.replace(/ /g,'-')}`}
+                onClick={() => { setSelectedDate(d); setCustomDate(''); }}
+                className="flex-1 py-2 rounded-lg text-xs transition-all"
+                style={selectedDate === d && !customDate ? {
+                  background: 'rgba(251,191,36,0.18)', color: '#fbbf24',
+                  border: '1px solid rgba(251,191,36,0.4)',
+                } : {
+                  background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <input
+          data-testid="watchlist-custom-date"
+          type="date"
+          value={customDate}
+          onChange={(e) => { setCustomDate(e.target.value); setSelectedDate(''); }}
+          className="w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.1)] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#fbbf24] transition-colors mb-3"
+          style={{ colorScheme: 'dark' }}
+        />
+        <div className="flex gap-2">
+          <button
+            data-testid="watchlist-submit-btn"
+            disabled={!activeDate}
+            onClick={() => activeDate && onSubmit(activeDate)}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)' }}
+          >
+            Add to Watch List
+          </button>
+          <button
+            data-testid="watchlist-skip-btn"
+            onClick={onSkip}
+            className="px-4 py-2.5 rounded-xl text-xs transition-all"
+            style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Card Content ──────────────────────────────────────────────────────────────
 function CardContent({ deal: d }) {
   return (
     <div className="absolute inset-0 p-5 flex flex-col overflow-hidden pointer-events-none">
-      {/* Header */}
       <div className="mb-3">
         <div className="flex items-start justify-between gap-2 mb-1">
           <h1 className="text-2xl font-bold text-white leading-tight flex-1">
@@ -40,7 +201,6 @@ function CardContent({ deal: d }) {
             ? `${d.founder_name}${d.founder_role ? ` · ${d.founder_role}` : ''}`
             : (d.sender_name || d.sender_email || '—')}
         </p>
-        {/* Pills */}
         <div className="flex flex-wrap gap-1.5">
           {d.sector && (
             <span className="px-2 py-0.5 rounded text-xs border"
@@ -65,7 +225,6 @@ function CardContent({ deal: d }) {
 
       <div className="w-full h-px bg-[rgba(255,255,255,0.06)] mb-3" />
 
-      {/* Summary */}
       <div className="flex-1 overflow-hidden mb-3">
         <p className="text-sm leading-relaxed text-[rgba(255,255,255,0.65)]"
           style={{ display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
@@ -73,7 +232,6 @@ function CardContent({ deal: d }) {
         </p>
       </div>
 
-      {/* Signal flags */}
       <div className="flex gap-2 mb-4">
         <div className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
           style={d.deck_attached ? {
@@ -81,7 +239,7 @@ function CardContent({ deal: d }) {
           } : {
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.22)',
           }}>
-          {d.deck_attached ? 'Deck attached ✓' : 'Deck —'}
+          {d.deck_attached ? 'Deck ✓' : 'Deck —'}
         </div>
         <div className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
           style={d.traction_mentioned ? {
@@ -93,7 +251,6 @@ function CardContent({ deal: d }) {
         </div>
       </div>
 
-      {/* Score */}
       <div className="flex items-end justify-between">
         <div className="flex flex-col">
           <span className="font-bold font-mono leading-none" style={{ fontSize: '3rem', color: scoreColor(d.relevance_score) }}>
@@ -126,42 +283,40 @@ export default function ReviewMode() {
   const [cleared, setCleared] = useState(0);
   const [loading, setLoading] = useState(true);
   const [animating, setAnimating] = useState(false);
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [showWatchlistModal, setShowWatchlistModal] = useState(false);
+  const [pendingDeal, setPendingDeal] = useState(null);
 
-  // DOM refs for 60fps drag (no React re-renders during drag)
   const cardRef = useRef(null);
   const overlayRef = useRef(null);
   const labelRef = useRef(null);
   const nextCardRef = useRef(null);
-  const dragRef = useRef({ active: false, startX: 0, startY: 0, moved: false });
+  const dragRef = useRef({ active: false, startX: 0, startY: 0 });
   const navigate = useNavigate();
 
   useEffect(() => {
     getDeals().then(data => {
       const q = (data || [])
-        .filter(d => d.status === 'New')
+        .filter(d => d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New'))
         .sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0));
       setDeals(q);
       setLoading(false);
     });
   }, []);
 
-  // Lock body scroll in review mode
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // Attach passive:false touchmove to card for scroll prevention
   useEffect(() => {
     const card = cardRef.current;
     if (!card) return;
-    const handler = (e) => {
-      if (dragRef.current.active) e.preventDefault();
-    };
+    const handler = (e) => { if (dragRef.current.active) e.preventDefault(); };
     card.addEventListener('touchmove', handler, { passive: false });
     return () => card.removeEventListener('touchmove', handler);
-  }, [currentIndex, loading]); // re-attach when card changes
+  }, [currentIndex, loading]);
 
   const total = deals.length;
   const currentDeal = deals[currentIndex];
@@ -169,72 +324,93 @@ export default function ReviewMode() {
   const remaining = total - currentIndex;
   const progress = total > 0 ? Math.min((cleared / total) * 100, 100) : 0;
 
+  // ── Fly-off animation helper ──────────────────────────────────────────────
+  function flyOff(direction) {
+    const card = cardRef.current;
+    const overlay = overlayRef.current;
+    const next = nextCardRef.current;
+    if (card) {
+      card.style.transition = 'transform 0.38s cubic-bezier(0.4,0,0.6,1), opacity 0.30s ease-out';
+      if (direction === 'right') card.style.transform = 'translateX(130vw) rotate(25deg)';
+      else if (direction === 'left') card.style.transform = 'translateX(-130vw) rotate(-25deg)';
+      else if (direction === 'up') card.style.transform = 'translateY(-110vh) scale(0.85)';
+      else if (direction === 'down') card.style.transform = 'translateY(110vh) scale(0.85)';
+      card.style.opacity = '0';
+    }
+    if (overlay) { overlay.style.transition = 'opacity 0.15s'; overlay.style.opacity = '0'; }
+    if (next) {
+      next.style.transition = 'transform 0.38s cubic-bezier(0.22,1,0.36,1), opacity 0.3s';
+      next.style.transform = 'scale(1) translateY(0px)';
+      next.style.opacity = '1';
+    }
+  }
+
+  function advance() {
+    setTimeout(() => {
+      setCurrentIndex(i => i + 1);
+      setCleared(c => c + 1);
+      setAnimating(false);
+    }, 380);
+  }
+
   // ── Core commit action ─────────────────────────────────────────────────────
   const commitAction = useCallback((action) => {
     if (animating || !deals[currentIndex]) return;
     const deal = deals[currentIndex];
     setAnimating(true);
 
-    // Optimistic API update
-    const statusMap = { pipeline: 'Pipeline', archive: 'Archived', review: 'In Review' };
-    updateDeal(deal.id, { status: statusMap[action] }).catch(console.error);
+    if (action === 'first-look') {
+      updateDealStage(deal.id, 'First Look').catch(console.error);
+      toast('Moved to First Look', { duration: 2500 });
+      flyOff('right');
+      advance();
 
-    // Create/update contact for pipeline and review actions
-    if (action === 'pipeline' || action === 'review') {
-      const contactStatus = action === 'pipeline' ? 'In Pipeline' : 'In Review';
-      console.log('[Contact] ReviewMode trigger:', action, 'for:', deal.sender_email);
-      upsertContact(deal, contactStatus)
-        .then(res => console.log('[Contact] ReviewMode upsert result:', res))
-        .catch(e => console.error('[Contact] ReviewMode upsert error:', e));
-    }
+    } else if (action === 'pass') {
+      // Fly off left, then show pass modal
+      setPendingDeal(deal);
+      flyOff('left');
+      setTimeout(() => {
+        setCurrentIndex(i => i + 1);
+        setCleared(c => c + 1);
+        setAnimating(false);
+        setShowPassModal(true);
+      }, 380);
 
-    // Toast notification
-    const toastConfig = {
-      pipeline: { msg: 'Added to Pipeline', label: 'View Pipeline', bg: '#3dd68c' },
-      archive:  { msg: 'Archived', label: 'View Archived', bg: '#f05252' },
-      review:   { msg: 'Saved for Review', label: 'View In Review', bg: '#f5a623' },
-    };
-    const tc = toastConfig[action];
-    if (tc) {
-      toast(tc.msg, {
-        action: { label: tc.label, onClick: () => navigate('/pipeline') },
-        duration: 3500,
-      });
-    }
+    } else if (action === 'watchlist') {
+      // Fly off up, then show watchlist modal
+      setPendingDeal(deal);
+      flyOff('up');
+      setTimeout(() => {
+        setCurrentIndex(i => i + 1);
+        setCleared(c => c + 1);
+        setAnimating(false);
+        setShowWatchlistModal(true);
+      }, 380);
 
-    // Fly-off animation
-    const card = cardRef.current;
-    const overlay = overlayRef.current;
-    const next = nextCardRef.current;
-
-    if (card) {
-      card.style.transition = 'transform 0.38s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.30s ease-out';
-      if (action === 'pipeline') {
-        card.style.transform = 'translateX(130vw) rotate(25deg)';
-      } else if (action === 'archive') {
-        card.style.transform = 'translateX(-130vw) rotate(-25deg)';
-      } else {
-        card.style.transform = 'translateY(-110vh) scale(0.85)';
-      }
-      card.style.opacity = '0';
-    }
-    if (overlay) {
-      overlay.style.transition = 'opacity 0.15s';
-      overlay.style.opacity = '0';
-    }
-    // Next card scales up
-    if (next) {
-      next.style.transition = 'transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s';
-      next.style.transform = 'scale(1) translateY(0px)';
-      next.style.opacity = '1';
-    }
-
-    setTimeout(() => {
-      setCurrentIndex(i => i + 1);
-      setCleared(c => c + 1);
+    } else if (action === 'draft') {
+      // Navigate to detail panel for drafting reply (no card fly-off needed)
       setAnimating(false);
-    }, 380);
-  }, [animating, currentIndex, deals]);
+      navigate('/', { state: { openDealId: deal.id } });
+    }
+  }, [animating, currentIndex, deals, navigate]); // eslint-disable-line
+
+  const handlePassSubmit = useCallback((reason) => {
+    if (pendingDeal) {
+      updateDealStage(pendingDeal.id, 'Passed', reason ? { pass_reason: reason } : {}).catch(console.error);
+      toast(`Passed${reason ? ` — ${reason}` : ''}`, { duration: 2500 });
+    }
+    setShowPassModal(false);
+    setPendingDeal(null);
+  }, [pendingDeal]);
+
+  const handleWatchlistSubmit = useCallback((date) => {
+    if (pendingDeal) {
+      updateDealStage(pendingDeal.id, 'Watch List', { watchlist_revisit_date: date }).catch(console.error);
+      toast('Added to Watch List', { duration: 2500 });
+    }
+    setShowWatchlistModal(false);
+    setPendingDeal(null);
+  }, [pendingDeal]);
 
   // ── Drag helpers ───────────────────────────────────────────────────────────
   function applyDrag(dx, dy) {
@@ -243,34 +419,42 @@ export default function ReviewMode() {
     const label = labelRef.current;
     if (!card) return;
 
-    const rotation = Math.max(-18, Math.min(18, dx * 0.065));
-    const ty = Math.min(0, dy * 0.2);
-    card.style.transform = `translateX(${dx}px) translateY(${ty}px) rotate(${rotation}deg)`;
-
-    if (!overlay || !label) return;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
     const isUp = absY > absX && dy < -25;
-    const isRight = dx > 25 && !isUp;
-    const isLeft = dx < -25 && !isUp;
-    const mag = isUp ? absY : absX;
+    const isDown = absY > absX && dy > 25;
+    const isRight = dx > 25 && !isUp && !isDown;
+    const isLeft = dx < -25 && !isUp && !isDown;
+
+    const rotation = (isRight || isLeft) ? Math.max(-18, Math.min(18, dx * 0.065)) : 0;
+    const tx = (isRight || isLeft) ? dx : 0;
+    const ty = (isUp || isDown) ? dy * 0.7 : 0;
+    card.style.transform = `translateX(${tx}px) translateY(${ty}px) rotate(${rotation}deg)`;
+
+    if (!overlay || !label) return;
+    const mag = (isUp || isDown) ? absY : absX;
     const opacity = Math.min(mag / 65, 0.92);
 
     if (isRight) {
-      overlay.style.background = 'linear-gradient(to left, rgba(61,214,140,0.5) 0%, rgba(61,214,140,0.12) 60%, transparent 100%)';
+      overlay.style.background = 'linear-gradient(to left, rgba(61,214,140,0.55) 0%, rgba(61,214,140,0.12) 60%, transparent 100%)';
       overlay.style.opacity = opacity;
-      label.textContent = 'Added to Pipeline ✓';
+      label.textContent = 'First Look →';
       label.style.color = '#3dd68c';
     } else if (isLeft) {
-      overlay.style.background = 'linear-gradient(to right, rgba(240,82,82,0.5) 0%, rgba(240,82,82,0.12) 60%, transparent 100%)';
+      overlay.style.background = 'linear-gradient(to right, rgba(240,82,82,0.55) 0%, rgba(240,82,82,0.12) 60%, transparent 100%)';
       overlay.style.opacity = opacity;
-      label.textContent = 'Archived ✕';
+      label.textContent = 'Pass ✕';
       label.style.color = '#f05252';
     } else if (isUp) {
-      overlay.style.background = 'linear-gradient(to bottom, rgba(245,166,35,0.45) 0%, rgba(245,166,35,0.1) 60%, transparent 100%)';
+      overlay.style.background = 'linear-gradient(to bottom, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.1) 60%, transparent 100%)';
       overlay.style.opacity = opacity;
-      label.textContent = 'Saved for Review ✓';
-      label.style.color = '#f5a623';
+      label.textContent = '★ Watch List';
+      label.style.color = '#fbbf24';
+    } else if (isDown) {
+      overlay.style.background = 'linear-gradient(to top, rgba(77,166,255,0.45) 0%, rgba(77,166,255,0.1) 60%, transparent 100%)';
+      overlay.style.opacity = opacity;
+      label.textContent = 'Draft Reply ↓';
+      label.style.color = '#4da6ff';
     } else {
       overlay.style.opacity = '0';
     }
@@ -280,13 +464,10 @@ export default function ReviewMode() {
     const card = cardRef.current;
     const overlay = overlayRef.current;
     if (card) {
-      card.style.transition = 'transform 0.42s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+      card.style.transition = 'transform 0.42s cubic-bezier(0.175,0.885,0.32,1.275)';
       card.style.transform = 'translateX(0) rotate(0deg)';
     }
-    if (overlay) {
-      overlay.style.transition = 'opacity 0.22s';
-      overlay.style.opacity = '0';
-    }
+    if (overlay) { overlay.style.transition = 'opacity 0.22s'; overlay.style.opacity = '0'; }
   }
 
   function handleRelease(dx, dy) {
@@ -295,15 +476,16 @@ export default function ReviewMode() {
     const moved = absX > 8 || absY > 8;
 
     if (!moved) {
-      // Tap → view full detail
       snapBack();
       navigate('/', { state: { openDealId: currentDeal?.id } });
       return;
     }
     const isUp = absY > absX && dy < -SWIPE_Y;
-    if (isUp) commitAction('review');
-    else if (dx > SWIPE_X) commitAction('pipeline');
-    else if (dx < -SWIPE_X) commitAction('archive');
+    const isDown = absY > absX && dy > SWIPE_Y;
+    if (isUp) commitAction('watchlist');
+    else if (isDown) commitAction('draft');
+    else if (dx > SWIPE_X) commitAction('first-look');
+    else if (dx < -SWIPE_X) commitAction('pass');
     else snapBack();
   }
 
@@ -328,7 +510,7 @@ export default function ReviewMode() {
     handleRelease(t.clientX - dragRef.current.startX, t.clientY - dragRef.current.startY);
   }, [currentDeal, navigate, commitAction]); // eslint-disable-line
 
-  // ── Mouse handlers (desktop) ───────────────────────────────────────────────
+  // ── Mouse handlers ─────────────────────────────────────────────────────────
   const onMouseDown = useCallback((e) => {
     if (animating) return;
     e.preventDefault();
@@ -353,15 +535,16 @@ export default function ReviewMode() {
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
-      if (animating || !currentDeal) return;
-      if (e.key === 'ArrowRight') commitAction('pipeline');
-      else if (e.key === 'ArrowLeft') commitAction('archive');
-      else if (e.key === 'ArrowUp') { e.preventDefault(); commitAction('review'); }
+      if (animating || !currentDeal || showPassModal || showWatchlistModal) return;
+      if (e.key === 'ArrowRight') commitAction('first-look');
+      else if (e.key === 'ArrowLeft') commitAction('pass');
+      else if (e.key === 'ArrowUp') { e.preventDefault(); commitAction('watchlist'); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); commitAction('draft'); }
       else if (e.key === 'Enter') navigate('/', { state: { openDealId: currentDeal.id } });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [animating, currentDeal, commitAction, navigate]);
+  }, [animating, currentDeal, commitAction, navigate, showPassModal, showWatchlistModal]);
 
   // ── Reset card DOM after index change ─────────────────────────────────────
   useEffect(() => {
@@ -381,7 +564,7 @@ export default function ReviewMode() {
       <div className="h-screen w-screen bg-[#0c0c12] flex items-center justify-center">
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-[#7c6dfa] border-t-transparent animate-spin" />
-          <span className="text-[rgba(255,255,255,0.4)] text-sm font-mono">Loading deals...</span>
+          <span className="text-[rgba(255,255,255,0.4)] text-sm font-mono">Loading inbound deals...</span>
         </div>
       </div>
     );
@@ -400,25 +583,17 @@ export default function ReviewMode() {
             0%, 100% { box-shadow: 0 0 0 0 rgba(61,214,140,0.15); }
             50% { box-shadow: 0 0 0 14px rgba(61,214,140,0); }
           }
-          @keyframes check-draw {
-            from { stroke-dashoffset: 30; opacity: 0; }
-            to { stroke-dashoffset: 0; opacity: 1; }
-          }
         `}</style>
         <div
           className="w-20 h-20 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(61,214,140,0.08)', border: '2px solid rgba(61,214,140,0.25)', animation: 'pulse-ring 2.4s ease-in-out infinite' }}
         >
-          <svg viewBox="0 0 32 32" className="w-9 h-9">
-            <polyline points="6,16 13,23 26,9" fill="none" stroke="#3dd68c" strokeWidth="2.5"
-              strokeLinecap="round" strokeLinejoin="round" strokeDasharray="30"
-              style={{ animation: 'check-draw 0.5s ease 0.1s forwards', opacity: 0 }} />
-          </svg>
+          <Check size={32} className="text-[#3dd68c]" />
         </div>
         <div>
-          <h2 className="text-white text-2xl font-bold mb-2">All caught up</h2>
+          <h2 className="text-white text-2xl font-bold mb-2">Inbox cleared</h2>
           <p className="text-[rgba(255,255,255,0.4)] text-sm leading-relaxed max-w-xs mx-auto">
-            No unreviewed deals in your queue. New emails will appear here automatically.
+            No inbound deals to review. New emails will appear here automatically.
           </p>
           {cleared > 0 && (
             <p className="text-[rgba(255,255,255,0.2)] text-xs mt-2 font-mono">
@@ -439,16 +614,15 @@ export default function ReviewMode() {
     );
   }
 
-  // ── Main swipe interface ───────────────────────────────────────────────────
   const d = currentDeal;
 
   return (
     <div
-      className="h-screen w-screen flex flex-col overflow-hidden"
+      className="h-screen w-screen flex flex-col overflow-hidden relative"
       style={{ background: '#0c0c12' }}
       data-testid="review-mode"
     >
-      {/* ── Progress bar ───────────────────────────────────────────────── */}
+      {/* ── Progress bar ────────────────────────────────────────────────── */}
       <div className="shrink-0 px-4 pt-safe pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <button
@@ -460,11 +634,9 @@ export default function ReviewMode() {
             <span className="font-mono text-xs">Dashboard</span>
           </button>
           <span className="font-mono text-xs text-[rgba(255,255,255,0.35)]" data-testid="review-remaining">
-            {remaining} unreviewed
+            {remaining} inbound
           </span>
-          <span className="font-mono text-xs text-[rgba(255,255,255,0.22)]">
-            {cleared}/{total}
-          </span>
+          <span className="font-mono text-xs text-[rgba(255,255,255,0.22)]">{cleared}/{total}</span>
         </div>
         <div className="w-full h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
           <div
@@ -478,126 +650,118 @@ export default function ReviewMode() {
         </div>
       </div>
 
-      {/* ── Card stack ─────────────────────────────────────────────────── */}
+      {/* ── Card stack ──────────────────────────────────────────────────── */}
       <div className="flex-1 relative px-4 py-2 overflow-hidden flex items-center justify-center">
-        {/* Constrain card size on large screens */}
         <div className="relative w-full h-full" style={{ maxHeight: '660px', maxWidth: '520px' }}>
-        {/* Background card (next deal preview) */}
-        {nextDeal && (
-          <div
-            ref={nextCardRef}
-            className="absolute inset-x-0 inset-y-0 rounded-2xl"
-            style={{
-              background: '#13131c',
-              border: '1px solid rgba(255,255,255,0.05)',
-              transform: 'scale(0.94) translateY(18px)',
-              opacity: 0.45,
-              zIndex: 1,
-            }}
-          />
-        )}
-
-        {/* Current card — draggable */}
-        <div
-          ref={cardRef}
-          data-testid="review-card"
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
-          onMouseDown={onMouseDown}
-          className="absolute inset-0 rounded-2xl cursor-grab active:cursor-grabbing"
-          style={{
-            background: '#13131c',
-            border: '1px solid rgba(255,255,255,0.09)',
-            zIndex: 2,
-            willChange: 'transform',
-            boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
-          }}
-        >
-          {/* Swipe direction overlay */}
-          <div
-            ref={overlayRef}
-            className="absolute inset-0 rounded-2xl z-20 pointer-events-none flex items-center justify-center"
-            style={{ opacity: 0 }}
-          >
-            <span
-              ref={labelRef}
-              className="text-xl font-bold px-4 py-2 rounded-xl"
+          {nextDeal && (
+            <div
+              ref={nextCardRef}
+              className="absolute inset-x-0 inset-y-0 rounded-2xl"
               style={{
-                background: 'rgba(0,0,0,0.3)',
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)',
-                color: '#fff',
+                background: '#13131c',
+                border: '1px solid rgba(255,255,255,0.05)',
+                transform: 'scale(0.94) translateY(18px)',
+                opacity: 0.45,
+                zIndex: 1,
               }}
             />
+          )}
+          <div
+            ref={cardRef}
+            data-testid="review-card"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            onMouseDown={onMouseDown}
+            className="absolute inset-0 rounded-2xl cursor-grab active:cursor-grabbing"
+            style={{
+              background: '#13131c',
+              border: '1px solid rgba(255,255,255,0.09)',
+              zIndex: 2,
+              willChange: 'transform',
+              boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
+            }}
+          >
+            <div
+              ref={overlayRef}
+              className="absolute inset-0 rounded-2xl z-20 pointer-events-none flex items-center justify-center"
+              style={{ opacity: 0 }}
+            >
+              <span
+                ref={labelRef}
+                className="text-xl font-bold px-4 py-2 rounded-xl"
+                style={{ background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)', color: '#fff' }}
+              />
+            </div>
+            <CardContent deal={d} />
           </div>
-
-          {/* Card content */}
-          <CardContent deal={d} />
         </div>
-        </div>{/* end constrained wrapper */}
       </div>
 
-      {/* ── Swipe direction hints ───────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pb-1 flex justify-between pointer-events-none">
-        <span className="text-xs font-mono" style={{ color: 'rgba(240,82,82,0.35)' }}>← Archive</span>
-        <span className="text-xs font-mono" style={{ color: 'rgba(77,166,255,0.35)' }}>↑ Review</span>
-        <span className="text-xs font-mono" style={{ color: 'rgba(61,214,140,0.35)' }}>Pipeline →</span>
+      {/* ── Swipe hints ──────────────────────────────────────────────────── */}
+      <div className="shrink-0 px-4 pb-1">
+        <div className="flex justify-between pointer-events-none">
+          <span className="text-xs font-mono" style={{ color: 'rgba(240,82,82,0.4)' }}>← Pass</span>
+          <span className="text-xs font-mono" style={{ color: 'rgba(251,191,36,0.4)' }}>↑ Watch List</span>
+          <span className="text-xs font-mono" style={{ color: 'rgba(77,166,255,0.4)' }}>↓ Draft Reply</span>
+          <span className="text-xs font-mono" style={{ color: 'rgba(61,214,140,0.4)' }}>First Look →</span>
+        </div>
       </div>
 
-      {/* ── Button bar ─────────────────────────────────────────────────── */}
+      {/* ── Button bar ───────────────────────────────────────────────────── */}
       <div className="shrink-0 px-4 pb-6 pt-1">
         <div className="grid grid-cols-4 gap-2">
           <button
-            data-testid="review-btn-archive"
-            onClick={() => commitAction('archive')}
+            data-testid="review-btn-pass"
+            onClick={() => commitAction('pass')}
             disabled={animating}
             className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
             style={{ background: 'rgba(240,82,82,0.1)', border: '1px solid rgba(240,82,82,0.22)' }}
           >
             <X size={20} className="text-[#f05252]" />
-            <span className="text-[#f05252] text-xs font-medium">Archive</span>
+            <span className="text-[#f05252] text-xs font-medium">Pass</span>
           </button>
 
           <button
-            data-testid="review-btn-pipeline"
-            onClick={() => commitAction('pipeline')}
+            data-testid="review-btn-watchlist"
+            onClick={() => commitAction('watchlist')}
             disabled={animating}
             className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(124,109,250,0.12)', border: '1px solid rgba(124,109,250,0.28)' }}
+            style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.22)' }}
           >
-            <Star size={20} className="text-[#7c6dfa]" />
-            <span className="text-[#7c6dfa] text-xs font-medium">Pipeline</span>
+            <Star size={20} className="text-[#fbbf24]" />
+            <span className="text-[#fbbf24] text-xs font-medium">Watch List</span>
           </button>
 
           <button
-            data-testid="review-btn-review"
-            onClick={() => commitAction('review')}
+            data-testid="review-btn-draft"
+            onClick={() => commitAction('draft')}
             disabled={animating}
             className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
             style={{ background: 'rgba(77,166,255,0.1)', border: '1px solid rgba(77,166,255,0.22)' }}
           >
-            <ArrowUp size={20} className="text-[#4da6ff]" />
-            <span className="text-[#4da6ff] text-xs font-medium">Review</span>
+            <ArrowDown size={20} className="text-[#4da6ff]" />
+            <span className="text-[#4da6ff] text-xs font-medium">Draft Reply</span>
           </button>
 
           <button
-            data-testid="review-btn-detail"
-            onClick={() => navigate('/', { state: { openDealId: d.id } })}
+            data-testid="review-btn-first-look"
+            onClick={() => commitAction('first-look')}
             disabled={animating}
             className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+            style={{ background: 'rgba(61,214,140,0.1)', border: '1px solid rgba(61,214,140,0.22)' }}
           >
-            <ChevronRight size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />
-            <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>Details</span>
+            <Check size={20} className="text-[#3dd68c]" />
+            <span className="text-[#3dd68c] text-xs font-medium">First Look</span>
           </button>
         </div>
 
-        {/* Keyboard shortcuts — desktop only */}
+        {/* Keyboard hints — desktop */}
         <div className="hidden md:flex items-center justify-center gap-5 mt-3">
           {[
-            { key: '←', label: 'Archive', color: '#f05252' },
-            { key: '→', label: 'Pipeline', color: '#7c6dfa' },
-            { key: '↑', label: 'Review', color: '#4da6ff' },
+            { key: '←', label: 'Pass', color: '#f05252' },
+            { key: '↑', label: 'Watch List', color: '#fbbf24' },
+            { key: '↓', label: 'Draft Reply', color: '#4da6ff' },
+            { key: '→', label: 'First Look', color: '#3dd68c' },
             { key: '↵', label: 'Details', color: 'rgba(255,255,255,0.4)' },
           ].map(({ key, label, color }) => (
             <span key={key} className="flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.22)' }}>
@@ -612,6 +776,22 @@ export default function ReviewMode() {
           ))}
         </div>
       </div>
+
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
+      {showPassModal && (
+        <PassModal
+          deal={pendingDeal}
+          onSubmit={handlePassSubmit}
+          onSkip={() => { handlePassSubmit(''); }}
+        />
+      )}
+      {showWatchlistModal && (
+        <WatchlistModal
+          deal={pendingDeal}
+          onSubmit={handleWatchlistSubmit}
+          onSkip={() => { setShowWatchlistModal(false); setPendingDeal(null); updateDealStage(pendingDeal?.id, 'Watch List').catch(console.error); }}
+        />
+      )}
     </div>
   );
 }
