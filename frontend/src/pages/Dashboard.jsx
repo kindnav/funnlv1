@@ -339,19 +339,22 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Stats Bar */}
       <div className="h-16 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-5 gap-1 bg-[#0c0c12]">
-        {(viewMode === 'fund-dashboard' ? [
-          { label: 'Total Deals',      value: fundDeals.length,                                                                color: 'rgba(255,255,255,0.7)' },
-          { label: 'First Look',       value: fundDeals.filter(d => d.deal_stage === 'First Look').length,                     color: '#4da6ff' },
-          { label: 'In Conversation',  value: fundDeals.filter(d => d.deal_stage === 'In Conversation').length,                color: '#f5a623' },
-          { label: 'Due Diligence',    value: fundDeals.filter(d => d.deal_stage === 'Due Diligence').length,                  color: '#3dd68c' },
-          { label: 'Watch List',       value: fundDeals.filter(d => d.deal_stage === 'Watch List').length,                     color: '#fbbf24' },
-        ] : [
-          { label: 'Total Inbound',    value: stats.total,                                                                     color: 'rgba(255,255,255,0.7)' },
-          { label: 'Founder Pitches',  value: stats.founder_pitches,                                                           color: '#7c6dfa' },
-          { label: 'Avg Score',        value: stats.avg_score,                                                                 color: '#f5a623' },
-          { label: 'Strong Fit',       value: stats.high_score,                                                                color: '#3dd68c' },
-          { label: 'Unreviewed',       value: stats.unreviewed,                                                                color: '#4da6ff' },
-        ]).map(({ label, value, color }, i) => (
+        {(() => {
+          const src = activeDeals;
+          const total = src.length;
+          const pitches = src.filter(d => d.category === 'Founder pitch').length;
+          const scores = src.map(d => d.relevance_score).filter(s => s != null);
+          const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
+          const high = src.filter(d => (d.relevance_score || 0) >= 7).length;
+          const unreviewed = src.filter(d => d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New')).length;
+          return [
+            { label: 'Total Inbound',   value: total,     color: 'rgba(255,255,255,0.7)' },
+            { label: 'Founder Pitches', value: pitches,   color: '#7c6dfa' },
+            { label: 'Avg Score',       value: avg,       color: '#f5a623' },
+            { label: 'Strong Fit',      value: high,      color: '#3dd68c' },
+            { label: 'Unreviewed',      value: unreviewed,color: '#4da6ff' },
+          ];
+        })().map(({ label, value, color }) => (
           <div key={label} className="flex-1 flex flex-col items-center justify-center">
             <span className="text-xl font-bold font-mono" style={{ color }} data-testid={`stat-${label.toLowerCase().replace(/\s/g,'-')}`}>
               {value}
