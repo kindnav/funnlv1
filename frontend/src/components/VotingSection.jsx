@@ -3,19 +3,33 @@ import { getDealVotes, castVote } from '../lib/api';
 import { MemberAvatar } from './MemberAvatar';
 
 const VOTE_CFG = {
-  yes:   { label: '✓ Yes',   activeColor: '#3dd68c', bg: 'rgba(61,214,140,0.12)',   border: 'rgba(61,214,140,0.4)'   },
-  maybe: { label: '? Maybe', activeColor: '#f5a623', bg: 'rgba(245,166,35,0.12)',  border: 'rgba(245,166,35,0.4)'  },
-  no:    { label: '✗ No',    activeColor: '#f05252', bg: 'rgba(240,82,82,0.12)',    border: 'rgba(240,82,82,0.4)'    },
+  pass:      { label: 'Pass',     desc: 'Not for us',            activeColor: '#f05252', bg: 'rgba(240,82,82,0.12)',    border: 'rgba(240,82,82,0.4)'    },
+  not_now:   { label: 'Not Now',  desc: 'Wrong timing / stage',  activeColor: '#9ca3af', bg: 'rgba(156,163,175,0.12)', border: 'rgba(156,163,175,0.4)' },
+  monitor:   { label: 'Monitor',  desc: 'Check back in 3-6mo',   activeColor: '#4da6ff', bg: 'rgba(77,166,255,0.12)',   border: 'rgba(77,166,255,0.4)'   },
+  dig_in:    { label: 'Dig In',   desc: 'Start due diligence',   activeColor: '#f5a623', bg: 'rgba(245,166,35,0.12)',  border: 'rgba(245,166,35,0.4)'  },
+  champion:  { label: 'Champion', desc: 'Fast track internally',  activeColor: '#3dd68c', bg: 'rgba(61,214,140,0.12)',  border: 'rgba(61,214,140,0.4)'  },
 };
 
-function getLeaningBadge(yes, maybe, no, total) {
-  if (total < 2) return null;
-  const allSame = yes === total || no === total || maybe === total;
-  if (yes > no && yes > maybe)
-    return { label: allSame ? 'Strong yes' : 'Leaning yes', color: '#3dd68c', bg: 'rgba(61,214,140,0.1)' };
-  if (no > yes && no > maybe)
-    return { label: allSame ? 'Strong no' : 'Leaning no', color: '#f05252', bg: 'rgba(240,82,82,0.1)' };
-  return { label: 'Split decision', color: '#f5a623', bg: 'rgba(245,166,35,0.1)' };
+function getLeaningBadge(votes) {
+  if (votes.length < 2) return null;
+  const counts = {};
+  votes.forEach((v) => { counts[v.vote] = (counts[v.vote] || 0) + 1; });
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  const [topVote, topCount] = top;
+  const allSame = topCount === votes.length;
+  const cfg = {
+    champion: { label: allSame ? 'Strong champion' : 'Leaning champion', color: '#3dd68c', bg: 'rgba(61,214,140,0.1)' },
+    dig_in:   { label: allSame ? 'Team wants to dig in' : 'Leaning dig in', color: '#f5a623', bg: 'rgba(245,166,35,0.1)' },
+    monitor:  { label: 'Worth monitoring', color: '#4da6ff', bg: 'rgba(77,166,255,0.1)' },
+    not_now:  { label: 'Not now', color: '#9ca3af', bg: 'rgba(156,163,175,0.1)' },
+    pass:     { label: allSame ? 'Team pass' : 'Leaning pass', color: '#f05252', bg: 'rgba(240,82,82,0.1)' },
+  };
+  // Check if there's a clear majority or it's split
+  const uniqueVotes = Object.keys(counts).length;
+  if (uniqueVotes > 2 || (uniqueVotes === 2 && Math.abs(Object.values(counts)[0] - Object.values(counts)[1]) <= 1)) {
+    return { label: 'Split decision', color: '#f5a623', bg: 'rgba(245,166,35,0.1)' };
+  }
+  return cfg[topVote] || null;
 }
 
 export function VotingSection({ dealId }) {
@@ -34,10 +48,7 @@ export function VotingSection({ dealId }) {
   }, [fetchVotes]);
 
   const myVote = votes.find((v) => v.is_me)?.vote;
-  const yesVoters = votes.filter((v) => v.vote === 'yes');
-  const noVoters = votes.filter((v) => v.vote === 'no');
-  const maybeVoters = votes.filter((v) => v.vote === 'maybe');
-  const leaning = getLeaningBadge(yesVoters.length, maybeVoters.length, noVoters.length, votes.length);
+  const leaning = getLeaningBadge(votes);
 
   const handleVote = async (v) => {
     if (casting) return;
@@ -58,8 +69,8 @@ export function VotingSection({ dealId }) {
         )}
       </div>
 
-      {/* Vote buttons */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
+      {/* Vote buttons — 5 options in a 2+3 or wrap grid */}
+      <div className="grid grid-cols-5 gap-1.5 mb-3">
         {Object.entries(VOTE_CFG).map(([key, cfg]) => {
           const active = myVote === key;
           return (
@@ -68,15 +79,16 @@ export function VotingSection({ dealId }) {
               data-testid={`vote-btn-${key}`}
               disabled={casting}
               onClick={() => handleVote(key)}
-              className="py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+              title={cfg.desc}
+              className="py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
               style={{
                 background: active ? cfg.bg : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${active ? cfg.border : 'rgba(255,255,255,0.08)'}`,
-                color: active ? cfg.activeColor : 'rgba(255,255,255,0.4)',
+                border: `1px solid ${active ? cfg.border : 'rgba(255,255,255,0.07)'}`,
+                color: active ? cfg.activeColor : 'rgba(255,255,255,0.35)',
                 boxShadow: active ? `0 0 10px ${cfg.activeColor}22` : 'none',
               }}
             >
-              {cfg.label}
+              <span className="font-semibold text-xs leading-tight">{cfg.label}</span>
             </button>
           );
         })}
@@ -84,28 +96,23 @@ export function VotingSection({ dealId }) {
 
       {/* Tally */}
       {votes.length > 0 && (
-        <div className="text-xs text-[rgba(255,255,255,0.35)] mb-3 font-mono">
-          {yesVoters.length} Yes · {maybeVoters.length} Maybe · {noVoters.length} No
-        </div>
-      )}
-
-      {/* Voter groups */}
-      {votes.length > 0 && (
-        <div className="space-y-2">
-          {[
-            { key: 'yes', voters: yesVoters, color: '#3dd68c' },
-            { key: 'maybe', voters: maybeVoters, color: '#f5a623' },
-            { key: 'no', voters: noVoters, color: '#f05252' },
-          ].filter(({ voters }) => voters.length > 0).map(({ key, voters, color }) => (
-            <div key={key} className="flex items-center gap-2">
-              <span className="text-xs font-mono w-10 shrink-0 capitalize" style={{ color }}>{key}:</span>
-              <div className="flex gap-1.5 flex-wrap">
-                {voters.map((v) => (
-                  <MemberAvatar key={v.user_id} name={v.display_name} size={22} title={v.display_name} />
-                ))}
+        <div className="space-y-1.5">
+          {Object.entries(VOTE_CFG).map(([key, cfg]) => {
+            const voters = votes.filter((v) => v.vote === key);
+            if (!voters.length) return null;
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-xs font-mono w-16 shrink-0 truncate" style={{ color: cfg.activeColor }}>
+                  {cfg.label}:
+                </span>
+                <div className="flex gap-1 flex-wrap">
+                  {voters.map((v) => (
+                    <MemberAvatar key={v.user_id} name={v.display_name} size={20} title={v.display_name} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

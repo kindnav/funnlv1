@@ -1975,8 +1975,8 @@ async def get_deal_votes(deal_id: str, current_user: dict = Depends(get_current_
 async def cast_vote(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     vote = data.get('vote')
-    if vote not in ('yes', 'no', 'maybe'):
-        raise HTTPException(status_code=400, detail="vote must be 'yes', 'no', or 'maybe'")
+    if vote not in ('pass', 'not_now', 'monitor', 'dig_in', 'champion'):
+        raise HTTPException(status_code=400, detail="vote must be 'pass', 'not_now', 'monitor', 'dig_in', or 'champion'")
     fund_info = await get_user_fund_info(uid)
     fund_id = fund_info['fund']['id'] if fund_info else None
     now = datetime.now(timezone.utc).isoformat()
@@ -1988,9 +1988,10 @@ async def cast_vote(deal_id: str, data: dict, current_user: dict = Depends(get_c
         if fund_id:
             u = await sb_select('users', {'id': f'eq.{uid}'})
             name = u[0].get('name', 'Someone') if u else 'Someone'
+            vote_display = {'pass': 'Pass', 'not_now': 'Not Now', 'monitor': 'Monitor', 'dig_in': 'Dig In', 'champion': 'Champion'}.get(vote, vote.capitalize())
             await sb_insert('deal_comments', {
                 'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
-                'body': f"{name} voted {vote.capitalize()}", 'type': 'system',
+                'body': f"{name} voted {vote_display}", 'type': 'system',
             })
     return {"ok": True, "vote": vote}
 
