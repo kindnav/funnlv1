@@ -339,15 +339,20 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Stats Bar */}
       <div className="h-16 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-5 gap-1 bg-[#0c0c12]">
-        {[
-          { label: 'Total Inbound', value: stats.total, color: 'rgba(255,255,255,0.7)' },
-          { label: 'Founder Pitches', value: stats.founder_pitches, color: '#7c6dfa' },
-          { label: 'Avg Score', value: stats.avg_score, color: '#f5a623' },
-          { label: 'Strong Fit', value: stats.high_score, color: '#3dd68c' },
-          { label: 'Unreviewed', value: stats.unreviewed, color: '#4da6ff' },
-        ].map(({ label, value, color }, i) => (
+        {(viewMode === 'fund-dashboard' ? [
+          { label: 'Total Deals',      value: fundDeals.length,                                                                color: 'rgba(255,255,255,0.7)' },
+          { label: 'First Look',       value: fundDeals.filter(d => d.deal_stage === 'First Look').length,                     color: '#4da6ff' },
+          { label: 'In Conversation',  value: fundDeals.filter(d => d.deal_stage === 'In Conversation').length,                color: '#f5a623' },
+          { label: 'Due Diligence',    value: fundDeals.filter(d => d.deal_stage === 'Due Diligence').length,                  color: '#3dd68c' },
+          { label: 'Watch List',       value: fundDeals.filter(d => d.deal_stage === 'Watch List').length,                     color: '#fbbf24' },
+        ] : [
+          { label: 'Total Inbound',    value: stats.total,                                                                     color: 'rgba(255,255,255,0.7)' },
+          { label: 'Founder Pitches',  value: stats.founder_pitches,                                                           color: '#7c6dfa' },
+          { label: 'Avg Score',        value: stats.avg_score,                                                                 color: '#f5a623' },
+          { label: 'Strong Fit',       value: stats.high_score,                                                                color: '#3dd68c' },
+          { label: 'Unreviewed',       value: stats.unreviewed,                                                                color: '#4da6ff' },
+        ]).map(({ label, value, color }, i) => (
           <div key={label} className="flex-1 flex flex-col items-center justify-center">
-            {i > 0 && <div className="absolute h-6 w-px bg-[rgba(255,255,255,0.05)]" style={{ left: `${(i / 5) * 100}%` }} />}
             <span className="text-xl font-bold font-mono" style={{ color }} data-testid={`stat-${label.toLowerCase().replace(/\s/g,'-')}`}>
               {value}
             </span>
