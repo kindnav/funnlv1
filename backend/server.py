@@ -2,6 +2,8 @@ import os
 import re
 import json
 import uuid
+import random
+import string
 import asyncio
 import logging
 import secrets
@@ -1736,6 +1738,364 @@ async def test_extraction(current_user: dict = Depends(get_current_user)):
     passed = sum(1 for r in results if r["overall_pass"])
     return {"passed": passed, "total": len(results), "pass_rate": f"{passed}/{len(results)}", "results": results}
 
+
+
+# ── Team collaboration helpers ──────────────────────────────────────────────────
+
+def generate_invite_code() -> str:
+    """Format: 3 uppercase letters + dash + 4 uppercase alphanumeric. e.g. FFC-X7K2"""
+    prefix = ''.join(random.choices(string.ascii_uppercase, k=3))
+    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f"{prefix}-{suffix}"
+
+
+async def get_user_fund_info(user_id: str) -> Optional[dict]:
+    """Returns {fund, role, members} or None if user is not in a fund."""
+    memberships = await sb_select('fund_members', {'user_id': f'eq.{user_id}'})
+    if not memberships:
+        return None
+    membership = memberships[0]
+    fund_id = membership['fund_id']
+    funds = await sb_select('funds', {'id': f'eq.{fund_id}'})
+    if not funds:
+        return None
+    fund = {k: v for k, v in funds[0].items() if k != '_id'}
+    members_raw = await sb_select('fund_members', {'fund_id': f'eq.{fund_id}'})
+    members = []
+    for m in (members_raw or []):
+        u_rows = await sb_select('users', {'id': f'eq.{m["user_id"]}'})
+        uu = u_rows[0] if u_rows else {}
+        members.append({
+            'user_id': m['user_id'],
+            'role': m.get('role', 'member'),
+            'display_name': m.get('display_name') or uu.get('name') or uu.get('email', ''),
+            'email': uu.get('email', ''),
+            'joined_at': m.get('joined_at'),
+        })
+    return {'fund': fund, 'role': membership.get('role', 'member'), 'members': members}
+
+
+async def create_notification(user_id: str, fund_id: str, notif_type: str, message: str, deal_id: str = None):
+    await sb_insert('notifications', {
+        'user_id': user_id, 'fund_id': fund_id, 'type': notif_type,
+        'message': message, 'deal_id': deal_id, 'read': False,
+    })
+
+
+# ── Fund endpoints ──────────────────────────────────────────────────────────────
+
+@api_router.post("/funds")
+async def create_fund(data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    if await sb_select('fund_members', {'user_id': f'eq.{uid}'}):
+        raise HTTPException(status_code=400, detail="You already belong to a fund. Leave it first.")
+    fund_name = (data.get('name') or '').strip()
+    if not fund_name:
+        raise HTTPException(status_code=400, detail="Fund name is required")
+    invite_code = generate_invite_code()
+    for _ in range(10):
+        if not await sb_select('funds', {'invite_code': f'eq.{invite_code}'}):
+            break
+        invite_code = generate_invite_code()
+    fund = await sb_insert('funds', {
+        'name': fund_name, 'created_by': uid, 'invite_code': invite_code,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    })
+    if not fund:
+        raise HTTPException(status_code=500, detail="Failed to create fund")
+    u_rows = await sb_select('users', {'id': f'eq.{uid}'})
+    display_name = u_rows[0].get('name', '') if u_rows else ''
+    await sb_insert('fund_members', {'fund_id': fund['id'], 'user_id': uid, 'role': 'admin', 'display_name': display_name})
+    return {'fund': {k: v for k, v in fund.items() if k != '_id'}, 'invite_code': invite_code, 'role': 'admin'}
+
+
+@api_router.post("/funds/join")
+async def join_fund(data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    invite_code = (data.get('invite_code') or '').strip().upper()
+    if not invite_code:
+        raise HTTPException(status_code=400, detail="Invite code is required")
+    if await sb_select('fund_members', {'user_id': f'eq.{uid}'}):
+        raise HTTPException(status_code=400, detail="You already belong to a fund. Leave it first.")
+    funds = await sb_select('funds', {'invite_code': f'eq.{invite_code}'})
+    if not funds:
+        raise HTTPException(status_code=404, detail="Invalid invite code. Ask your fund admin for the correct code.")
+    fund = funds[0]
+    if await sb_select('fund_members', {'fund_id': f'eq.{fund["id"]}', 'user_id': f'eq.{uid}'}):
+        raise HTTPException(status_code=400, detail="You are already a member of this fund.")
+    u_rows = await sb_select('users', {'id': f'eq.{uid}'})
+    display_name = u_rows[0].get('name', '') if u_rows else ''
+    await sb_insert('fund_members', {'fund_id': fund['id'], 'user_id': uid, 'role': 'member', 'display_name': display_name})
+    return {
+        'fund': {k: v for k, v in fund.items() if k != '_id'}, 'role': 'member',
+        'message': f"You joined {fund['name']}. Your inbox is now connected to your team's shared deal flow.",
+    }
+
+
+@api_router.get("/funds/me")
+async def get_my_fund(current_user: dict = Depends(get_current_user)):
+    return await get_user_fund_info(current_user['user_id']) or {}
+
+
+@api_router.delete("/funds/{fund_id}/members/{member_user_id}")
+async def remove_fund_member(fund_id: str, member_user_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    my_m = await sb_select('fund_members', {'fund_id': f'eq.{fund_id}', 'user_id': f'eq.{uid}'})
+    if not my_m or my_m[0].get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Only fund admins can remove members.")
+    if member_user_id == uid:
+        raise HTTPException(status_code=400, detail="Use 'Delete Fund' to remove yourself as admin.")
+    await sb_delete('fund_members', {'fund_id': f'eq.{fund_id}', 'user_id': f'eq.{member_user_id}'})
+    return {"ok": True}
+
+
+@api_router.post("/funds/leave")
+async def leave_fund(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    memberships = await sb_select('fund_members', {'user_id': f'eq.{uid}'})
+    if not memberships:
+        raise HTTPException(status_code=404, detail="You are not in a fund.")
+    if memberships[0].get('role') == 'admin':
+        raise HTTPException(status_code=400, detail="Admins cannot leave. Delete the fund instead.")
+    await sb_delete('fund_members', {'user_id': f'eq.{uid}', 'fund_id': f'eq.{memberships[0]["fund_id"]}'})
+    return {"ok": True}
+
+
+@api_router.delete("/funds/{fund_id}")
+async def delete_fund(fund_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    my_m = await sb_select('fund_members', {'fund_id': f'eq.{fund_id}', 'user_id': f'eq.{uid}'})
+    if not my_m or my_m[0].get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Only the fund admin can delete the fund.")
+    await sb_delete('fund_members', {'fund_id': f'eq.{fund_id}'})
+    await sb_delete('funds', {'id': f'eq.{fund_id}'})
+    return {"ok": True}
+
+
+# ── Fund dashboard deals ────────────────────────────────────────────────────────
+
+@api_router.get("/deals/fund")
+async def get_fund_deals(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    fund_info = await get_user_fund_info(uid)
+    if not fund_info:
+        return []
+    SKIP = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
+    all_deals = []
+    for member in fund_info['members']:
+        rows = await sb_select('deals', {'user_id': f'eq.{member["user_id"]}', 'order': 'created_at.desc', 'limit': '100'})
+        for deal in (rows or []):
+            if deal.get('category') not in SKIP:
+                deal['inbox_owner_name'] = member['display_name']
+                deal['inbox_owner_email'] = member['email']
+                all_deals.append(deal)
+    all_deals.sort(key=lambda d: d.get('created_at') or '', reverse=True)
+    return all_deals
+
+
+# ── Deal stage & assignment ─────────────────────────────────────────────────────
+
+@api_router.patch("/deals/{deal_id}/stage")
+async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    new_stage = (data.get('stage') or '').strip()
+    if not new_stage:
+        raise HTTPException(status_code=400, detail="stage is required")
+    await sb_update('deals', {'deal_stage': new_stage}, {'id': f'eq.{deal_id}'})
+    fund_info = await get_user_fund_info(uid)
+    if fund_info:
+        u = await sb_select('users', {'id': f'eq.{uid}'})
+        name = u[0].get('name', 'Someone') if u else 'Someone'
+        await sb_insert('deal_comments', {
+            'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_info['fund']['id'],
+            'body': f"{name} moved this to {new_stage}", 'type': 'system',
+        })
+    return {"ok": True, "stage": new_stage}
+
+
+@api_router.post("/deals/{deal_id}/assign")
+async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    assignee_id = data.get('assigned_to')
+    fund_info = await get_user_fund_info(uid)
+    if not fund_info:
+        raise HTTPException(status_code=403, detail="Must be in a fund to assign deals.")
+    fund_id = fund_info['fund']['id']
+    update_data = {'assigned_to': assignee_id, 'fund_id': fund_id,
+                   'deal_stage': 'Assigned' if assignee_id else 'New'}
+    await sb_update('deals', update_data, {'id': f'eq.{deal_id}'})
+    u_by = await sb_select('users', {'id': f'eq.{uid}'})
+    name_by = u_by[0].get('name', 'Someone') if u_by else 'Someone'
+    if assignee_id:
+        await sb_insert('deal_assignments', {
+            'deal_id': deal_id, 'assigned_to': assignee_id,
+            'assigned_by': uid, 'fund_id': fund_id, 'note': data.get('note', ''),
+        })
+        u_to = await sb_select('users', {'id': f'eq.{assignee_id}'})
+        name_to = u_to[0].get('name', 'Someone') if u_to else 'Someone'
+        await sb_insert('deal_comments', {
+            'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
+            'body': f"{name_by} assigned this deal to {name_to}", 'type': 'system',
+        })
+        if assignee_id != uid:
+            d_rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
+            company = d_rows[0].get('company_name') or d_rows[0].get('sender_name', 'a deal') if d_rows else 'a deal'
+            await create_notification(assignee_id, fund_id, 'assignment', f"{name_by} assigned {company} to you", deal_id)
+    else:
+        await sb_insert('deal_comments', {
+            'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
+            'body': f"{name_by} unassigned this deal", 'type': 'system',
+        })
+    return {"ok": True, "assigned_to": assignee_id}
+
+
+# ── Votes ───────────────────────────────────────────────────────────────────────
+
+@api_router.get("/deals/{deal_id}/votes")
+async def get_deal_votes(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    fund_info = await get_user_fund_info(uid)
+    votes = await sb_select('deal_votes', {'deal_id': f'eq.{deal_id}'})
+    result = []
+    for v in (votes or []):
+        u = await sb_select('users', {'id': f'eq.{v["user_id"]}'})
+        uu = u[0] if u else {}
+        display_name = uu.get('name') or uu.get('email', '?')
+        if fund_info:
+            fm = await sb_select('fund_members', {
+                'fund_id': f'eq.{fund_info["fund"]["id"]}', 'user_id': f'eq.{v["user_id"]}'
+            })
+            if fm and fm[0].get('display_name'):
+                display_name = fm[0]['display_name']
+        result.append({'user_id': v['user_id'], 'vote': v['vote'], 'display_name': display_name, 'is_me': v['user_id'] == uid})
+    return result
+
+
+@api_router.post("/deals/{deal_id}/vote")
+async def cast_vote(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    vote = data.get('vote')
+    if vote not in ('yes', 'no', 'maybe'):
+        raise HTTPException(status_code=400, detail="vote must be 'yes', 'no', or 'maybe'")
+    fund_info = await get_user_fund_info(uid)
+    fund_id = fund_info['fund']['id'] if fund_info else None
+    now = datetime.now(timezone.utc).isoformat()
+    existing = await sb_select('deal_votes', {'deal_id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    if existing:
+        await sb_update('deal_votes', {'vote': vote, 'updated_at': now}, {'deal_id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    else:
+        await sb_insert('deal_votes', {'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id, 'vote': vote})
+        if fund_id:
+            u = await sb_select('users', {'id': f'eq.{uid}'})
+            name = u[0].get('name', 'Someone') if u else 'Someone'
+            await sb_insert('deal_comments', {
+                'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
+                'body': f"{name} voted {vote.capitalize()}", 'type': 'system',
+            })
+    return {"ok": True, "vote": vote}
+
+
+# ── Comments ────────────────────────────────────────────────────────────────────
+
+@api_router.get("/deals/{deal_id}/comments")
+async def get_deal_comments(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    comments = await sb_select('deal_comments', {'deal_id': f'eq.{deal_id}', 'order': 'created_at.asc'})
+    result = []
+    for c in (comments or []):
+        u = await sb_select('users', {'id': f'eq.{c["user_id"]}'})
+        uu = u[0] if u else {}
+        result.append({
+            'id': c['id'], 'deal_id': c['deal_id'], 'user_id': c['user_id'],
+            'body': c['body'], 'type': c.get('type', 'comment'),
+            'parent_id': c.get('parent_id'), 'mentions': c.get('mentions') or [],
+            'created_at': c.get('created_at'), 'updated_at': c.get('updated_at'),
+            'edited': c.get('edited', False),
+            'display_name': uu.get('name') or uu.get('email', 'Unknown'),
+            'is_me': c['user_id'] == uid,
+        })
+    return result
+
+
+@api_router.post("/deals/{deal_id}/comments")
+async def post_comment(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    body = (data.get('body') or '').strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    fund_info = await get_user_fund_info(uid)
+    fund_id = fund_info['fund']['id'] if fund_info else None
+    mentions = data.get('mentions') or []
+    saved = await sb_insert('deal_comments', {
+        'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
+        'body': body, 'parent_id': data.get('parent_id'),
+        'mentions': mentions, 'type': 'comment',
+    })
+    if saved and mentions and fund_id:
+        u = await sb_select('users', {'id': f'eq.{uid}'})
+        poster = u[0].get('name', 'Someone') if u else 'Someone'
+        d = await sb_select('deals', {'id': f'eq.{deal_id}'})
+        company = d[0].get('company_name') or d[0].get('sender_name', 'a deal') if d else 'a deal'
+        for m_uid in mentions:
+            if m_uid != uid:
+                await create_notification(m_uid, fund_id, 'mention', f"{poster} mentioned you in {company}", deal_id)
+    if not saved:
+        raise HTTPException(status_code=500, detail="Failed to post comment")
+    u = await sb_select('users', {'id': f'eq.{uid}'})
+    uu = u[0] if u else {}
+    return {**{k: v for k, v in saved.items() if k != '_id'}, 'display_name': uu.get('name') or uu.get('email', ''), 'is_me': True}
+
+
+@api_router.patch("/deal-comments/{comment_id}")
+async def edit_comment(comment_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    body = (data.get('body') or '').strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body required")
+    rows = await sb_select('deal_comments', {'id': f'eq.{comment_id}'})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    fund_info = await get_user_fund_info(uid)
+    is_admin = fund_info and fund_info['role'] == 'admin'
+    if rows[0]['user_id'] != uid and not is_admin:
+        raise HTTPException(status_code=403, detail="Can only edit your own comments.")
+    await sb_update('deal_comments', {'body': body, 'edited': True, 'updated_at': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{comment_id}'})
+    return {"ok": True, "body": body, "edited": True}
+
+
+@api_router.delete("/deal-comments/{comment_id}")
+async def delete_comment(comment_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    rows = await sb_select('deal_comments', {'id': f'eq.{comment_id}'})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    fund_info = await get_user_fund_info(uid)
+    is_admin = fund_info and fund_info['role'] == 'admin'
+    if rows[0]['user_id'] != uid and not is_admin:
+        raise HTTPException(status_code=403, detail="Can only delete your own comments.")
+    await sb_delete('deal_comments', {'id': f'eq.{comment_id}'})
+    return {"ok": True}
+
+
+# ── Notifications ───────────────────────────────────────────────────────────────
+
+@api_router.get("/notifications")
+async def get_notifications(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    rows = await sb_select('notifications', {'user_id': f'eq.{uid}', 'order': 'created_at.desc', 'limit': '10'})
+    return rows or []
+
+
+@api_router.patch("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    await sb_update('notifications', {'read': True}, {'user_id': f'eq.{current_user["user_id"]}', 'read': 'eq.false'})
+    return {"ok": True}
+
+
+@api_router.patch("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, current_user: dict = Depends(get_current_user)):
+    await sb_update('notifications', {'read': True}, {'id': f'eq.{notif_id}', 'user_id': f'eq.{current_user["user_id"]}'})
+    return {"ok": True}
 
 
 # ── App setup ───────────────────────────────────────────────────────────────────

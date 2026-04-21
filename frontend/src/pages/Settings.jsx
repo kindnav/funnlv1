@@ -4,7 +4,8 @@ import {
   ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle,
   BookOpen, Save, Sparkles, ChevronDown
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getFundSettings, saveFundSettings } from '../lib/api';
+import { getSettings, disconnectGmail, logout, getFundSettings, saveFundSettings, getMyFund } from '../lib/api';
+import { TeamSetup } from '../components/TeamSetup';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -26,10 +27,14 @@ export default function Settings({ user, onLogout }) {
   const [thesisSaving, setThesisSaving] = useState(false);
   const [thesisSaved, setThesisSaved] = useState(false);
 
+  // Team
+  const [fundInfo, setFundInfo] = useState(null);
+  const [fundLoading, setFundLoading] = useState(true);
+
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([getSettings(), getFundSettings()]).then(([s, f]) => {
+    Promise.all([getSettings(), getFundSettings(), getMyFund()]).then(([s, f, fi]) => {
       if (s) setSettings(s);
       if (f && Object.keys(f).length > 0) {
         setThesis({
@@ -41,6 +46,8 @@ export default function Settings({ user, onLogout }) {
           stages: f.stages || [],
         });
       }
+      if (fi && fi.fund) setFundInfo(fi);
+      setFundLoading(false);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -290,6 +297,25 @@ export default function Settings({ user, onLogout }) {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* ── Team Collaboration ── */}
+          <div className={cardCls} data-testid="team-section">
+            {fundLoading ? (
+              <div className="flex items-center gap-2 text-[rgba(255,255,255,0.3)] text-sm">
+                <RefreshCw size={13} className="animate-spin" />Loading team…
+              </div>
+            ) : (
+              <TeamSetup
+                fundInfo={fundInfo}
+                onFundChange={async () => {
+                  setFundLoading(true);
+                  const fi = await getMyFund().catch(() => null);
+                  setFundInfo(fi?.fund ? fi : null);
+                  setFundLoading(false);
+                }}
+              />
+            )}
           </div>
 
           {/* ── Gmail Integration ── */}

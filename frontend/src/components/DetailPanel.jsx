@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   X, ExternalLink, Check, Archive, ChevronRight,
   XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, UserPlus, Bookmark,
+  ChevronDown,
 } from 'lucide-react';
-import { updateDeal, upsertContact } from '../lib/api';
+import { updateDeal, upsertContact, updateDealStage, assignDeal } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
+import { VotingSection } from './VotingSection';
+import { CommentThread } from './CommentThread';
+import { MemberAvatar } from './MemberAvatar';
 
 const normalizeStatus = (s) => {
   if (!s) return 'New';
@@ -63,13 +67,40 @@ const ThesisRing = ({ score }) => {
   );
 };
 
-export default function DetailPanel({ deal, onClose, onDealUpdated }) {
+export default function DetailPanel({ deal, onClose, onDealUpdated, fundInfo, userId }) {
   const [saving, setSaving] = useState(null);
   const [actionModal, setActionModal] = useState(null);
   const [notes, setNotes] = useState(deal.notes || '');
   const [notesSaved, setNotesSaved] = useState(false);
+  const [dealStage, setDealStage] = useState(deal.deal_stage || 'New');
+  const [assignedTo, setAssignedTo] = useState(deal.assigned_to || '');
+  const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
 
-  useEffect(() => { setNotes(deal.notes || ''); }, [deal.id]);
+  const members = fundInfo?.members || [];
+  const inFund = !!fundInfo?.fund;
+
+  useEffect(() => {
+    setNotes(deal.notes || '');
+    setDealStage(deal.deal_stage || 'New');
+    setAssignedTo(deal.assigned_to || '');
+  }, [deal.id]);
+
+  const handleStageChange = useCallback(async (stage) => {
+    setDealStage(stage);
+    try {
+      await updateDealStage(deal.id, stage);
+      onDealUpdated({ ...deal, deal_stage: stage });
+    } catch { toast.error('Failed to update stage'); }
+  }, [deal, onDealUpdated]);
+
+  const handleAssign = useCallback(async (memberId) => {
+    setAssignedTo(memberId);
+    setAssignDropdownOpen(false);
+    try {
+      await assignDeal(deal.id, { assigned_to: memberId || null });
+      onDealUpdated({ ...deal, assigned_to: memberId || null });
+    } catch { toast.error('Failed to assign deal'); }
+  }, [deal, onDealUpdated]);
 
   const handleSaveNotes = async () => {
     if (notes === (deal.notes || '')) return;
@@ -139,6 +170,87 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             </div>
             <p className="text-[rgba(255,255,255,0.5)] text-xs mt-2 leading-snug">{deal.subject}</p>
           </div>
+
+          {/* ── Deal Stage (fund only) ── */}
+          {inFund && (
+            <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]" data-testid="deal-stage-section">
+              <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-2.5">Deal Stage</p>
+              <div className="flex items-center gap-1 flex-wrap">
+                {['New', 'Assigned', 'Under Review', 'Committee Decision', 'Invested', 'Passed'].map((s) => {
+                  const active = dealStage === s;
+                  const stageColors = {
+                    'New': ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.35)'],
+                    'Assigned': ['rgba(77,166,255,0.15)', '#4da6ff'],
+                    'Under Review': ['rgba(245,166,35,0.15)', '#f5a623'],
+                    'Committee Decision': ['rgba(124,109,250,0.15)', '#7c6dfa'],
+                    'Invested': ['rgba(61,214,140,0.15)', '#3dd68c'],
+                    'Passed': ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.3)'],
+                  };
+                  const [bg, color] = stageColors[s] || ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.3)'];
+                  return (
+                    <button
+                      key={s}
+                      data-testid={`stage-btn-${s.toLowerCase().replace(/ /g, '-')}`}
+                      onClick={() => handleStageChange(s)}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                      style={active ? {
+                        background: bg, color, border: `1px solid ${color}66`,
+                        boxShadow: `0 0 8px ${color}22`,
+                      } : {
+                        background: 'rgba(255,255,255,0.03)',
+                        color: 'rgba(255,255,255,0.3)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                      }}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Assignment dropdown */}
+              <div className="mt-3 relative">
+                <p className="text-[rgba(255,255,255,0.3)] text-xs mb-1.5">Assigned to</p>
+                <button
+                  data-testid="assign-dropdown-btn"
+                  onClick={() => setAssignDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  {assignedTo ? (
+                    <>
+                      <MemberAvatar name={members.find((m) => m.user_id === assignedTo)?.display_name || ''} size={20} />
+                      <span className="text-white text-xs truncate flex-1 text-left">
+                        {members.find((m) => m.user_id === assignedTo)?.display_name || 'Unknown'}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[rgba(255,255,255,0.3)] text-xs flex-1 text-left">Unassigned</span>
+                  )}
+                  <ChevronDown size={12} className="text-[rgba(255,255,255,0.3)] shrink-0" />
+                </button>
+                {assignDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-full rounded-lg overflow-hidden z-50"
+                    style={{ background: '#1a1a26', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                    <button
+                      onClick={() => handleAssign('')}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left transition-colors">
+                      <span className="text-[rgba(255,255,255,0.4)] text-xs">Unassigned</span>
+                    </button>
+                    {members.map((m) => (
+                      <button key={m.user_id}
+                        onClick={() => handleAssign(m.user_id)}
+                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left transition-colors">
+                        <MemberAvatar name={m.display_name} size={20} />
+                        <span className="text-white text-xs">{m.display_name}</span>
+                        {m.user_id === userId && <span className="text-[rgba(255,255,255,0.25)] text-xs ml-auto">You</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* AI Summary */}
           {deal.summary && (
@@ -265,7 +377,8 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
             </div>
           )}
 
-          {/* Notes */}
+          {/* Notes (solo users only — fund members get CommentThread) */}
+          {!inFund && (
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
             <div className="flex items-center gap-2 mb-2">
               <FileText size={13} className="text-[rgba(255,255,255,0.3)]" />
@@ -288,6 +401,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
               className="w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.07)] rounded-lg px-3 py-2.5 text-xs text-[rgba(255,255,255,0.75)] placeholder-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[#7c6dfa] transition-colors resize-none leading-relaxed"
             />
           </div>
+          )}
 
           {deal.next_action && (
             <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
@@ -457,6 +571,17 @@ export default function DetailPanel({ deal, onClose, onDealUpdated }) {
               </button>
             )}
           </div>
+
+          {/* ── Voting + Comments (fund only) / Notes (solo) ── */}
+          {inFund ? (
+            <>
+              <VotingSection dealId={deal.id} />
+              <CommentThread dealId={deal.id} fundInfo={fundInfo} userId={userId} />
+            </>
+          ) : (
+            /* solo notes */
+            <div data-testid="notes-section" />
+          )}
 
           {/* Open in Gmail */}
           {deal.gmail_thread_link && deal.gmail_thread_link !== '#' && (

@@ -8,7 +8,9 @@ import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
 import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
-import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings } from '../lib/api';
+import { NotificationBell } from '../components/NotificationBell';
+import { MemberAvatar, getInitials } from '../components/MemberAvatar';
+import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -55,14 +57,26 @@ const fmtDate = (d) => {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros'];
+const FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros', 'Assigned to me'];
+
+const STAGE_STYLES = {
+  'New':                  { bg: 'rgba(255,255,255,0.05)',   color: 'rgba(255,255,255,0.4)',   border: 'rgba(255,255,255,0.1)' },
+  'Assigned':             { bg: 'rgba(77,166,255,0.1)',     color: '#4da6ff',                  border: 'rgba(77,166,255,0.3)' },
+  'Under Review':         { bg: 'rgba(245,166,35,0.1)',     color: '#f5a623',                  border: 'rgba(245,166,35,0.3)' },
+  'Committee Decision':   { bg: 'rgba(124,109,250,0.1)',    color: '#7c6dfa',                  border: 'rgba(124,109,250,0.3)' },
+  'Invested':             { bg: 'rgba(61,214,140,0.1)',     color: '#3dd68c',                  border: 'rgba(61,214,140,0.3)' },
+  'Passed':               { bg: 'rgba(255,255,255,0.04)',   color: 'rgba(255,255,255,0.3)',   border: 'rgba(255,255,255,0.08)' },
+};
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
+  const [fundDeals, setFundDeals] = useState([]);
   const [stats, setStats] = useState({ total: 0, founder_pitches: 0, avg_relevance: 0, high_score: 0, unreviewed: 0 });
   const [fundName, setFundName] = useState('');
   const [fundSettings, setFundSettings] = useState({});
+  const [fundInfo, setFundInfo] = useState(null);
+  const [viewMode, setViewMode] = useState('my-inbox'); // 'my-inbox' | 'fund-dashboard'
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -72,10 +86,8 @@ export default function Dashboard({ user, onLogout }) {
   const [lastSynced, setLastSynced] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Onboarding: only show once, only if no deals on first load
   const [showChecklist, setShowChecklist] = useState(false);
   const [checklistReady, setChecklistReady] = useState(false);
-  // Product tour
   const [showTour, setShowTour] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,17 +110,21 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, s, f, status] = await Promise.all([getDeals(), getStats(), getFundSettings(), getSyncStatus().catch(() => null)]);
+      const [d, s, f, status, fi] = await Promise.all([
+        getDeals(), getStats(), getFundSettings(),
+        getSyncStatus().catch(() => null),
+        getMyFund().catch(() => null),
+      ]);
       if (d) setDeals(d);
       if (s) setStats(s);
-      if (f) {
-        setFundSettings(f);
-        if (f.fund_name) setFundName(f.fund_name);
-      }
+      if (f) { setFundSettings(f); if (f.fund_name) setFundName(f.fund_name); }
       if (status?.last_synced) setLastSynced(status.last_synced);
-    } finally {
-      setLoading(false);
-    }
+      if (fi?.fund) {
+        setFundInfo(fi);
+        const fd = await getFundDeals().catch(() => []);
+        setFundDeals(fd || []);
+      }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -123,8 +139,10 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [loading, checklistReady, fundSettings, deals]);
 
+  const activeDeals = viewMode === 'fund-dashboard' ? fundDeals : deals;
+
   const filteredDeals = useMemo(() => {
-    let list = deals;
+    let list = activeDeals;
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -141,9 +159,10 @@ export default function Dashboard({ user, onLogout }) {
       case 'Score ≥ 7': return list.filter((d) => (d.relevance_score || 0) >= 7);
       case 'Pitches': return list.filter((d) => d.category === 'Founder pitch');
       case 'Warm Intros': return list.filter((d) => d.category === 'Warm intro');
+      case 'Assigned to me': return list.filter((d) => d.assigned_to === user?.id);
       default: return list;
     }
-  }, [deals, filter, search]);
+  }, [activeDeals, filter, search, user]);
 
   const handleSync = async () => {
     if (isSyncing) return;
@@ -311,6 +330,10 @@ export default function Dashboard({ user, onLogout }) {
         >
           <LogOut size={15} />
         </button>
+        <NotificationBell onNavigateToDeal={(dealId) => {
+          const d = [...deals, ...fundDeals].find((x) => x.id === dealId);
+          if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
+        }} />
       </nav>
 
       {/* Stats Bar */}
@@ -348,6 +371,33 @@ export default function Dashboard({ user, onLogout }) {
             className="bg-transparent text-sm text-white placeholder-[rgba(255,255,255,0.25)] focus:outline-none flex-1 min-w-0"
           />
         </div>
+
+        {/* My Inbox / Fund Dashboard toggle */}
+        {fundInfo?.fund && (
+          <div className="flex items-center rounded-lg p-0.5 shrink-0"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            {[
+              { id: 'my-inbox', label: 'My Inbox' },
+              { id: 'fund-dashboard', label: 'Fund Dashboard' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                data-testid={`view-${tab.id}`}
+                onClick={() => setViewMode(tab.id)}
+                className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                style={viewMode === tab.id ? {
+                  background: '#7c6dfa', color: 'white',
+                  boxShadow: '0 0 8px rgba(124,109,250,0.3)',
+                } : {
+                  color: 'rgba(255,255,255,0.4)',
+                  background: 'transparent',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Filter tabs */}
         <div className="flex items-center gap-1">
@@ -506,10 +556,13 @@ export default function Dashboard({ user, onLogout }) {
             <table className="w-full border-collapse text-left" data-testid="deals-table">
               <thead className="sticky top-0 z-10 bg-[#0c0c12]">
                 <tr>
-                  {['', 'Score', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action', 'Date'].map((h) => (
+                  {[
+                    '', 'Score', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action',
+                    ...(viewMode === 'fund-dashboard' ? ['Owner', 'Assigned', 'Stage', 'Votes'] : []),
+                    'Date',
+                  ].map((h) => (
                     <th
                       key={h}
-                      data-testid={h === 'Score' ? 'fit-pct-header' : undefined}
                       className="border-b border-[rgba(255,255,255,0.07)] px-3 py-2.5 text-[rgba(255,255,255,0.4)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
                     >
                       {h}
@@ -518,7 +571,10 @@ export default function Dashboard({ user, onLogout }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredDeals.map((deal) => (
+                {filteredDeals.map((deal) => {
+                  const stageStyle = STAGE_STYLES[deal.deal_stage] || STAGE_STYLES['New'];
+                  const assignedMember = fundInfo?.members?.find((m) => m.user_id === deal.assigned_to);
+                  return (
                   <tr
                     key={deal.id}
                     data-testid={`deal-row-${deal.id}`}
@@ -533,7 +589,6 @@ export default function Dashboard({ user, onLogout }) {
                       <StatusDot status={deal.status} />
                     </td>
                     <td className="px-3 py-2.5 w-14">
-                      {/* Merged score: Fit % (0-100) when available, else relevance score (1-10) */}
                       {deal.thesis_match_score != null ? (
                         <span
                           className="inline-flex items-center justify-center h-6 px-1.5 rounded border font-mono text-xs font-bold"
@@ -563,9 +618,7 @@ export default function Dashboard({ user, onLogout }) {
                       )}
                     </td>
                     <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs border whitespace-nowrap ${getCatStyle(deal.category)}`}
-                      >
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs border whitespace-nowrap ${getCatStyle(deal.category)}`}>
                         {deal.category || 'Other'}
                       </span>
                     </td>
@@ -580,13 +633,46 @@ export default function Dashboard({ user, onLogout }) {
                     <td className="px-3 py-2.5 max-w-[140px]">
                       <p className="text-[rgba(255,255,255,0.45)] text-xs truncate">{deal.next_action || '—'}</p>
                     </td>
+
+                    {/* Fund-only columns */}
+                    {viewMode === 'fund-dashboard' && (
+                      <>
+                        <td className="px-3 py-2.5">
+                          {deal.inbox_owner_name ? (
+                            <MemberAvatar name={deal.inbox_owner_name} size={24} title={deal.inbox_owner_name} />
+                          ) : <span className="text-[rgba(255,255,255,0.2)] text-xs">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {assignedMember ? (
+                            <MemberAvatar name={assignedMember.display_name} size={24} title={assignedMember.display_name} />
+                          ) : <span className="text-[rgba(255,255,255,0.2)] text-xs">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="px-1.5 py-0.5 rounded text-xs whitespace-nowrap"
+                            style={{
+                              background: stageStyle.bg,
+                              color: stageStyle.color,
+                              border: `1px solid ${stageStyle.border}`,
+                            }}>
+                            {deal.deal_stage || 'New'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="text-xs font-mono text-[rgba(255,255,255,0.35)]">
+                            {deal._vote_tally || '—'}
+                          </span>
+                        </td>
+                      </>
+                    )}
+
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono">
                         {fmtDate(deal.received_date || deal.created_at)}
                       </p>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -598,6 +684,8 @@ export default function Dashboard({ user, onLogout }) {
             deal={selectedDeal}
             onClose={() => setSelectedDeal(null)}
             onDealUpdated={handleDealUpdated}
+            fundInfo={fundInfo}
+            userId={user?.id}
           />
         )}
       </div>
