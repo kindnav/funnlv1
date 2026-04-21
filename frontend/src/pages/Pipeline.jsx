@@ -1,25 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, BookOpen, LayoutGrid, RefreshCw, ChevronRight, ChevronLeft, Target, TrendingUp, TrendingDown } from 'lucide-react';
-import { getDeals, updateDeal } from '../lib/api';
+import { getDeals, updateDealStage } from '../lib/api';
 import DetailPanel from '../components/DetailPanel';
 
 const STAGES = [
-  { key: 'Pipeline',     label: 'Pipeline',      color: '#7c6dfa', dot: 'bg-[#7c6dfa]' },
-  { key: 'New',          label: 'Inbox',          color: '#4da6ff', dot: 'bg-[#4da6ff]' },
-  { key: 'In Review',    label: 'In Review',      color: '#f5a623', dot: 'bg-[#f5a623]' },
-  { key: 'In Diligence', label: 'In Diligence',   color: '#2dd4bf', dot: 'bg-[#2dd4bf]' },
-  { key: 'Passed',       label: 'Passed',          color: '#f05252', dot: 'bg-[#f05252]' },
-  { key: 'Archived',     label: 'Archived',        color: 'rgba(255,255,255,0.3)', dot: 'bg-[rgba(255,255,255,0.3)]' },
+  { key: 'Inbound',          label: 'Inbound',          color: '#7c6dfa' },
+  { key: 'First Look',       label: 'First Look',       color: '#4da6ff' },
+  { key: 'In Conversation',  label: 'In Conversation',  color: '#f5a623' },
+  { key: 'Due Diligence',    label: 'Due Diligence',    color: '#3dd68c' },
+  { key: 'Closed',           label: 'Closed',           color: '#22c55e' },
+  { key: 'Passed',           label: 'Passed',           color: '#f05252' },
+  { key: 'Watch List',       label: 'Watch List',       color: '#fbbf24' },
 ];
 const STAGE_KEYS = STAGES.map((s) => s.key);
-
-// Normalize old/inconsistent status values to canonical ones
-const normalizeStatus = (s) => {
-  if (!s) return 'New';
-  const m = { pipeline: 'Pipeline', archived: 'Archived', Reviewed: 'In Review', reviewed: 'In Review' };
-  return m[s] || s;
-};
 
 const ThesisMini = ({ score }) => {
   if (score == null) return null;
@@ -132,10 +126,10 @@ export default function Pipeline({ user, onLogout }) {
 
   useEffect(() => { fetchDeals(); }, [fetchDeals]);
 
-  const handleMove = async (deal, newStatus) => {
-    await updateDeal(deal.id, { status: newStatus });
-    setDeals((prev) => prev.map((d) => d.id === deal.id ? { ...d, status: newStatus } : d));
-    if (selectedDeal?.id === deal.id) setSelectedDeal({ ...deal, status: newStatus });
+  const handleMove = async (deal, newStage) => {
+    await updateDealStage(deal.id, newStage);
+    setDeals((prev) => prev.map((d) => d.id === deal.id ? { ...d, deal_stage: newStage } : d));
+    if (selectedDeal?.id === deal.id) setSelectedDeal({ ...deal, deal_stage: newStage });
   };
 
   const handleDealUpdated = (updated) => {
@@ -144,7 +138,7 @@ export default function Pipeline({ user, onLogout }) {
   };
 
   const grouped = STAGE_KEYS.reduce((acc, key) => {
-    acc[key] = deals.filter((d) => normalizeStatus(d.status) === key);
+    acc[key] = deals.filter((d) => (d.deal_stage || 'Inbound') === key);
     return acc;
   }, {});
 
