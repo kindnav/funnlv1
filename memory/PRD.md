@@ -1,8 +1,8 @@
 # VC Deal Flow Intelligence Tool — PRD
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Last Updated**: 2026-04-18  
-**Status**: MVP Complete — Onboarding wizard, Review Mode, background sync, dynamic fund name all live
+**Last Updated**: 2026-04-21  
+**Status**: MVP Complete — 7-stage VC deal flow system live
 
 ---
 
@@ -225,14 +225,23 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 ## Prioritized Backlog
 
 ### P0 (DONE ✅)
+- ✅ 7-stage VC deal flow system (Inbound, First Look, In Conversation, Due Diligence, Closed, Passed, Watch List)
+- ✅ Backend auto-migration on startup: old stage names → new ones
+- ✅ ReviewMode 4-way swipe: Right=First Look, Left=Pass (reason modal), Up=Watch List (date modal), Down=Draft Reply
+- ✅ PassModal: presets + custom text input, skip option
+- ✅ WatchlistModal: 1/3/6/12 month presets + custom date picker
+- ✅ DetailPanel stage selector: Progress row (active stages) + Exit State row (Passed/Watch List)
+- ✅ pass_reason and watchlist_revisit_date saved via /api/deals/{id}/stage
+- ✅ Dashboard STAGE_STYLES updated for all 7 new stages
+- ✅ Team Collaboration Engine (Funds, Member Invites, Deal Assignments, VC-term Voting, Comments)
 - ✅ Contacts table created in Supabase
 - ✅ Full Contacts system implemented and tested
 
 ### P1 (Next features)
 - [ ] Deal CSV export (user mentioned for deals table)
 - [ ] Slack webhook for high-score deals (score ≥ 70)
+- [ ] Watch List reminders banner on dashboard (if watchlist_revisit_date <= today)
 
 ### P2 (Future)
 - [ ] Email thread view — full conversation history
 - [ ] Bulk actions (multi-select deals)
-- [ ] Team collaboration (multi-user per fund)
