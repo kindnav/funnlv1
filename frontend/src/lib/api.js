@@ -83,6 +83,8 @@ export const updateDealStage = (dealId, stage, extra = {}) =>
   fetchJson(`${API}/deals/${dealId}/stage`, { method: 'PATCH', body: JSON.stringify({ stage, ...extra }) });
 export const deleteDeal = (dealId) =>
   fetchJson(`${API}/deals/${dealId}`, { method: 'DELETE' });
+export const getArchivedDeals = () => fetchJson(`${API}/deals/archived`);
+export const recoverDeal = (dealId) => fetchJson(`${API}/deals/${dealId}/recover`, { method: 'POST' });
 export const assignDeal = (dealId, data) =>
   fetchJson(`${API}/deals/${dealId}/assign`, { method: 'POST', body: JSON.stringify(data) });
 export const getDealVotes = (dealId) => fetchJson(`${API}/deals/${dealId}/votes`);

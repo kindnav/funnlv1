@@ -417,11 +417,22 @@ async def migrate_deal_stages():
         logger.warning(f'[MIGRATE] Null stage→Inbound: {e}')
     logger.info("[MIGRATE] Deal stages migrated to 7-stage VC system")
 
+
+async def purge_expired_archived_deals():
+    """Permanently delete soft-deleted deals older than 30 days."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    try:
+        await sb_delete('deals', {'status': 'eq.deleted', 'updated_at': f'lt.{cutoff}'})
+        logger.info("[PURGE] Expired archived deals purged")
+    except Exception as e:
+        logger.warning(f'[PURGE] Could not purge expired deals: {e}')
+
 async def init_database():
     exists = await sb_table_exists('users')
     if exists:
         logger.info("Database tables verified")
         await migrate_deal_stages()
+        await purge_expired_archived_deals()
         await migrate_sample_thesis()
         await seed_sample_data()
         return True
@@ -1511,10 +1522,9 @@ async def disconnect_gmail(current_user: dict = Depends(get_current_user)):
 async def get_deals(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     user_deals, sample_deals = await asyncio.gather(
-        sb_select('deals', {'user_id': f'eq.{uid}', 'category': 'neq.Spam / irrelevant', 'order': 'created_at.desc', 'limit': '200'}),
-        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'category': 'neq.Spam / irrelevant', 'order': 'created_at.desc'}),
+        sb_select('deals', {'user_id': f'eq.{uid}', 'category': 'neq.Spam / irrelevant', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '200'}),
+        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'category': 'neq.Spam / irrelevant', 'status': 'neq.deleted', 'order': 'created_at.desc'}),
     )
-    # Additional client-side filter for other low-signal categories
     def is_relevant(d):
         cat = d.get('category', '')
         irrelevant = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
@@ -2110,7 +2120,7 @@ async def get_fund_deals(current_user: dict = Depends(get_current_user)):
     SKIP = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
     all_deals = []
     for member in fund_info['members']:
-        rows = await sb_select('deals', {'user_id': f'eq.{member["user_id"]}', 'order': 'created_at.desc', 'limit': '100'})
+        rows = await sb_select('deals', {'user_id': f'eq.{member["user_id"]}', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '100'})
         for deal in (rows or []):
             if deal.get('category') not in SKIP:
                 deal['inbox_owner_name'] = member['display_name']
@@ -2125,20 +2135,51 @@ async def get_fund_deals(current_user: dict = Depends(get_current_user)):
 @api_router.delete("/deals/{deal_id}")
 async def delete_deal(deal_id: str, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    # Allow deletion if user owns the deal OR is a member of the fund that owns it
     rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not rows:
         raise HTTPException(status_code=404, detail="Deal not found")
     deal = rows[0]
     if deal.get('user_id') != uid:
-        # Check fund membership
         fund_id = deal.get('fund_id')
         if not fund_id:
             raise HTTPException(status_code=403, detail="Not authorized")
         membership = await sb_select('fund_members', {'fund_id': f'eq.{fund_id}', 'user_id': f'eq.{uid}'})
         if not membership:
             raise HTTPException(status_code=403, detail="Not authorized")
-    await sb_delete('deals', {'id': f'eq.{deal_id}'})
+    # Soft delete — move to archive with 30-day recovery window
+    await sb_update('deals', {
+        'status': 'deleted',
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }, {'id': f'eq.{deal_id}'})
+    return {"ok": True}
+
+
+@api_router.get("/deals/archived")
+async def get_archived_deals(current_user: dict = Depends(get_current_user)):
+    """Return soft-deleted deals within the 30-day recovery window."""
+    uid = current_user['user_id']
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    rows = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'status': 'eq.deleted',
+        'updated_at': f'gte.{cutoff}',
+        'order': 'updated_at.desc',
+    })
+    return rows or []
+
+
+@api_router.post("/deals/{deal_id}/recover")
+async def recover_deal(deal_id: str, current_user: dict = Depends(get_current_user)):
+    """Restore a soft-deleted deal back to Inbound."""
+    uid = current_user['user_id']
+    rows = await sb_select('deals', {'id': f'eq.{deal_id}', 'user_id': f'eq.{uid}', 'status': 'eq.deleted'})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Archived deal not found")
+    await sb_update('deals', {
+        'status': 'New',
+        'deal_stage': 'Inbound',
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }, {'id': f'eq.{deal_id}'})
     return {"ok": True}
 
 

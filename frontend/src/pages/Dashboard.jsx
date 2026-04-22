@@ -11,7 +11,7 @@ import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
 import { MemberAvatar, getInitials } from '../components/MemberAvatar';
 import { toast } from '../components/ui/sonner';
-import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal } from '../lib/api';
+import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -93,6 +93,8 @@ export default function Dashboard({ user, onLogout }) {
   const [showTour, setShowTour] = useState(false);
   const [showSyncLog, setShowSyncLog] = useState(false);
   const [syncLog, setSyncLog] = useState(null);
+  const [archivedDeals, setArchivedDeals] = useState([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -236,11 +238,39 @@ export default function Dashboard({ user, onLogout }) {
 
     try {
       await deleteDeal(dealId);
+      // Refresh archive list so the recovered deal appears immediately
+      if (viewMode === 'archived') {
+        const a = await getArchivedDeals();
+        setArchivedDeals(a || []);
+      }
     } catch {
-      // Restore on failure
       setDeals(prevDeals);
       setFundDeals(prevFundDeals);
       toast.error('Could not remove deal — please try again');
+    }
+  };
+
+  const handleRecoverDeal = async (dealId) => {
+    try {
+      await recoverDeal(dealId);
+      setArchivedDeals((prev) => prev.filter((d) => d.id !== dealId));
+      // Reload main deals list so recovered deal appears
+      const d = await getDeals();
+      if (d) setDeals(d);
+      toast('Deal recovered and moved back to Inbound.');
+    } catch {
+      toast.error('Could not recover deal — please try again');
+    }
+  };
+
+  const handleViewArchive = async () => {
+    setViewMode('archived');
+    setArchivedLoading(true);
+    try {
+      const a = await getArchivedDeals();
+      setArchivedDeals(a || []);
+    } finally {
+      setArchivedLoading(false);
     }
   };
 
@@ -312,6 +342,19 @@ export default function Dashboard({ user, onLogout }) {
         >
           <LayoutGrid size={12} />
           <span className="hidden sm:inline">Pipeline</span>
+        </button>
+        <button
+          data-testid="archive-btn"
+          onClick={handleViewArchive}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={viewMode === 'archived' ? {
+            background: 'rgba(240,82,82,0.1)', border: '1px solid rgba(240,82,82,0.3)', color: '#f05252',
+          } : {
+            color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent',
+          }}
+        >
+          <Trash2 size={12} />
+          <span className="hidden sm:inline">Archive</span>
         </button>
         <button
           data-testid="review-mode-btn"
@@ -524,6 +567,86 @@ export default function Dashboard({ user, onLogout }) {
                   Claude is reading your recent emails. This takes about 30 seconds for the first batch.
                 </p>
               </div>
+            </div>
+          ) : viewMode === 'archived' ? (
+            /* ── Archive view ── */
+            <div className="flex-1 overflow-auto">
+              <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex items-center gap-3">
+                <Trash2 size={14} className="text-[#f05252]" />
+                <p className="text-white text-sm font-semibold">Archive</p>
+                <span className="text-[rgba(255,255,255,0.3)] text-xs ml-1">
+                  Deleted emails are recoverable for 30 days
+                </span>
+                <button
+                  onClick={() => setViewMode('my-inbox')}
+                  className="ml-auto text-xs text-[rgba(255,255,255,0.3)] hover:text-white transition-colors"
+                >← Back to inbox</button>
+              </div>
+              {archivedLoading ? (
+                <div className="flex items-center justify-center gap-2 py-12">
+                  <div className="w-4 h-4 rounded-full border border-t-transparent animate-spin"
+                    style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: '#7c6dfa' }} />
+                  <span className="text-[rgba(255,255,255,0.3)] text-xs">Loading archive...</span>
+                </div>
+              ) : archivedDeals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-6">
+                  <Trash2 size={28} style={{ color: 'rgba(255,255,255,0.1)' }} />
+                  <p className="text-[rgba(255,255,255,0.35)] text-sm">Archive is empty</p>
+                  <p className="text-[rgba(255,255,255,0.2)] text-xs">Deleted deals will appear here for 30 days.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Company / Sender', 'Subject', 'Deleted', 'Expires In', ''].map((h) => (
+                        <th key={h} className="px-3 py-2.5 text-[rgba(255,255,255,0.25)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedDeals.map((deal) => {
+                      const deletedAt = new Date(deal.updated_at);
+                      const expiresAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+                      const daysLeft = Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)));
+                      return (
+                        <tr key={deal.id} className="border-b border-[rgba(255,255,255,0.03)]"
+                          data-testid={`archived-deal-${deal.id}`}>
+                          <td className="px-3 py-2.5">
+                            <p className="text-white text-xs font-medium">{deal.company_name || deal.sender_name || '—'}</p>
+                            <p className="text-[rgba(255,255,255,0.3)] text-xs">{deal.sender_email}</p>
+                          </td>
+                          <td className="px-3 py-2.5 max-w-[260px]">
+                            <p className="text-[rgba(255,255,255,0.5)] text-xs truncate">{deal.subject}</p>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono">{deletedAt.toLocaleDateString()}</p>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="text-xs font-mono px-2 py-0.5 rounded"
+                              style={daysLeft <= 3 ? {
+                                background: 'rgba(240,82,82,0.12)', color: '#f05252',
+                              } : {
+                                background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)',
+                              }}>
+                              {daysLeft}d
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <button
+                              data-testid={`recover-deal-${deal.id}`}
+                              onClick={() => handleRecoverDeal(deal.id)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+                              style={{ background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.22)' }}
+                            >
+                              Recover
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           ) : showChecklist ? (
             /* ── Onboarding checklist (new users only) ── */
