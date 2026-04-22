@@ -2125,10 +2125,20 @@ async def get_fund_deals(current_user: dict = Depends(get_current_user)):
 @api_router.delete("/deals/{deal_id}")
 async def delete_deal(deal_id: str, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    rows = await sb_select('deals', {'id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    # Allow deletion if user owns the deal OR is a member of the fund that owns it
+    rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not rows:
         raise HTTPException(status_code=404, detail="Deal not found")
-    await sb_delete('deals', {'id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    deal = rows[0]
+    if deal.get('user_id') != uid:
+        # Check fund membership
+        fund_id = deal.get('fund_id')
+        if not fund_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        membership = await sb_select('fund_members', {'fund_id': f'eq.{fund_id}', 'user_id': f'eq.{uid}'})
+        if not membership:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    await sb_delete('deals', {'id': f'eq.{deal_id}'})
     return {"ok": True}
 
 
