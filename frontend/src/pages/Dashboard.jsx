@@ -10,6 +10,7 @@ import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
 import { MemberAvatar, getInitials } from '../components/MemberAvatar';
+import { toast } from '../components/ui/sonner';
 import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -226,13 +227,20 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   const handleDeleteDeal = async (dealId) => {
+    // Optimistic: remove from UI immediately
+    const prevDeals = deals;
+    const prevFundDeals = fundDeals;
+    setDeals((prev) => prev.filter((d) => d.id !== dealId));
+    setFundDeals((prev) => prev.filter((d) => d.id !== dealId));
+    if (selectedDeal?.id === dealId) setSelectedDeal(null);
+
     try {
       await deleteDeal(dealId);
-      setDeals((prev) => prev.filter((d) => d.id !== dealId));
-      setFundDeals((prev) => prev.filter((d) => d.id !== dealId));
-      if (selectedDeal?.id === dealId) setSelectedDeal(null);
     } catch {
-      // silently ignore — deal may already be gone
+      // Restore on failure
+      setDeals(prevDeals);
+      setFundDeals(prevFundDeals);
+      toast.error('Could not remove deal — please try again');
     }
   };
 
@@ -707,13 +715,13 @@ export default function Dashboard({ user, onLogout }) {
                         {fmtDate(deal.received_date || deal.created_at)}
                       </p>
                     </td>
-                    <td className="px-2 py-2.5">
+                    <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         data-testid={`delete-deal-${deal.id}`}
-                        onClick={(e) => { e.stopPropagation(); handleDeleteDeal(deal.id); }}
-                        className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded transition-all hover:bg-[rgba(240,82,82,0.15)]"
+                        onClick={() => handleDeleteDeal(deal.id)}
+                        className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-[rgba(240,82,82,0.18)] hover:text-[#f05252]"
                         title="Remove from dashboard"
-                        style={{ color: 'rgba(255,255,255,0.25)' }}
+                        style={{ color: 'rgba(255,255,255,0.3)' }}
                       >
                         <Trash2 size={13} />
                       </button>
