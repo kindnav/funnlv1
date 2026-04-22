@@ -94,11 +94,12 @@ _syncing_users: set = set()
 # Real-time sync progress per user — polled by frontend
 _sync_progress: dict = {}
 
-def _set_sync_progress(user_id: str, step: int, message: str, total: int = 0, current: int = 0):
+def _set_sync_progress(user_id: str, step: int, message: str, total: int = 0, current: int = 0, **extra):
     _sync_progress[user_id] = {
         'step': step, 'message': message,
         'total': total, 'current': current,
         'ts': datetime.now(timezone.utc).isoformat(),
+        **extra,
     }
 
 # ── Supabase helpers ────────────────────────────────────────────────────────────
@@ -652,6 +653,96 @@ Your output will be used to automatically triage and score deal flow for investm
 
 Return ONLY valid JSON. No markdown. No explanation. No preamble. Just the raw JSON object."""
 
+# ── AI Gate ─────────────────────────────────────────────────────────────────
+GATE_SYSTEM_PROMPT = """You are a filter for a venture capital deal flow intelligence tool used by student-run venture funds, angel investors, solo GPs, small VC firms, and startup accelerators.
+
+Your job is to decide whether an email belongs in this tool or not.
+
+The bar for inclusion is LOW not high. When in doubt always return true. It is better to include a borderline email than to miss a real deal.
+
+You are filtering OUT only emails that are clearly and obviously not related to investing, deal flow, or the business of running a fund or accelerator.
+
+ALWAYS set belongs_in_dealflow to TRUE for:
+- Any founder pitching a startup (polished or not, student founders, first-timers, international)
+- Warm introductions in a professional or investment context
+- LP / investor relations communications
+- Portfolio company updates or requests
+- Co-investor or syndicate outreach
+- Accelerator or program related emails
+- Any email from an unknown sender (unknown = likely external = likely deal flow)
+- Any email mentioning fundraising, investment, capital, equity, valuation, term sheet, accelerator, or startup in any way
+- Any email with a deck, document, or link that might be investment related
+- Any email where a new external party has joined a thread
+- Student or young person asking about VC or investing
+- Recruiters relevant to portfolio companies or VC-backed startups
+- Press, speaking invitations, award nominations related to investing
+- Anything investment adjacent — when in doubt INCLUDE
+
+ONLY set belongs_in_dealflow to FALSE when ALL of these are true:
+1. The email is clearly between people who already know each other (internal/colleague)
+2. The subject and content is purely logistical with zero investment content
+3. There is no external party bringing a new deal, relationship, or opportunity
+
+SPECIFIC TYPES TO EXCLUDE (only when clearly and obviously true):
+- Pure automated calendar notifications with no human-written deal content
+- Meeting cancellations or rescheduling with zero investment content
+- Purely personal messages with absolutely no connection to investing or startups
+
+CRITICAL: Any email where a reasonable person running a student fund, angel investing, or accelerator might find it useful = belongs_in_dealflow: true
+
+Return ONLY valid JSON:
+{"belongs_in_dealflow": true or false, "reason": "one short sentence"}"""
+
+async def gate_email(sender_name: str, sender_email: str, subject: str, body: str) -> dict:
+    """Lightweight AI gate — decides if email belongs in deal flow before full extraction."""
+    body_preview = body[:400].strip()
+    user_prompt = (
+        f"Should this email appear in a venture capital deal flow tool?\n\n"
+        f"FROM: {sender_name} <{sender_email}>\n"
+        f"SUBJECT: {subject}\n"
+        f"BODY PREVIEW: {body_preview}"
+    )
+    try:
+        msg = await claude_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=150,
+            system=GATE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        text = msg.content[0].text.strip()
+        text = re.sub(r'^```(?:json)?\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+        result = json.loads(text)
+        belongs = bool(result.get('belongs_in_dealflow', True))
+        reason = result.get('reason', '')
+        logger.info(f'[GATE] {"PASS" if belongs else "BLOCK"}: "{subject}" — {reason}')
+        return {'belongs': belongs, 'reason': reason}
+    except Exception as e:
+        # On any error, default to INCLUDE (never miss a deal)
+        logger.warning(f'[GATE] Error for "{subject}", defaulting to INCLUDE: {e}')
+        return {'belongs': True, 'reason': 'gate error — included by default'}
+
+async def save_gated_email(user_id: str, sender_name: str, sender_email: str,
+                           subject: str, body: str, received_date: str, reason: str):
+    """Save a gated-out email to the gated_emails table."""
+    try:
+        record = {
+            'user_id': user_id,
+            'sender_name': sender_name,
+            'sender_email': sender_email,
+            'subject': subject,
+            'received_date': received_date or datetime.now(timezone.utc).isoformat(),
+            'gate_reason': reason,
+            'body_preview': body[:500],
+        }
+        result = await sb_insert('gated_emails', record)
+        if result:
+            logger.info(f'[GATE] Saved to gated_emails: "{subject}"')
+        else:
+            logger.warning(f'[GATE] Could not save to gated_emails (table may not exist): "{subject}"')
+    except Exception as e:
+        logger.warning(f'[GATE] gated_emails insert failed: {e}')
+
 async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str,
                         received_date: str = None, attachments: str = None,
                         fund_ctx: dict = None) -> dict:
@@ -806,6 +897,7 @@ async def process_and_save_email(
     subject: str, body: str, thread_id: str = None,
     message_id: str = None, received_date: str = None, gmail_link: str = None,
     fund_ctx: dict = None, skip_dedup: bool = False, force_replace: bool = False,
+    run_gate: bool = True,
 ) -> Optional[dict]:
     # Deduplicate (only if not already checked by caller's pre-fetched set)
     if not skip_dedup and user_id and thread_id:
@@ -816,8 +908,15 @@ async def process_and_save_email(
             logger.debug(f'[DEDUP] Thread {thread_id} already exists, skipping: "{subject}"')
             return None
 
-    # In force_replace mode: upsert will update the existing record via the unique constraint
-    # (user_id, thread_id) — no explicit delete needed
+    # ── AI Gate — run before full extraction ──────────────────────────────────
+    if run_gate:
+        gate = await gate_email(sender_name, sender_email, subject, body)
+        if not gate['belongs']:
+            logger.info(f'[GATE] Gated out: "{subject}" — {gate["reason"]}')
+            if user_id:
+                await save_gated_email(user_id, sender_name, sender_email,
+                                       subject, body, received_date, gate['reason'])
+            return 'gated'  # sentinel so callers can count it
 
     ai = await analyze_email(
         sender_name=sender_name, sender_email=sender_email,
@@ -826,10 +925,7 @@ async def process_and_save_email(
         fund_ctx=fund_ctx,
     )
 
-    # NOTE: We NO LONGER drop spam emails at ingestion.
-    # Spam is saved to DB so nothing is permanently lost.
-    # The get_deals endpoint filters spam out of the dashboard display.
-    # This ensures test emails are never silently discarded.
+    # NOTE: Spam is saved to DB — filtered from dashboard display only.
     if ai.get('category') == 'Spam / irrelevant':
         logger.info(f'[PROCESS] Classified as spam: "{subject}" from {sender_email} — saving to DB (filtered from dashboard)')
 
@@ -972,6 +1068,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         processed = 0
         skipped_dup = 0
         skipped_noise = 0
+        gated_out = 0
         errors = 0
 
         for i, ref in enumerate(messages):
@@ -1059,7 +1156,9 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
                     force_replace=force_reprocess,
                 )
                 existing_thread_ids.add(thread_id)
-                if result:
+                if result == 'gated':
+                    gated_out += 1
+                elif result:
                     processed += 1
                     logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED: "{subject}" | category={result.get("category")}')
                 else:
@@ -1076,10 +1175,17 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         logger.info(
             f'[SYNC] ── Complete for {user.get("email")} — '
             f'fetched={fetched}, saved={processed}, skipped_dup={skipped_dup}, '
-            f'filtered_noise={skipped_noise}, errors={errors} ──'
+            f'filtered_noise={skipped_noise}, gated_out={gated_out}, errors={errors} ──'
         )
-        logger.info(f'[SYNC] Fetched: {fetched} emails from Gmail | Filtered as noise: {skipped_noise} | Sending to Claude: {fetched - skipped_dup - skipped_noise}')
-        _set_sync_progress(user_id, 5, f'Sync complete — {processed} new deal{"s" if processed != 1 else ""} added', processed, processed)
+        _set_sync_progress(
+            user_id, 5,
+            f'Sync complete — {processed} new deal{"s" if processed != 1 else ""} added',
+            processed, processed,
+            fetched=fetched,
+            passed_gate=fetched - skipped_dup - skipped_noise - gated_out,
+            gated_out=gated_out,
+            new_deals=processed,
+        )
         return processed
     except Exception as e:
         err = str(e)
@@ -1102,6 +1208,10 @@ async def sync_status_endpoint(current_user: dict = Depends(get_current_user)):
         'current': progress.get('current', 0),
         'last_synced': last_synced,
         'is_syncing': uid in _syncing_users,
+        'fetched': progress.get('fetched'),
+        'passed_gate': progress.get('passed_gate'),
+        'gated_out': progress.get('gated_out'),
+        'new_deals': progress.get('new_deals'),
     }
 
 
@@ -1762,8 +1872,102 @@ async def test_extraction(current_user: dict = Depends(get_current_user)):
     return {"passed": passed, "total": len(results), "pass_rate": f"{passed}/{len(results)}", "results": results}
 
 
+# ── Gate Test Cases ─────────────────────────────────────────────────────────────
+GATE_TESTS = [
+    {"id":1,"name":"Calendar invite (filter)","subject":"Invitation: Naveen-Nirav @ 9:30am","from_name":"Colleague","from_email":"colleague@samefund.vc","body":"This is an automated calendar invitation for your 9:30am meeting.","expected":False},
+    {"id":2,"name":"Meeting cancellation (filter)","subject":"Canceled: Naveen & Matt","from_name":"Matt","from_email":"matt@colleague.com","body":"The meeting has been canceled. You can ignore this invitation.","expected":False},
+    {"id":3,"name":"Internal check-in (filter)","subject":"Re: Check in","from_name":"Kavisha","from_email":"kavisha@colleague.com","body":"Hey can we sync tomorrow at 3pm? Just want to catch up on the week.","expected":False},
+    {"id":4,"name":"Warm intro to founder (pass)","subject":"Intro: Marcus Chen / VaultAI","from_name":"Priya","from_email":"priya@topfund.vc","body":"Hi, I wanted to introduce you to Marcus who is building VaultAI. He is raising a $3M seed round.","expected":True},
+    {"id":5,"name":"Founder pitch (pass)","subject":"Raising $1.5M pre-seed — GreenLoop","from_name":"Anika","from_email":"anika@greenloop.io","body":"Hi I am building GreenLoop and would love to connect about our pre-seed round.","expected":True},
+    {"id":6,"name":"LP investor relations (pass)","subject":"Q2 LP Update questions","from_name":"David","from_email":"david@familyoffice.com","body":"Following up on the Q2 update. Had questions about portfolio performance and potential commitment to Fund IV.","expected":True},
+    {"id":7,"name":"Unpolished student founder (pass)","subject":"hey I heard you do VC stuff","from_name":"Random Student","from_email":"randomstudent@university.edu","body":"hey I heard you invest in startups, I'm building something with my friend and we need like $50k to get started, is that something you do?","expected":True},
+    {"id":8,"name":"Demo day invite (pass)","subject":"Demo Day invitations — Spring Cohort","from_name":"Programs","from_email":"programs@accelerator.org","body":"You are invited to our spring demo day featuring 12 startups from our latest cohort.","expected":True},
+    {"id":9,"name":"Co-invest opportunity (pass)","subject":"Co-invest opportunity — climate tech","from_name":"Partner","from_email":"partner@angelgroup.com","body":"We have a deal we think you'd want to co-invest on. Climate infrastructure, $8M seed, strong team.","expected":True},
+    {"id":10,"name":"Fund application (pass)","subject":"Application: TechStartup for YourFund","from_name":"Founder","from_email":"founder@techstartup.io","body":"Hi, applying to your fund. We are building an AI tool for healthcare, currently pre-seed, looking for $500k.","expected":True},
+    {"id":11,"name":"Internal with deal reference (pass)","subject":"Re: Deep Tech Category Taxonomy","from_name":"Nirav","from_email":"nirav@futurefrontier.vc","body":"I think we should add quantum computing as a category. Also wanted to flag that a founder in that space reached out yesterday — should we add them to the pipeline?","expected":True},
+    {"id":12,"name":"Portfolio recruiter (pass)","subject":"Recruiting for portfolio company","from_name":"Recruiter","from_email":"recruiter@talentfirm.com","body":"Hi, I specialize in placing engineers at VC-backed startups. I work with several funds to help their portfolio companies hire.","expected":True},
+]
 
-# ── Team collaboration helpers ──────────────────────────────────────────────────
+@api_router.get("/test-gate")
+async def test_gate_endpoint(current_user: dict = Depends(get_current_user)):
+    """Run all 12 gate tests and return pass/fail results."""
+    results = []
+    for t in GATE_TESTS:
+        try:
+            gate = await gate_email(t['from_name'], t['from_email'], t['subject'], t['body'])
+            actual = gate['belongs']
+            passed = actual == t['expected']
+            results.append({
+                'id': t['id'], 'name': t['name'],
+                'expected': t['expected'], 'actual': actual,
+                'pass': passed, 'reason': gate['reason'],
+                'subject': t['subject'],
+            })
+        except Exception as e:
+            results.append({
+                'id': t['id'], 'name': t['name'],
+                'expected': t['expected'], 'actual': None,
+                'pass': False, 'reason': f'error: {e}',
+                'subject': t['subject'],
+            })
+    passed_count = sum(1 for r in results if r['pass'])
+    return {'passed': passed_count, 'total': len(results), 'results': results}
+
+
+@api_router.get("/gated-emails")
+async def get_gated_emails(current_user: dict = Depends(get_current_user)):
+    """Return the last 30 gated emails for the current user."""
+    uid = current_user['user_id']
+    try:
+        rows = await sb_select('gated_emails', {
+            'user_id': f'eq.{uid}',
+            'order': 'created_at.desc',
+            'limit': '30',
+        })
+        return {'emails': [
+            {k: v for k, v in r.items() if k != '_id'}
+            for r in (rows or [])
+        ]}
+    except Exception as e:
+        logger.warning(f'[GATED] Could not fetch gated_emails (table may not exist): {e}')
+        return {'emails': [], 'table_missing': True}
+
+
+@api_router.post("/gated-emails/{gated_id}/restore")
+async def restore_gated_email(gated_id: str, current_user: dict = Depends(get_current_user)):
+    """Run full extraction on a gated email, save to deals, remove from gated_emails."""
+    uid = current_user['user_id']
+    rows = await sb_select('gated_emails', {'id': f'eq.{gated_id}', 'user_id': f'eq.{uid}'})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Gated email not found")
+    g = rows[0]
+    fund_ctx = get_fund_settings(uid)
+    result = await process_and_save_email(
+        user_id=uid,
+        sender_name=g.get('sender_name', ''),
+        sender_email=g.get('sender_email', ''),
+        subject=g.get('subject', ''),
+        body=g.get('body_preview', ''),
+        received_date=g.get('received_date'),
+        run_gate=False,  # bypass gate — user explicitly restoring
+    )
+    if result and result != 'gated':
+        try:
+            await sb_update('gated_emails', {'restored': True}, {'id': f'eq.{gated_id}'})
+            # Delete the gated_emails row
+            async with httpx.AsyncClient(timeout=15) as client:
+                await client.delete(
+                    f'{SUPABASE_URL}/rest/v1/gated_emails',
+                    headers=SB_HEADERS,
+                    params={'id': f'eq.{gated_id}'},
+                )
+        except Exception:
+            pass
+        return {'ok': True, 'deal_id': result.get('id') if isinstance(result, dict) else None}
+    raise HTTPException(status_code=500, detail="Could not process email")
+
+
+
 
 def generate_invite_code() -> str:
     """Format: 3 uppercase letters + dash + 4 uppercase alphanumeric. e.g. FFC-X7K2"""

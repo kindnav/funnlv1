@@ -98,3 +98,8 @@ export const deleteComment = (commentId) =>
 export const getNotifications = () => fetchJson(`${API}/notifications`);
 export const markAllRead = () => fetchJson(`${API}/notifications/read-all`, { method: 'PATCH' });
 export const markNotifRead = (id) => fetchJson(`${API}/notifications/${id}/read`, { method: 'PATCH' });
+
+// ── AI Gate ─────────────────────────────────────────────────────────────────────
+export const getGatedEmails = () => fetchJson(`${API}/gated-emails`);
+export const restoreGatedEmail = (id) => fetchJson(`${API}/gated-emails/${id}/restore`, { method: 'POST' });
+export const runGateTests = () => fetchJson(`${API}/test-gate`);
