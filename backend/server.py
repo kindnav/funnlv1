@@ -2122,7 +2122,17 @@ async def get_fund_deals(current_user: dict = Depends(get_current_user)):
 
 # ── Deal stage & assignment ─────────────────────────────────────────────────────
 
-@api_router.patch("/deals/{deal_id}/stage")
+@api_router.delete("/deals/{deal_id}")
+async def delete_deal(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    rows = await sb_select('deals', {'id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    await sb_delete('deals', {'id': f'eq.{deal_id}', 'user_id': f'eq.{uid}'})
+    return {"ok": True}
+
+
+
 async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     new_stage = (data.get('stage') or '').strip()

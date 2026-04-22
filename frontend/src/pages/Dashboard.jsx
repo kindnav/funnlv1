@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users, Trash2
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -10,7 +10,7 @@ import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
 import { MemberAvatar, getInitials } from '../components/MemberAvatar';
-import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals } from '../lib/api';
+import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -223,6 +223,17 @@ export default function Dashboard({ user, onLogout }) {
   const handleDealUpdated = (updated) => {
     setDeals((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
     if (selectedDeal?.id === updated.id) setSelectedDeal(updated);
+  };
+
+  const handleDeleteDeal = async (dealId) => {
+    try {
+      await deleteDeal(dealId);
+      setDeals((prev) => prev.filter((d) => d.id !== dealId));
+      setFundDeals((prev) => prev.filter((d) => d.id !== dealId));
+      if (selectedDeal?.id === dealId) setSelectedDeal(null);
+    } catch {
+      // silently ignore — deal may already be gone
+    }
   };
 
   return (
@@ -696,6 +707,17 @@ export default function Dashboard({ user, onLogout }) {
                         {fmtDate(deal.received_date || deal.created_at)}
                       </p>
                     </td>
+                    <td className="px-2 py-2.5">
+                      <button
+                        data-testid={`delete-deal-${deal.id}`}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteDeal(deal.id); }}
+                        className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded transition-all hover:bg-[rgba(240,82,82,0.15)]"
+                        title="Remove from dashboard"
+                        style={{ color: 'rgba(255,255,255,0.25)' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                   );
                 })}
@@ -710,6 +732,7 @@ export default function Dashboard({ user, onLogout }) {
             deal={selectedDeal}
             onClose={() => setSelectedDeal(null)}
             onDealUpdated={handleDealUpdated}
+            onDelete={handleDeleteDeal}
             fundInfo={fundInfo}
             userId={user?.id}
           />

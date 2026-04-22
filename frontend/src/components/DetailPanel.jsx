@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   X, ExternalLink, Check, Archive, ChevronRight,
   XCircle, MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, UserPlus, Bookmark,
-  ChevronDown,
+  ChevronDown, Trash2,
 } from 'lucide-react';
-import { updateDeal, upsertContact, updateDealStage, assignDeal } from '../lib/api';
+import { updateDeal, upsertContact, updateDealStage, assignDeal, deleteDeal } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 import { VotingSection } from './VotingSection';
@@ -80,7 +80,7 @@ const STAGE_COLORS = {
   'Watch List':      ['rgba(251,191,36,0.15)',  '#fbbf24'],
 };
 
-export default function DetailPanel({ deal, onClose, onDealUpdated, fundInfo, userId }) {
+export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fundInfo, userId }) {
   const [saving, setSaving] = useState(null);
   const [actionModal, setActionModal] = useState(null);
   const [notes, setNotes] = useState(deal.notes || '');
@@ -639,6 +639,22 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, fundInfo, us
                 style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)', color: 'rgba(255,255,255,0.4)' }}
               >
                 <Check size={12} /> Reconsider — move to In Review
+              </button>
+            )}
+
+            {/* Remove from dashboard */}
+            {onDelete && (
+              <button
+                data-testid="action-delete-deal"
+                onClick={async () => {
+                  if (!window.confirm('Remove this email from your dashboard? This cannot be undone.')) return;
+                  await deleteDeal(deal.id);
+                  onDelete(deal.id);
+                }}
+                className="w-full flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg transition-all mt-2"
+                style={{ background: 'rgba(240,82,82,0.05)', border: '1px solid rgba(240,82,82,0.12)', color: 'rgba(240,82,82,0.5)' }}
+              >
+                <Trash2 size={12} /> Remove from dashboard
               </button>
             )}
           </div>
