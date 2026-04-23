@@ -2205,59 +2205,63 @@ CONTACT_STAGES = {'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'W
 STATUS_ORDER   = ['Watch List', 'First Look', 'In Conversation', 'Due Diligence', 'Closed']
 
 
-async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
-    """Create or update a contact whenever a deal is moved to a contact-worthy stage."""
+async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[dict]:
+    """
+    Create or update a contact when a deal moves to a contact-worthy stage.
+    Deduplication key: (user_id, email) — matches the DB UNIQUE constraint.
+    Status never downgrades. Company always updated to the latest deal.
+    """
+    logger.info(f'[Contact] auto_upsert called: stage={new_stage} deal={deal.get("id","?")[:8]} email={deal.get("sender_email","MISSING")}')
+
     if new_stage not in CONTACT_STAGES:
+        logger.info(f'[Contact] Skipped — stage "{new_stage}" not in CONTACT_STAGES')
         return None
-    email = deal.get('sender_email')
+
+    email = (deal.get('sender_email') or '').strip().lower()
     if not email:
-        logger.info(f'[Contact] Skipped — no sender_email on deal {deal.get("id")}')
+        logger.warning(f'[Contact] Skipped — no sender_email on deal {deal.get("id")}')
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    company = deal.get('company_name') or deal.get('company') or ''
 
-    # Deduplicate by (email + company) so each founder×company gets its own contact row.
-    # Same founder re-pitching the same company → update (deal_count++, Returning badge).
-    # Same founder pitching a NEW company → new contact row.
-    # No company known → fall back to email-only to avoid orphaned rows.
-    if company:
-        existing = await sb_select('contacts', {
-            'email': f'eq.{email}', 'company': f'eq.{company}', 'user_id': f'eq.{uid}'
-        })
-    else:
-        existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{uid}'})
+    # Dedup by (user_id, email) — the DB UNIQUE constraint.
+    existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{uid}'})
 
     if existing:
         contact = existing[0]
         ex_idx = STATUS_ORDER.index(contact['contact_status']) if contact.get('contact_status') in STATUS_ORDER else -1
         new_idx = STATUS_ORDER.index(new_stage) if new_stage in STATUS_ORDER else -1
+        # Never downgrade: only move forward in the status order
         updated_status = new_stage if new_idx > ex_idx else contact.get('contact_status', new_stage)
 
         update_data = {
             'contact_status': updated_status,
+            'company': deal.get('company_name') or contact.get('company'),  # always update company
             'last_contacted': deal.get('received_date') or now_iso,
             'deal_count': (contact.get('deal_count') or 1) + 1,
             'updated_at': now_iso,
         }
         if (deal.get('relevance_score') or 0) > (contact.get('relevance_score') or 0):
             update_data['relevance_score'] = deal['relevance_score']
-        for cf, df in [('company', 'company_name'), ('role', 'founder_role'),
-                       ('sector', 'sector'), ('geography', 'geography'),
-                       ('intro_source', 'intro_source')]:
+        for cf, df in [('role', 'founder_role'), ('sector', 'sector'),
+                       ('geography', 'geography'), ('intro_source', 'intro_source')]:
             if not contact.get(cf) and deal.get(df):
                 update_data[cf] = deal[df]
 
-        await sb_update('contacts', update_data, {'id': f'eq.{contact["id"]}'})
-        logger.info(f'[Contact] Updated: {email} → {updated_status}')
-        return {'status': 'updated', 'contact_id': contact['id'],
-                'name': contact.get('name'), 'company': contact.get('company'),
-                'contact_status': updated_status,
-                'returning': (contact.get('deal_count') or 1) > 0}
+        ok = await sb_update('contacts', update_data, {'id': f'eq.{contact["id"]}'})
+        if ok:
+            logger.info(f'[Contact] Updated: {email} → {updated_status} (deal_count={update_data["deal_count"]})')
+            return {'status': 'updated', 'contact_id': contact['id'],
+                    'name': contact.get('name'), 'company': update_data['company'],
+                    'contact_status': updated_status,
+                    'returning': update_data['deal_count'] > 1}
+        else:
+            logger.error(f'[Contact] UPDATE FAILED for contact {contact["id"]} email={email}')
+            return None
     else:
         new_contact = {
             'user_id': uid,
-            'name': deal.get('sender_name') or deal.get('founder_name') or 'Unknown',
+            'name': (deal.get('sender_name') or deal.get('founder_name') or 'Unknown').strip(),
             'email': email,
             'company': deal.get('company_name'),
             'role': deal.get('founder_role'),
@@ -2273,14 +2277,15 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
             'first_contacted': deal.get('received_date') or now_iso,
             'last_contacted': deal.get('received_date') or now_iso,
         }
+        logger.info(f'[Contact] Attempting INSERT: email={email} company={new_contact["company"]} user={uid[:8]}')
         result = await sb_insert('contacts', new_contact)
         if result:
-            logger.info(f'[Contact] Created: {email} → {new_stage}')
+            logger.info(f'[Contact] CREATED: {email} → {new_stage} id={result.get("id","?")}')
             return {'status': 'created', 'contact_id': result.get('id'),
                     'name': new_contact['name'], 'company': new_contact['company'],
                     'contact_status': new_stage, 'returning': False}
         else:
-            logger.error(f'[Contact] FAILED to create contact for {email} — check contacts table schema')
+            logger.error(f'[Contact] INSERT FAILED: email={email} user={uid[:8]} — check Supabase logs for constraint violations')
             return None
 
 

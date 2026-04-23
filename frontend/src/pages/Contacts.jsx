@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Download, Users, LogOut, BookOpen, Settings as SettingsIcon,
-  LayoutGrid, RefreshCw,
+  LayoutGrid, RefreshCw, X, Bug,
 } from 'lucide-react';
-import { getContacts, getFundSettings } from '../lib/api';
+import { getContacts, getFundSettings, syncContactPipeline } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ContactDetailPanel from '../components/ContactDetailPanel';
 
@@ -44,12 +44,20 @@ export default function Contacts({ user, onLogout }) {
   const [filter, setFilter] = useState('All');
   const [selectedContact, setSelectedContact] = useState(null);
   const [fetchError, setFetchError] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
+  const [debugDismissed, setDebugDismissed] = useState(
+    () => localStorage.getItem('contacts_debug_dismissed') === '1'
+  );
+  const [syncingPipeline, setSyncingPipeline] = useState(false);
 
   const loadContacts = useCallback(() => {
     setLoading(true);
     setFetchError(null);
     getContacts()
-      .then(data => setContacts(data || []))
+      .then(data => {
+        setContacts(data || []);
+        setLastSync(new Date().toLocaleTimeString());
+      })
       .catch(err => {
         setFetchError(err?.message || 'Failed to load contacts');
         toast.error('Failed to load contacts');
@@ -60,6 +68,17 @@ export default function Contacts({ user, onLogout }) {
   useEffect(() => {
     loadContacts();
     getFundSettings().catch(() => {});
+  }, [loadContacts]);
+
+  // Refresh contacts whenever the browser tab regains focus —
+  // this catches the case where the user stages deals in ReviewMode
+  // and then clicks back to the Contacts page.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadContacts();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [loadContacts]);
 
   const stats = useMemo(() => ({
@@ -108,8 +127,61 @@ export default function Contacts({ user, onLogout }) {
     setSelectedContact(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
   }, []);
 
+  const handlePipelineSync = async () => {
+    setSyncingPipeline(true);
+    try {
+      const res = await syncContactPipeline();
+      toast.success(`Sync complete — ${res.created} created, ${res.updated} updated`);
+      loadContacts();
+    } catch (e) {
+      toast.error('Sync failed');
+    } finally {
+      setSyncingPipeline(false);
+    }
+  };
+
+  const uid = (() => { try { return JSON.parse(atob((localStorage.getItem('vc_token') || '').split('.')[1] || 'e30='))?.user_id || '?'; } catch { return '?'; } })();
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ background: '#0c0c12', color: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+
+      {/* Debug Panel — shows live diagnostic info, dismiss to hide */}
+      {!debugDismissed && (
+        <div className="shrink-0 mx-4 mt-3 rounded-lg px-4 py-3 flex items-start gap-3" style={{ background: 'rgba(124,109,250,0.06)', border: '1px solid rgba(124,109,250,0.2)', fontSize: 11 }}>
+          <Bug size={13} style={{ color: '#7c6dfa', marginTop: 2, flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold mb-1" style={{ color: '#7c6dfa' }}>Contact Sync Debug</div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              <span>User ID: <span className="font-mono" style={{ color: 'rgba(255,255,255,0.75)' }}>{uid.slice(0, 8)}…</span></span>
+              <span>Contacts in DB: <span style={{ color: '#3dd68c' }}>{loading ? '…' : contacts.length}</span></span>
+              <span>Last fetched: <span style={{ color: 'rgba(255,255,255,0.75)' }}>{lastSync || 'never'}</span></span>
+            </div>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button
+                data-testid="debug-sync-pipeline"
+                onClick={handlePipelineSync}
+                disabled={syncingPipeline}
+                className="px-3 py-1 rounded text-xs font-medium transition-all disabled:opacity-50"
+                style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)' }}
+              >
+                {syncingPipeline ? 'Syncing…' : 'Sync all pipeline deals'}
+              </button>
+              <button
+                data-testid="debug-refresh"
+                onClick={loadContacts}
+                className="px-3 py-1 rounded text-xs font-medium transition-all"
+                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                Refresh
+              </button>
+              {fetchError && <span style={{ color: '#f05252', fontSize: 10 }}>Error: {fetchError}</span>}
+            </div>
+          </div>
+          <button onClick={() => { setDebugDismissed(true); localStorage.setItem('contacts_debug_dismissed', '1'); }} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Nav */}
       <nav className="h-14 shrink-0 flex items-center gap-2 px-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)', background: '#0c0c12' }}>
