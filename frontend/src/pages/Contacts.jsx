@@ -15,6 +15,10 @@ const STATUS_STYLES = {
   'Closed':          { bg: 'rgba(61,214,140,0.1)',   color: '#3dd68c', border: 'rgba(61,214,140,0.3)' },
   'Watch List':      { bg: 'rgba(20,184,166,0.1)',   color: '#14b8a6', border: 'rgba(20,184,166,0.3)' },
   'Passed':          { bg: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)', border: 'rgba(255,255,255,0.1)' },
+  // Legacy status aliases (pre-7-stage system)
+  'In Pipeline':     { bg: 'rgba(77,166,255,0.1)',   color: '#4da6ff', border: 'rgba(77,166,255,0.3)' },
+  'In Review':       { bg: 'rgba(245,166,35,0.1)',   color: '#f5a623', border: 'rgba(245,166,35,0.3)' },
+  'Portfolio':       { bg: 'rgba(61,214,140,0.1)',   color: '#3dd68c', border: 'rgba(61,214,140,0.3)' },
 };
 
 const scoreStyle = (s) => {

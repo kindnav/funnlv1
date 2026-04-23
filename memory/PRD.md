@@ -236,6 +236,11 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
 - ✅ Team Collaboration Engine (Funds, Member Invites, Deal Assignments, VC-term Voting, Comments)
 - ✅ Contacts table created in Supabase
 - ✅ Full Contacts system implemented and tested
+- ✅ **Auto Contact Upsert** — `auto_upsert_contact()` fires automatically on every PATCH /deals/{id}/stage for contact-worthy stages
+- ✅ **No-downgrade logic** — STATUS_ORDER ensures contact_status never moves backwards
+- ✅ **POST /api/contacts/sync-pipeline** — retroactive sync endpoint backfills Contacts from all active pipeline deals
+- ✅ **Contacts.jsx overhaul** — new STATUS_STYLES for 6 VC stages (+ legacy aliases), 7 filter tabs, 4 stats bar, Returning badge for deal_count>1
+- ✅ **Settings.jsx Data Management card** — "Sync contacts from pipeline" button with toast feedback
 
 ### P1 (Next features)
 - [ ] Deal CSV export (user mentioned for deals table)
