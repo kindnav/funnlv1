@@ -1235,37 +1235,30 @@ async def sync_all_users():
 # ── Action engine ──────────────────────────────────────────────────────────────
 ACTION_PROMPTS = {
     'reject': (
-        "Write a pass email exactly how a busy investor would actually write one — short, human, and direct. "
-        "2-3 sentences maximum. Lead with the founder's name (not 'Hi [Name]', just their first name directly). "
-        "Give one honest, specific reason for passing tied to the fund's thesis or stage — not a generic cop-out. "
-        "End warmly but briefly. "
-        "NEVER use: 'Thank you for reaching out', 'at this time', 'best of luck', 'we wish you well', "
-        "'exciting opportunity', 'impressive work', or any other hollow filler. "
-        "Example tone: 'Hey Marcus — appreciate you sharing VaultAI. Passing for now, the AI infra space is a "
-        "bit crowded for our thesis right now and we tend to lead rounds at this stage which doesn\\'t fit here. "
-        "Happy to reconnect when things progress. — [name]'"
+        "Write a pass email from an investor — professional but warm, the way a respectful senior investor "
+        "would actually write one. Use a proper greeting ('Hi [first name],') and a brief sign-off. "
+        "3-4 sentences. Thank them briefly, give one honest and specific reason for passing tied to thesis "
+        "or stage fit, and leave the door open genuinely if appropriate. "
+        "NEVER use: 'at this time', 'at this stage', 'exciting opportunity', 'impressive work', "
+        "'best of luck on your journey', 'we wish you all the best', or any hollow corporate filler. "
+        "The reason for passing must be specific to this company — not a generic template excuse."
     ),
     'request_info': (
-        "Write a follow-up email exactly how an interested investor would — casual, brief, genuinely curious. "
-        "2-4 sentences. Start with one line showing you actually read the pitch and found it interesting. "
-        "Ask 2-3 specific questions about what you actually need to know — traction numbers, co-investors, "
-        "team background, or market size. Then suggest a short call. "
-        "NEVER use: 'I hope this email finds you well', 'I wanted to reach out', 'please don\\'t hesitate', "
-        "'at your earliest convenience', 'going forward', or any corporate filler. "
-        "Example tone: 'Hey Anika — the GreenLoop angle is interesting, especially the B2B distribution play. "
-        "A few things I\\'d want to understand before we go deeper: what does the current ARR look like, "
-        "who else is in the round, and what\\'s the team\\'s background in climate? Happy to do a quick 20 min "
-        "call this week if the timing works.'"
+        "Write a follow-up email from an interested investor — professional, warm, and specific. "
+        "Use a proper greeting ('Hi [first name],') and a brief sign-off. "
+        "3-5 sentences. Open with a genuine line showing you read the pitch. "
+        "Ask 2-3 targeted questions about what you actually need to evaluate this deal — "
+        "current traction, round composition, team background, or market sizing. "
+        "Close by proposing a short call. "
+        "NEVER use: 'I hope this email finds you well', 'I wanted to reach out', "
+        "'please don't hesitate', 'at your earliest convenience', or any corporate boilerplate opener."
     ),
     'forward_partner': (
-        "Write an internal forwarding note to a co-investor or fund partner — the way you\\'d actually "
-        "slack or email a colleague about a deal. Ultra brief, opinionated, and punchy. 2-3 sentences. "
-        "One line on what they do, one line on why it\\'s interesting or what the signal is, "
-        "one line on suggested next step. "
-        "NEVER write like a memo or formal summary. No bullet points. No 'Please find attached'. "
-        "Example tone: 'Check this out — GreenLoop is doing B2B carbon tracking for SMEs, "
-        "founder came out of Stripe and has $80k MRR already. Feels early but the distribution angle "
-        "is smart. Worth a call?'"
+        "Write a brief internal note forwarding a deal to a co-investor or fund partner. "
+        "Professional but conversational — the tone of a trusted colleague sharing a deal, not a formal memo. "
+        "3-4 sentences. Cover what the company does, the key signal or reason it's interesting, "
+        "and a suggested next step. Be opinionated. "
+        "NEVER use bullet points, formal headers, or memo-style language."
     ),
 }
 
@@ -1297,12 +1290,12 @@ async def generate_action_draft(deal: dict, action_type: str, fund_ctx: dict = N
     try:
         msg = await claude_client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=400,
+            max_tokens=500,
             system=(
-                "You are a seasoned venture capital investor writing real emails from your personal inbox. "
-                "You write exactly like a real investor — concise, direct, personal, and never corporate. "
-                "Your emails are short. You never use AI-sounding phrases or filler language. "
-                "You always sound like a human being who is busy and has seen a thousand pitches. "
+                "You are a venture capital investor writing emails from your personal inbox. "
+                "Your tone is professional and courteous but natural — never stiff or corporate. "
+                "You write like an experienced investor who respects founders' time: clear, specific, and genuine. "
+                "Emails have a proper greeting and sign-off but are not long-winded. "
                 "Return ONLY valid JSON with 'subject' and 'body' fields. No markdown."
             ),
             messages=[{"role": "user", "content": prompt}],
