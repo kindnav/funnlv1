@@ -2201,6 +2201,75 @@ async def recover_deal(deal_id: str, current_user: dict = Depends(get_current_us
 
 
 
+CONTACT_STAGES = {'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'}
+STATUS_ORDER   = ['Watch List', 'First Look', 'In Conversation', 'Due Diligence', 'Closed']
+
+
+async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
+    """Create or update a contact whenever a deal is moved to a contact-worthy stage."""
+    if new_stage not in CONTACT_STAGES:
+        return None
+    email = deal.get('sender_email')
+    if not email:
+        logger.info(f'[Contact] Skipped — no sender_email on deal {deal.get("id")}')
+        return None
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    memberships = await sb_select('fund_members', {'user_id': f'eq.{uid}', 'status': 'eq.active'})
+    fund_id = memberships[0]['fund_id'] if memberships else (deal.get('fund_id') or None)
+
+    query = {'email': f'eq.{email}', 'user_id': f'eq.{uid}'}
+    existing = await sb_select('contacts', query)
+
+    if existing:
+        contact = existing[0]
+        ex_idx = STATUS_ORDER.index(contact['contact_status']) if contact.get('contact_status') in STATUS_ORDER else -1
+        new_idx = STATUS_ORDER.index(new_stage) if new_stage in STATUS_ORDER else -1
+        updated_status = new_stage if new_idx > ex_idx else contact.get('contact_status', new_stage)
+
+        update_data = {
+            'contact_status': updated_status,
+            'last_contacted': deal.get('received_date') or now_iso,
+            'deal_count': (contact.get('deal_count') or 1) + 1,
+            'updated_at': now_iso,
+        }
+        if (deal.get('relevance_score') or 0) > (contact.get('relevance_score') or 0):
+            update_data['relevance_score'] = deal['relevance_score']
+        for cf, df in [('company', 'company_name'), ('role', 'founder_role'),
+                       ('sector', 'sector'), ('geography', 'geography'),
+                       ('intro_source', 'intro_source')]:
+            if not contact.get(cf) and deal.get(df):
+                update_data[cf] = deal[df]
+
+        await sb_update('contacts', update_data, {'id': f'eq.{contact["id"]}'})
+        logger.info(f'[Contact] Updated: {email} → {updated_status}')
+        return {'status': 'updated', 'contact_id': contact['id'],
+                'name': contact.get('name'), 'company': contact.get('company'),
+                'contact_status': updated_status,
+                'returning': (contact.get('deal_count') or 1) > 0}
+    else:
+        new_contact = {
+            'user_id': uid, 'fund_id': fund_id,
+            'name': deal.get('sender_name') or deal.get('founder_name') or 'Unknown',
+            'email': email, 'company': deal.get('company_name'),
+            'role': deal.get('founder_role'), 'sector': deal.get('sector'),
+            'stage': deal.get('stage'), 'geography': deal.get('geography'),
+            'intro_source': deal.get('intro_source'), 'warm_or_cold': deal.get('warm_or_cold'),
+            'contact_status': new_stage,
+            'relevance_score': deal.get('relevance_score'),
+            'tags': deal.get('tags') or [], 'deal_count': 1,
+            'first_contacted': deal.get('received_date') or now_iso,
+            'last_contacted': deal.get('received_date') or now_iso,
+        }
+        result = await sb_insert('contacts', new_contact)
+        logger.info(f'[Contact] Created: {email} → {new_stage}')
+        return {'status': 'created',
+                'contact_id': result.get('id') if result else None,
+                'name': new_contact['name'], 'company': new_contact['company'],
+                'contact_status': new_stage, 'returning': False}
+
+
+@api_router.patch("/deals/{deal_id}/stage")
 async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     new_stage = (data.get('stage') or '').strip()
@@ -2220,7 +2289,13 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
             'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_info['fund']['id'],
             'body': f"{name} moved this to {new_stage}", 'type': 'system',
         })
-    return {"ok": True, "stage": new_stage}
+    # Auto-create/update contact for contact-worthy stages
+    contact_result = None
+    if new_stage in CONTACT_STAGES:
+        deal_rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
+        if deal_rows:
+            contact_result = await auto_upsert_contact(uid, deal_rows[0], new_stage)
+    return {"ok": True, "stage": new_stage, "contact": contact_result}
 
 
 @api_router.post("/deals/{deal_id}/assign")
