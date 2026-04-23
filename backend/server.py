@@ -1235,19 +1235,37 @@ async def sync_all_users():
 # ── Action engine ──────────────────────────────────────────────────────────────
 ACTION_PROMPTS = {
     'reject': (
-        "Write a professional, respectful rejection email from an investor. "
-        "Reference the company name specifically. Give a genuine reason for passing tied to fit — "
-        "be human and encouraging. 3-5 sentences. No generic filler phrases like 'at this time'."
+        "Write a pass email exactly how a busy investor would actually write one — short, human, and direct. "
+        "2-3 sentences maximum. Lead with the founder's name (not 'Hi [Name]', just their first name directly). "
+        "Give one honest, specific reason for passing tied to the fund's thesis or stage — not a generic cop-out. "
+        "End warmly but briefly. "
+        "NEVER use: 'Thank you for reaching out', 'at this time', 'best of luck', 'we wish you well', "
+        "'exciting opportunity', 'impressive work', or any other hollow filler. "
+        "Example tone: 'Hey Marcus — appreciate you sharing VaultAI. Passing for now, the AI infra space is a "
+        "bit crowded for our thesis right now and we tend to lead rounds at this stage which doesn\\'t fit here. "
+        "Happy to reconnect when things progress. — [name]'"
     ),
     'request_info': (
-        "Write a brief, direct follow-up email requesting more information. "
-        "Ask 3-4 targeted questions based on what is missing from the pitch (traction, market size, team, etc.). "
-        "Be specific to this company — not generic."
+        "Write a follow-up email exactly how an interested investor would — casual, brief, genuinely curious. "
+        "2-4 sentences. Start with one line showing you actually read the pitch and found it interesting. "
+        "Ask 2-3 specific questions about what you actually need to know — traction numbers, co-investors, "
+        "team background, or market size. Then suggest a short call. "
+        "NEVER use: 'I hope this email finds you well', 'I wanted to reach out', 'please don\\'t hesitate', "
+        "'at your earliest convenience', 'going forward', or any corporate filler. "
+        "Example tone: 'Hey Anika — the GreenLoop angle is interesting, especially the B2B distribution play. "
+        "A few things I\\'d want to understand before we go deeper: what does the current ARR look like, "
+        "who else is in the round, and what\\'s the team\\'s background in climate? Happy to do a quick 20 min "
+        "call this week if the timing works.'"
     ),
     'forward_partner': (
-        "Write a concise internal forwarding note for a co-investor or fund partner. "
-        "Cover: what the company does, key traction or metrics if available, why it is interesting, "
-        "and a suggested next step. Tone: internal memo, 3-4 sentences, opinionated."
+        "Write an internal forwarding note to a co-investor or fund partner — the way you\\'d actually "
+        "slack or email a colleague about a deal. Ultra brief, opinionated, and punchy. 2-3 sentences. "
+        "One line on what they do, one line on why it\\'s interesting or what the signal is, "
+        "one line on suggested next step. "
+        "NEVER write like a memo or formal summary. No bullet points. No 'Please find attached'. "
+        "Example tone: 'Check this out — GreenLoop is doing B2B carbon tracking for SMEs, "
+        "founder came out of Stripe and has $80k MRR already. Feels early but the distribution angle "
+        "is smart. Worth a call?'"
     ),
 }
 
@@ -1279,8 +1297,14 @@ async def generate_action_draft(deal: dict, action_type: str, fund_ctx: dict = N
     try:
         msg = await claude_client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=800,
-            system="You are a VC investor assistant. Generate professional email drafts. Return ONLY valid JSON, no markdown.",
+            max_tokens=400,
+            system=(
+                "You are a seasoned venture capital investor writing real emails from your personal inbox. "
+                "You write exactly like a real investor — concise, direct, personal, and never corporate. "
+                "Your emails are short. You never use AI-sounding phrases or filler language. "
+                "You always sound like a human being who is busy and has seen a thousand pitches. "
+                "Return ONLY valid JSON with 'subject' and 'body' fields. No markdown."
+            ),
             messages=[{"role": "user", "content": prompt}],
         )
         text = msg.content[0].text.strip()
