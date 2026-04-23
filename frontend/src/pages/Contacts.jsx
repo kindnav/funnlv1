@@ -2,17 +2,19 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Download, Users, LogOut, BookOpen, Settings as SettingsIcon,
-  LayoutGrid, RefreshCw, FlaskConical,
+  LayoutGrid, RefreshCw,
 } from 'lucide-react';
-import { getContacts, getFundSettings, upsertContact } from '../lib/api';
+import { getContacts, getFundSettings } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ContactDetailPanel from '../components/ContactDetailPanel';
 
 const STATUS_STYLES = {
-  'In Pipeline': { bg: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: 'rgba(124,109,250,0.3)' },
-  'In Review':   { bg: 'rgba(245,166,35,0.1)',   color: '#f5a623', border: 'rgba(245,166,35,0.3)' },
-  'Portfolio':   { bg: 'rgba(61,214,140,0.1)',    color: '#3dd68c', border: 'rgba(61,214,140,0.3)' },
-  'Passed':      { bg: 'rgba(255,255,255,0.05)',  color: 'rgba(255,255,255,0.35)', border: 'rgba(255,255,255,0.1)' },
+  'First Look':      { bg: 'rgba(77,166,255,0.1)',   color: '#4da6ff', border: 'rgba(77,166,255,0.3)' },
+  'In Conversation': { bg: 'rgba(245,166,35,0.1)',   color: '#f5a623', border: 'rgba(245,166,35,0.3)' },
+  'Due Diligence':   { bg: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: 'rgba(124,109,250,0.3)' },
+  'Closed':          { bg: 'rgba(61,214,140,0.1)',   color: '#3dd68c', border: 'rgba(61,214,140,0.3)' },
+  'Watch List':      { bg: 'rgba(20,184,166,0.1)',   color: '#14b8a6', border: 'rgba(20,184,166,0.3)' },
+  'Passed':          { bg: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)', border: 'rgba(255,255,255,0.1)' },
 };
 
 const scoreStyle = (s) => {
@@ -28,7 +30,7 @@ const fmtDate = (d) => {
   catch { return '—'; }
 };
 
-const FILTERS = ['All', 'In Pipeline', 'In Review', 'Portfolio', 'Passed'];
+const FILTERS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed'];
 
 export default function Contacts({ user, onLogout }) {
   const navigate = useNavigate();
@@ -37,61 +39,30 @@ export default function Contacts({ user, onLogout }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
   const [selectedContact, setSelectedContact] = useState(null);
-  const [fundName, setFundName] = useState('');
   const [fetchError, setFetchError] = useState(null);
-  const [testingContact, setTestingContact] = useState(false);
 
   const loadContacts = useCallback(() => {
     setLoading(true);
     setFetchError(null);
-    console.log('[Contacts] Fetching contacts for user...');
     getContacts()
-      .then(data => {
-        console.log('[Contacts] Supabase returned:', (data || []).length, 'contacts');
-        if (data?.length) console.log('[Contacts] First contact:', data[0]);
-        setContacts(data || []);
-      })
+      .then(data => setContacts(data || []))
       .catch(err => {
-        console.error('[Contacts] Fetch error:', err);
         setFetchError(err?.message || 'Failed to load contacts');
         toast.error('Failed to load contacts');
       })
       .finally(() => setLoading(false));
   }, []);
 
-  // Test contact creation button — creates a hardcoded contact directly
-  const createTestContact = async () => {
-    setTestingContact(true);
-    try {
-      const fakeDeal = {
-        sender_email: `test-${Date.now()}@testcompany.com`,
-        sender_name: 'Test Founder',
-        company_name: 'Test Company',
-        relevance_score: 8,
-        received_date: new Date().toISOString(),
-      };
-      console.log('[Contacts] Creating test contact with deal:', fakeDeal);
-      const res = await upsertContact(fakeDeal, 'In Pipeline');
-      console.log('[Contacts] Test contact result:', res);
-      toast.success(`Test contact created: ${res?.name} (${res?.status})`);
-      loadContacts();
-    } catch (e) {
-      console.error('[Contacts] Test contact error:', e);
-      toast.error(`Test failed: ${e?.message || 'Unknown error'}`);
-    }
-    setTestingContact(false);
-  };
-
   useEffect(() => {
     loadContacts();
-    getFundSettings().then(s => s?.fund_name && setFundName(s.fund_name)).catch(() => {});
+    getFundSettings().catch(() => {});
   }, [loadContacts]);
 
   const stats = useMemo(() => ({
     total: contacts.length,
-    pipeline: contacts.filter(c => c.contact_status === 'In Pipeline').length,
-    review: contacts.filter(c => c.contact_status === 'In Review').length,
-    portfolio: contacts.filter(c => c.contact_status === 'Portfolio').length,
+    active: contacts.filter(c => ['First Look', 'In Conversation'].includes(c.contact_status)).length,
+    diligence: contacts.filter(c => c.contact_status === 'Due Diligence').length,
+    closed: contacts.filter(c => c.contact_status === 'Closed').length,
   }), [contacts]);
 
   const filtered = useMemo(() => {
@@ -104,9 +75,9 @@ export default function Contacts({ user, onLogout }) {
   }, [contacts, filter, search]);
 
   const exportCSV = () => {
-    const headers = ['Name','Email','Company','Role','Sector','Stage','Geography','Status',
-      'Relevance Score','Source','Intro Source','First Contacted','Last Contacted',
-      'Times Contacted','Tags','Notes'];
+    const headers = ['Name', 'Email', 'Company', 'Role', 'Sector', 'Stage', 'Geography',
+      'Status', 'Relevance Score', 'Source', 'Intro Source',
+      'First Contacted', 'Last Contacted', 'Deal Count', 'Tags', 'Notes'];
     const rows = filtered.map(c => [
       c.name || '', c.email || '', c.company || '', c.role || '',
       c.sector || '', c.stage || '', c.geography || '', c.contact_status || '',
@@ -133,19 +104,15 @@ export default function Contacts({ user, onLogout }) {
     setSelectedContact(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
   }, []);
 
-  const SS = STATUS_STYLES;
-
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ background: '#0c0c12', color: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
 
-      {/* ── Nav ── */}
+      {/* Nav */}
       <nav className="h-14 shrink-0 flex items-center gap-2 px-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)', background: '#0c0c12' }}>
-        {/* Brand */}
         <div className="flex items-center gap-2 mr-auto">
           <span className="text-white font-bold tracking-tight select-none" style={{ fontSize: 22, letterSpacing: '-0.03em' }}>funnl</span>
           <span style={{ fontSize: 9, fontWeight: 700, color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.35)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.08em', lineHeight: 1.8 }}>BETA</span>
         </div>
-
         <button onClick={() => navigate('/')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all" style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)' }}>
           <LayoutGrid size={12} /><span className="hidden sm:inline">Deals</span>
         </button>
@@ -163,13 +130,13 @@ export default function Contacts({ user, onLogout }) {
         </button>
       </nav>
 
-      {/* ── Stats bar ── */}
+      {/* Stats bar */}
       <div className="shrink-0 flex items-center gap-6 px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.01)' }}>
         {[
-          { label: 'Total Contacts', value: stats.total, color: 'rgba(255,255,255,0.7)' },
-          { label: 'In Pipeline', value: stats.pipeline, color: '#7c6dfa' },
-          { label: 'In Review', value: stats.review, color: '#f5a623' },
-          { label: 'Portfolio', value: stats.portfolio, color: '#3dd68c' },
+          { label: 'Total Contacts',  value: stats.total,     color: 'rgba(255,255,255,0.7)' },
+          { label: 'Active',          value: stats.active,    color: '#f5a623' },
+          { label: 'In Diligence',    value: stats.diligence, color: '#7c6dfa' },
+          { label: 'Closed',          value: stats.closed,    color: '#3dd68c' },
         ].map(s => (
           <div key={s.label} className="flex flex-col">
             <span className="font-bold text-2xl tabular-nums" style={{ color: s.color }}>{s.value}</span>
@@ -178,22 +145,17 @@ export default function Contacts({ user, onLogout }) {
         ))}
         <div className="ml-auto flex items-center gap-2">
           <button
-            data-testid="test-contact-btn"
-            onClick={createTestContact}
-            disabled={testingContact}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs border transition-all disabled:opacity-50"
-            style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)', background: 'rgba(124,109,250,0.06)' }}
-            title="Dev tool: create a test contact directly in Supabase"
+            data-testid="refresh-contacts-btn"
+            onClick={loadContacts}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs border transition-all"
+            style={{ color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.07)' }}
           >
-            <FlaskConical size={11} /> {testingContact ? 'Creating…' : 'Test Contact'}
-          </button>
-          <button onClick={loadContacts} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs border transition-all" style={{ color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.07)' }}>
             <RefreshCw size={11} /> Refresh
           </button>
         </div>
       </div>
 
-      {/* ── Main content ── */}
+      {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
 
         {/* Table side */}
@@ -201,7 +163,6 @@ export default function Contacts({ user, onLogout }) {
 
           {/* Toolbar */}
           <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
-            {/* Search */}
             <div className="relative flex-1 max-w-xs">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.3)' }} />
               <input
@@ -215,13 +176,13 @@ export default function Contacts({ user, onLogout }) {
             </div>
 
             {/* Filter tabs */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto">
               {FILTERS.map(f => (
                 <button
                   key={f}
                   data-testid={`filter-${f.toLowerCase().replace(/\s+/g, '-')}`}
                   onClick={() => setFilter(f)}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap"
                   style={{
                     background: filter === f ? 'rgba(124,109,250,0.15)' : 'transparent',
                     color: filter === f ? '#7c6dfa' : 'rgba(255,255,255,0.4)',
@@ -233,7 +194,7 @@ export default function Contacts({ user, onLogout }) {
               ))}
             </div>
 
-            <div className="ml-auto">
+            <div className="ml-auto shrink-0">
               <button
                 data-testid="export-csv-btn"
                 onClick={exportCSV}
@@ -248,9 +209,10 @@ export default function Contacts({ user, onLogout }) {
           {/* Error banner */}
           {fetchError && (
             <div className="mx-4 mt-3 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(240,82,82,0.08)', border: '1px solid rgba(240,82,82,0.3)', color: '#f05252' }}>
-              <strong>Fetch error:</strong> {fetchError} — check browser console for details
+              <strong>Fetch error:</strong> {fetchError}
             </div>
           )}
+
           {/* Table */}
           <div className="flex-1 overflow-auto">
             {loading ? (
@@ -262,15 +224,24 @@ export default function Contacts({ user, onLogout }) {
                 <Users size={32} style={{ color: 'rgba(255,255,255,0.1)' }} />
                 <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
                   {contacts.length === 0
-                    ? 'No contacts yet — click "Add to Pipeline" or "Save for Review" on any deal'
+                    ? 'No contacts yet — move deals into the pipeline to start tracking founders'
                     : 'No contacts match your filter'}
                 </p>
+                {contacts.length === 0 && (
+                  <button
+                    onClick={() => navigate('/settings')}
+                    className="text-xs px-3 py-1.5 rounded-lg border transition-all"
+                    style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.07)' }}
+                  >
+                    Sync from pipeline in Settings
+                  </button>
+                )}
               </div>
             ) : (
               <table className="w-full border-collapse text-sm" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    {['Name / Email', 'Company / Sector', 'Status', 'Score', 'Source', 'Intro Source', 'Geography', 'Last Contacted', 'Deals', 'Notes'].map(h => (
+                    {['Name / Email', 'Company / Sector', 'Status', 'Score', 'Source', 'Geography', 'Last Contacted', 'Deals', 'Notes'].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-b" style={{ color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.07)' }}>
                         {h}
                       </th>
@@ -280,7 +251,7 @@ export default function Contacts({ user, onLogout }) {
                 <tbody>
                   {filtered.map(contact => {
                     const ss = scoreStyle(contact.relevance_score);
-                    const status = SS[contact.contact_status] || SS['Passed'];
+                    const statusStyle = STATUS_STYLES[contact.contact_status] || STATUS_STYLES['Passed'];
                     const isSelected = selectedContact?.id === contact.id;
                     return (
                       <tr
@@ -297,18 +268,20 @@ export default function Contacts({ user, onLogout }) {
                       >
                         {/* Name + email */}
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-white text-sm">{contact.name || '—'}</span>
-                                {(contact.deal_count || 0) > 1 && (
-                                  <span data-testid="returning-badge" className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}>
-                                    Returning
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{contact.email || '—'}</div>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-white text-sm">{contact.name || '—'}</span>
+                              {(contact.deal_count || 0) > 1 && (
+                                <span
+                                  data-testid="returning-badge"
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}
+                                >
+                                  Returning
+                                </span>
+                              )}
                             </div>
+                            <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{contact.email || '—'}</div>
                           </div>
                         </td>
 
@@ -320,8 +293,12 @@ export default function Contacts({ user, onLogout }) {
 
                         {/* Status badge */}
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}>
-                            {contact.contact_status || 'In Review'}
+                          <span
+                            data-testid={`status-badge-${contact.id}`}
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap"
+                            style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }}
+                          >
+                            {contact.contact_status || 'First Look'}
                           </span>
                         </td>
 
@@ -343,11 +320,6 @@ export default function Contacts({ user, onLogout }) {
                               {contact.warm_or_cold}
                             </span>
                           ) : <span style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
-                        </td>
-
-                        {/* Intro source */}
-                        <td className="px-4 py-3 text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                          {contact.intro_source || '—'}
                         </td>
 
                         {/* Geography */}

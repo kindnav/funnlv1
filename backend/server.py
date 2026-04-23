@@ -2298,6 +2298,27 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
     return {"ok": True, "stage": new_stage, "contact": contact_result}
 
 
+@api_router.post("/contacts/sync-pipeline")
+async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
+    """Retroactively sync contacts from all active pipeline deals."""
+    uid = current_user['user_id']
+    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+    created = updated = 0
+    for deal in (deals or []):
+        stage = deal.get('deal_stage', '')
+        if stage not in CONTACT_STAGES:
+            continue
+        result = await auto_upsert_contact(uid, deal, stage)
+        if result:
+            if result['status'] == 'created':
+                created += 1
+            else:
+                updated += 1
+    synced = created + updated
+    logger.info(f'[Contact Sync] user={uid} synced={synced} created={created} updated={updated}')
+    return {'synced': synced, 'created': created, 'updated': updated}
+
+
 @api_router.post("/deals/{deal_id}/assign")
 async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']

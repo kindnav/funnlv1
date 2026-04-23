@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle,
-  BookOpen, Save, Sparkles, ChevronDown, Filter, RotateCcw, FlaskConical, ChevronRight
+  BookOpen, Save, Sparkles, ChevronDown, Filter, RotateCcw, FlaskConical, ChevronRight, Users, Database,
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getFundSettings, saveFundSettings, getMyFund, getGatedEmails, restoreGatedEmail, runGateTests } from '../lib/api';
+import { getSettings, disconnectGmail, logout, getFundSettings, saveFundSettings, getMyFund, getGatedEmails, restoreGatedEmail, runGateTests, syncContactPipeline } from '../lib/api';
 import { TeamSetup } from '../components/TeamSetup';
 import { toast } from '../components/ui/sonner';
 
@@ -41,6 +41,9 @@ export default function Settings({ user, onLogout }) {
   // Gate tests
   const [gateTestResults, setGateTestResults] = useState(null);
   const [gateTestRunning, setGateTestRunning] = useState(false);
+
+  // Contact sync
+  const [syncingContacts, setSyncingContacts] = useState(false);
 
   const navigate = useNavigate();
 
@@ -109,6 +112,18 @@ export default function Settings({ user, onLogout }) {
       toast.error('Gate test failed — check logs.');
     } finally {
       setGateTestRunning(false);
+    }
+  };
+
+  const handleSyncContacts = async () => {
+    setSyncingContacts(true);
+    try {
+      const res = await syncContactPipeline();
+      toast.success(`Synced ${res.synced} contact${res.synced !== 1 ? 's' : ''} — ${res.created} created, ${res.updated} updated`);
+    } catch {
+      toast.error('Contact sync failed — check logs.');
+    } finally {
+      setSyncingContacts(false);
     }
   };
 
@@ -624,6 +639,36 @@ export default function Settings({ user, onLogout }) {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* ── Data Management ── */}
+          <div className={cardCls} data-testid="data-management-section">
+            <div className="flex items-center gap-2 mb-1">
+              <Database size={15} className="text-[#7c6dfa]" />
+              <h2 className="text-white font-semibold text-sm">Data Management</h2>
+            </div>
+            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-5 leading-relaxed">
+              Retroactively sync your Contacts CRM from all active pipeline deals.
+              This creates or updates a contact record for every deal currently in
+              First Look, In Conversation, Due Diligence, Closed, or Watch List.
+              Contact statuses never downgrade — only the highest stage is kept.
+            </p>
+            <button
+              data-testid="sync-contacts-btn"
+              onClick={handleSyncContacts}
+              disabled={syncingContacts}
+              className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg transition-all disabled:opacity-50"
+              style={{
+                background: 'rgba(124,109,250,0.1)',
+                color: '#7c6dfa',
+                border: '1px solid rgba(124,109,250,0.25)',
+              }}
+            >
+              {syncingContacts
+                ? <RefreshCw size={13} className="animate-spin" />
+                : <Users size={13} />}
+              {syncingContacts ? 'Syncing contacts…' : 'Sync contacts from pipeline'}
+            </button>
           </div>
 
           {/* ── Account ── */}
