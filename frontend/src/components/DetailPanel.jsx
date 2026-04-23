@@ -100,7 +100,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
     setAssignedTo(deal.assigned_to || '');
     setPassReason(deal.pass_reason || '');
     setWatchlistDate(deal.watchlist_revisit_date ? deal.watchlist_revisit_date.slice(0,10) : '');
-  }, [deal.id]);
+  }, [deal.id]); // eslint-disable-line react-hooks/exhaustive-deps — intentional: reset local state only when the selected deal changes, not on every field update
 
   const handleStageChange = useCallback(async (stage, extra = {}) => {
     setDealStage(stage);

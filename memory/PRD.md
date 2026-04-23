@@ -1,7 +1,15 @@
 # VC Deal Flow Intelligence Tool — PRD
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Last Updated**: 2026-04-21  
+**Last Updated**: 2026-04-23
+
+## Latest Changes (2026-04-23) — Code Quality Refactor Sprint
+- **Phase 1 (Security)**: Hardcoded JWTs removed from all 7 test files → `TEST_JWT_TOKEN` env var; `random.choices` → `secrets.choice`; `is True/False` → `== True/False`; `conftest.py` created
+- **Phase 2 (React Hooks)**: Dashboard `useEffect` deps fixed; `console.warn` removed
+- **Phase 3 (httpOnly Cookies)**: Full auth migration — `get_current_user` dual-mode (cookie first, Bearer fallback); `auth_callback` sets httpOnly cookie; `api.js` uses `credentials:include`; `App.js` cookie-based auth; CORS scoped to `FRONTEND_URL`
+- **Phase 4 (Console Logs)**: Production `console.warn` removed from Dashboard
+- **Phase 5 (Component Splitting)**: `PassModal`, `WatchlistModal`, `CardContent` → `/components/review/`; `StatsBar` → `/components/dashboard/`; `AIGateSection` → `/components/settings/`; Array index keys fixed in DetailPanel
+- **Phase 6 (Backend Refactoring)**: `_build_deal_dict`, `_refresh_gmail_token_if_needed`, `_build_gmail_query_params`, `_determine_contact_status`, `_build_new_contact_dict` helpers extracted in server.py
 **Status**: MVP Complete — 7-stage VC deal flow system live
 
 ---
