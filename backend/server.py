@@ -2215,11 +2215,7 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    memberships = await sb_select('fund_members', {'user_id': f'eq.{uid}', 'status': 'eq.active'})
-    fund_id = memberships[0]['fund_id'] if memberships else (deal.get('fund_id') or None)
-
-    query = {'email': f'eq.{email}', 'user_id': f'eq.{uid}'}
-    existing = await sb_select('contacts', query)
+    existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{uid}'})
 
     if existing:
         contact = existing[0]
@@ -2249,24 +2245,32 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
                 'returning': (contact.get('deal_count') or 1) > 0}
     else:
         new_contact = {
-            'user_id': uid, 'fund_id': fund_id,
+            'user_id': uid,
             'name': deal.get('sender_name') or deal.get('founder_name') or 'Unknown',
-            'email': email, 'company': deal.get('company_name'),
-            'role': deal.get('founder_role'), 'sector': deal.get('sector'),
-            'stage': deal.get('stage'), 'geography': deal.get('geography'),
-            'intro_source': deal.get('intro_source'), 'warm_or_cold': deal.get('warm_or_cold'),
+            'email': email,
+            'company': deal.get('company_name'),
+            'role': deal.get('founder_role'),
+            'sector': deal.get('sector'),
+            'stage': deal.get('stage'),
+            'geography': deal.get('geography'),
+            'intro_source': deal.get('intro_source'),
+            'warm_or_cold': deal.get('warm_or_cold'),
             'contact_status': new_stage,
             'relevance_score': deal.get('relevance_score'),
-            'tags': deal.get('tags') or [], 'deal_count': 1,
+            'tags': deal.get('tags') or [],
+            'deal_count': 1,
             'first_contacted': deal.get('received_date') or now_iso,
             'last_contacted': deal.get('received_date') or now_iso,
         }
         result = await sb_insert('contacts', new_contact)
-        logger.info(f'[Contact] Created: {email} → {new_stage}')
-        return {'status': 'created',
-                'contact_id': result.get('id') if result else None,
-                'name': new_contact['name'], 'company': new_contact['company'],
-                'contact_status': new_stage, 'returning': False}
+        if result:
+            logger.info(f'[Contact] Created: {email} → {new_stage}')
+            return {'status': 'created', 'contact_id': result.get('id'),
+                    'name': new_contact['name'], 'company': new_contact['company'],
+                    'contact_status': new_stage, 'returning': False}
+        else:
+            logger.error(f'[Contact] FAILED to create contact for {email} — check contacts table schema')
+            return None
 
 
 @api_router.patch("/deals/{deal_id}/stage")
