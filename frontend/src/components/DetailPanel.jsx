@@ -356,8 +356,8 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                   )}
                   {deal.fit_strengths && deal.fit_strengths.length > 0 && (
                     <div className="mb-2">
-                      {deal.fit_strengths.map((s, i) => (
-                        <div key={i} className="flex items-start gap-1.5 mb-1">
+                      {deal.fit_strengths.map((s) => (
+                        <div key={s} className="flex items-start gap-1.5 mb-1">
                           <TrendingUp size={11} className="text-[#3dd68c] shrink-0 mt-0.5" />
                           <span className="text-[rgba(255,255,255,0.55)] text-xs leading-snug">{s}</span>
                         </div>
@@ -366,8 +366,8 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                   )}
                   {deal.fit_weaknesses && deal.fit_weaknesses.length > 0 && (
                     <div>
-                      {deal.fit_weaknesses.map((w, i) => (
-                        <div key={i} className="flex items-start gap-1.5 mb-1">
+                      {deal.fit_weaknesses.map((w) => (
+                        <div key={w} className="flex items-start gap-1.5 mb-1">
                           <TrendingDown size={11} className="text-[#f05252] shrink-0 mt-0.5" />
                           <span className="text-[rgba(255,255,255,0.4)] text-xs leading-snug">{w}</span>
                         </div>

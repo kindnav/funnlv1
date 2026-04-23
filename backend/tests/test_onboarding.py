@@ -9,7 +9,7 @@ import requests
 import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzA1NGJhY2MtNzI1Ni00MWFiLWI2MTMtMTM3OWZiOGVlODgzIiwiZW1haWwiOiJ0ZXN0QGZ1dHVyZWZyb250aWVyY2FwaXRhbC52YyIsImV4cCI6MTc3ODgwMzgwNn0.FxlgMkfUO2Y-f2oTIRAh0EKtSO7a5YgXwmU5sCDdb28"
+TOKEN = os.environ.get('TEST_JWT_TOKEN', '')
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -27,7 +27,7 @@ class TestOnboardingComplete:
         r = client.post(f"{BASE_URL}/api/onboarding-complete", headers=AUTH)
         assert r.status_code == 200
         data = r.json()
-        assert data.get("ok") is True
+        assert data.get("ok") == True
 
     def test_onboarding_complete_persists_in_fund_settings(self, client):
         """After marking complete, fund-settings should have onboarding_complete=true"""
@@ -51,7 +51,7 @@ class TestOnboardingComplete:
         # Verify onboarding_complete still present
         r = client.get(f"{BASE_URL}/api/fund-settings", headers=AUTH)
         assert r.status_code == 200
-        assert r.json().get("onboarding_complete") is True
+        assert r.json().get("onboarding_complete") == True
 
     def test_db_status_endpoint(self, client):
         """GET /api/status/db returns tables_ready boolean"""

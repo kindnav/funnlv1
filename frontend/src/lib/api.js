@@ -1,15 +1,17 @@
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const getHeaders = () => ({
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('vc_token')}`,
-});
-
 const fetchJson = async (url, options = {}) => {
-  const resp = await fetch(url, { ...options, headers: { ...getHeaders(), ...options.headers } });
+  const resp = await fetch(url, {
+    ...options,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
   if (resp.status === 401) {
-    localStorage.removeItem('vc_token');
-    window.location.href = '/';
+    // Only redirect away from the app if we are not already on the root/sign-in page.
+    // This prevents a redirect loop when App.js checks auth on initial load.
+    if (window.location.pathname !== '/') {
+      window.location.href = '/';
+    }
     return null;
   }
   if (!resp.ok) {

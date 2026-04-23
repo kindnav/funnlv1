@@ -10,6 +10,7 @@ import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
 import { MemberAvatar, getInitials } from '../components/MemberAvatar';
+import { StatsBar } from '../components/dashboard/StatsBar';
 import { toast } from '../components/ui/sonner';
 import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal } from '../lib/api';
 
@@ -106,13 +107,13 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [location.state, deals]);
 
-  // Product tour — show on every login until user clicks "Got it, don't show again"
+  // Product tour — show on every login (session-only state, not persisted to localStorage)
   useEffect(() => {
-    if (deals.length > 0 && !showTour && localStorage.getItem('vc_tour_dismissed') !== '1') {
+    if (deals.length > 0 && !showTour) {
       const t = setTimeout(() => setShowTour(true), 900);
       return () => clearTimeout(t);
     }
-  }, [deals.length]); // eslint-disable-line
+  }, [deals.length, showTour]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -178,8 +179,8 @@ export default function Dashboard({ user, onLogout }) {
     const dealsCountBefore = deals.length;
     try {
       await triggerSync();
-    } catch (e) {
-      console.warn('Sync trigger error:', e.message);
+    } catch {
+      // Sync trigger failed silently — progress polling will surface the error
     }
     let polls = 0;
     const maxPolls = 36; // 36 × 5s = 180s
@@ -412,33 +413,7 @@ export default function Dashboard({ user, onLogout }) {
       </nav>
 
       {/* Stats Bar */}
-      <div className="h-16 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-5 gap-1 bg-[#0c0c12]">
-        {(() => {
-          const src = activeDeals;
-          const total = src.length;
-          const pitches = src.filter(d => d.category === 'Founder pitch').length;
-          const scores = src.map(d => d.relevance_score).filter(s => s != null);
-          const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
-          const high = src.filter(d => (d.relevance_score || 0) >= 7).length;
-          const unreviewed = src.filter(d => d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New')).length;
-          return [
-            { label: 'Total Inbound',   value: total,     color: 'rgba(255,255,255,0.7)' },
-            { label: 'Founder Pitches', value: pitches,   color: '#7c6dfa' },
-            { label: 'Avg Score',       value: avg,       color: '#f5a623' },
-            { label: 'Strong Fit',      value: high,      color: '#3dd68c' },
-            { label: 'Unreviewed',      value: unreviewed,color: '#4da6ff' },
-          ];
-        })().map(({ label, value, color }) => (
-          <div key={label} className="flex-1 flex flex-col items-center justify-center">
-            <span className="text-xl font-bold font-mono" style={{ color }} data-testid={`stat-${label.toLowerCase().replace(/\s/g,'-')}`}>
-              {value}
-            </span>
-            <span className="text-[rgba(255,255,255,0.3)] text-xs uppercase tracking-wider mt-0.5 hidden sm:block">
-              {label}
-            </span>
-          </div>
-        ))}
-      </div>
+      <StatsBar deals={activeDeals} />
 
       {/* Toolbar */}
       <div className="h-12 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-4 gap-3 bg-[#0c0c12]">

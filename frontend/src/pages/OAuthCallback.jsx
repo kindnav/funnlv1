@@ -2,35 +2,36 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getFundSettings } from '../lib/api';
 
-export default function OAuthCallback({ onToken }) {
+export default function OAuthCallback({ onAuthComplete }) {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
     const err = params.get('error');
 
-    if (token) {
-      onToken(token); // stores token in localStorage immediately
-      // Decide route: new users → onboarding, returning users → dashboard
-      getFundSettings()
-        .then(settings => {
-          if (settings?.onboarding_complete) {
-            navigate('/');
-          } else {
-            navigate('/onboarding');
-          }
-        })
-        .catch(() => {
-          // Default to onboarding (safe for new users, no harm for returning)
-          navigate('/onboarding');
-        });
-    } else {
+    if (err) {
       setError(err || 'Authentication failed. Please try again.');
       setTimeout(() => navigate('/'), 3000);
+      return;
     }
-  }, [navigate, onToken]); // eslint-disable-line
+
+    // httpOnly cookie is already set by the backend before this redirect.
+    // Refresh App-level user state, then decide where to go.
+    (async () => {
+      try {
+        if (onAuthComplete) await onAuthComplete();
+        const settings = await getFundSettings().catch(() => null);
+        if (settings?.onboarding_complete) {
+          navigate('/');
+        } else {
+          navigate('/onboarding');
+        }
+      } catch {
+        navigate('/onboarding');
+      }
+    })();
+  }, [navigate, onAuthComplete]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-screen w-screen bg-[#0c0c12] flex items-center justify-center">

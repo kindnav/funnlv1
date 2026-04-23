@@ -45,9 +45,7 @@ export default function Contacts({ user, onLogout }) {
   const [selectedContact, setSelectedContact] = useState(null);
   const [fetchError, setFetchError] = useState(null);
   const [lastSync, setLastSync] = useState(null);
-  const [debugDismissed, setDebugDismissed] = useState(
-    () => localStorage.getItem('contacts_debug_dismissed') === '1'
-  );
+  const [debugDismissed, setDebugDismissed] = useState(false);
   const [syncingPipeline, setSyncingPipeline] = useState(false);
 
   const loadContacts = useCallback(() => {
@@ -133,14 +131,14 @@ export default function Contacts({ user, onLogout }) {
       const res = await syncContactPipeline();
       toast.success(`Sync complete — ${res.created} created, ${res.updated} updated`);
       loadContacts();
-    } catch (e) {
+    } catch {
       toast.error('Sync failed');
     } finally {
       setSyncingPipeline(false);
     }
   };
 
-  const uid = (() => { try { return JSON.parse(atob((localStorage.getItem('vc_token') || '').split('.')[1] || 'e30='))?.user_id || '?'; } catch { return '?'; } })();
+  const uid = user?.id || '?';
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ background: '#0c0c12', color: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
@@ -177,7 +175,7 @@ export default function Contacts({ user, onLogout }) {
               {fetchError && <span style={{ color: '#f05252', fontSize: 10 }}>Error: {fetchError}</span>}
             </div>
           </div>
-          <button onClick={() => { setDebugDismissed(true); localStorage.setItem('contacts_debug_dismissed', '1'); }} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+          <button onClick={() => setDebugDismissed(true)} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
             <X size={13} />
           </button>
         </div>

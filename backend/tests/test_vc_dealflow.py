@@ -7,13 +7,8 @@ import requests
 import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzA1NGJhY2MtNzI1Ni00MWFiLWI2MTMtMTM3OWZiOGVlODgzIiwiZW1haWwiOiJ0ZXN0QGZ1dHVyZWZyb250aWVyY2FwaXRhbC52YyIsImV4cCI6MTc3ODgwMzgwNn0.FxlgMkfUO2Y-f2oTIRAh0EKtSO7a5YgXwmU5sCDdb28"
+TOKEN = os.environ.get('TEST_JWT_TOKEN', '')
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
-
-
-@pytest.fixture(scope="module")
-def auth_headers():
-    return HEADERS
 
 
 class TestHealth:
@@ -164,12 +159,12 @@ class TestSettings:
         data = r.json()
         assert "gmail_connected" in data
         assert "anthropic_key_set" in data
-        assert data["anthropic_key_set"] is True
+        assert data["anthropic_key_set"] == True
         print(f"PASS: /settings returns {data}")
 
     def test_db_status(self):
         r = requests.get(f"{BASE_URL}/api/status/db")
         assert r.status_code == 200
         data = r.json()
-        assert data.get("tables_ready") is True
+        assert data.get("tables_ready") == True
         print("PASS: DB tables ready")

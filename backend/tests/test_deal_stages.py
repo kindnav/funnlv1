@@ -4,7 +4,7 @@ import requests
 import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://vc-pipeline-1.preview.emergentagent.com').rstrip('/')
-JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzA1NGJhY2MtNzI1Ni00MWFiLWI2MTMtMTM3OWZiOGVlODgzIiwiZW1haWwiOiJ0ZXN0QGZ1dHVyZWZyb250aWVyY2FwaXRhbC52YyIsImV4cCI6MTc3ODgwMzgwNn0.FxlgMkfUO2Y-f2oTIRAh0EKtSO7a5YgXwmU5sCDdb28"
+JWT = os.environ.get('TEST_JWT_TOKEN', '')
 
 HEADERS = {"Authorization": f"Bearer {JWT}", "Content-Type": "application/json"}
 
@@ -57,7 +57,7 @@ class TestDealStages:
         )
         assert patch_resp.status_code == 200
         data = patch_resp.json()
-        assert data.get('ok') is True
+        assert data.get('ok') == True
         assert data.get('stage') == 'First Look'
 
         # Restore
@@ -81,7 +81,7 @@ class TestDealStages:
         )
         assert patch_resp.status_code == 200
         data = patch_resp.json()
-        assert data.get('ok') is True
+        assert data.get('ok') == True
         assert data.get('stage') == 'Passed'
 
         # Restore

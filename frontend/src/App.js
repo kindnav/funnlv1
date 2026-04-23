@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Dashboard from './pages/Dashboard';
@@ -10,42 +10,30 @@ import ReviewMode from './pages/ReviewMode';
 import Onboarding from './pages/Onboarding';
 import Contacts from './pages/Contacts';
 import { Toaster } from './components/ui/sonner';
-import { getMe } from './lib/api';
-import { useEffect } from 'react';
+import { getMe, logout } from './lib/api';
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('vc_token'));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const verifyAuth = useCallback(async () => {
-    const t = localStorage.getItem('vc_token');
-    if (!t) { setLoading(false); return; }
+  // Verify auth via httpOnly cookie — no localStorage token needed.
+  const refreshUser = useCallback(async () => {
     try {
       const data = await getMe();
-      if (data) setUser(data);
-      else { localStorage.removeItem('vc_token'); setToken(null); }
+      setUser(data || null);
     } catch {
-      localStorage.removeItem('vc_token');
-      setToken(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { verifyAuth(); }, [verifyAuth]);
+  useEffect(() => { refreshUser(); }, [refreshUser]);
 
-  const handleTokenReceived = (t) => {
-    localStorage.setItem('vc_token', t);
-    setToken(t);
-    verifyAuth();
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('vc_token');
-    setToken(null);
+  const handleLogout = useCallback(async () => {
+    try { await logout(); } catch { /* ignore */ }
     setUser(null);
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -61,38 +49,35 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/oauth-callback" element={<OAuthCallback onToken={handleTokenReceived} />} />
+        {/* OAuth callback — no token in URL; cookie is set by backend */}
+        <Route path="/oauth-callback" element={<OAuthCallback onAuthComplete={refreshUser} />} />
         <Route
           path="/onboarding"
-          element={token ? <Onboarding /> : <Navigate to="/" />}
+          element={user ? <Onboarding /> : <Navigate to="/" />}
         />
         <Route
           path="/contacts"
-          element={token && user ? <Contacts user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
+          element={user ? <Contacts user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
         />
         <Route
           path="/"
-          element={token && user ? <Dashboard user={user} onLogout={handleLogout} /> : <ConnectPage />}
+          element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <ConnectPage />}
         />
         <Route
           path="/settings"
           element={
-            token && user
+            user
               ? <Settings user={user} onLogout={handleLogout} onUserUpdate={setUser} />
               : <Navigate to="/" />
           }
         />
         <Route
           path="/pipeline"
-          element={
-            token && user
-              ? <Pipeline user={user} onLogout={handleLogout} />
-              : <Navigate to="/" />
-          }
+          element={user ? <Pipeline user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
         />
         <Route
           path="/review"
-          element={token && user ? <ReviewMode /> : <Navigate to="/" />}
+          element={user ? <ReviewMode /> : <Navigate to="/" />}
         />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

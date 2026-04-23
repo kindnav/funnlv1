@@ -2,7 +2,6 @@ import os
 import re
 import json
 import uuid
-import random
 import string
 import asyncio
 import logging
@@ -17,8 +16,8 @@ from typing import Optional
 import httpx
 import jwt as pyjwt
 import anthropic
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -490,11 +489,19 @@ def create_jwt(user_id: str, email: str) -> str:
     }
     return pyjwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    if not credentials:
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    # Cookie-first: browser sessions use httpOnly cookie.
+    # Authorization header used as fallback for API clients and tests.
+    token = request.cookies.get("vc_token")
+    if not token and credentials:
+        token = credentials.credentials
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        return pyjwt.decode(credentials.credentials, JWT_SECRET, algorithms=['HS256'])
+        return pyjwt.decode(token, JWT_SECRET, algorithms=['HS256'])
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError:
@@ -903,45 +910,14 @@ def pitch_signal_score(subject: str, body: str) -> int:
     text = f"{subject} {body[:1000]}".lower()
     return sum(1 for kw in PITCH_KEYWORDS if kw in text)
 
-async def process_and_save_email(
-    user_id: Optional[str], sender_name: str, sender_email: str,
-    subject: str, body: str, thread_id: str = None,
-    message_id: str = None, received_date: str = None, gmail_link: str = None,
-    fund_ctx: dict = None, skip_dedup: bool = False, force_replace: bool = False,
-    run_gate: bool = True,
-) -> Optional[dict]:
-    # Deduplicate (only if not already checked by caller's pre-fetched set)
-    if not skip_dedup and user_id and thread_id:
-        existing = await sb_select('deals', {
-            'user_id': f'eq.{user_id}', 'thread_id': f'eq.{thread_id}'
-        })
-        if existing:
-            logger.debug(f'[DEDUP] Thread {thread_id} already exists, skipping: "{subject}"')
-            return None
-
-    # ── AI Gate — run before full extraction ──────────────────────────────────
-    if run_gate:
-        gate = await gate_email(sender_name, sender_email, subject, body)
-        if not gate['belongs']:
-            logger.info(f'[GATE] Gated out: "{subject}" — {gate["reason"]}')
-            if user_id:
-                await save_gated_email(user_id, sender_name, sender_email,
-                                       subject, body, received_date, gate['reason'])
-            return 'gated'  # sentinel so callers can count it
-
-    ai = await analyze_email(
-        sender_name=sender_name, sender_email=sender_email,
-        subject=subject, body=body,
-        received_date=received_date,
-        fund_ctx=fund_ctx,
-    )
-
-    # NOTE: Spam is saved to DB — filtered from dashboard display only.
-    if ai.get('category') == 'Spam / irrelevant':
-        logger.info(f'[PROCESS] Classified as spam: "{subject}" from {sender_email} — saving to DB (filtered from dashboard)')
-
+def _build_deal_dict(
+    user_id: str, thread_id: Optional[str], message_id: Optional[str],
+    sender_name: str, sender_email: str, subject: str, body: str,
+    received_date: Optional[str], gmail_link: Optional[str], ai: dict,
+) -> dict:
+    """Build the deal dict from Claude AI extraction results. Pure function — no DB calls."""
     now = datetime.now(timezone.utc).isoformat()
-    deal = {
+    return {
         'id': str(uuid.uuid4()),
         'user_id': user_id,
         'thread_id': thread_id or str(uuid.uuid4()),
@@ -979,6 +955,52 @@ async def process_and_save_email(
         'processed_at': now,
         'created_at': now,
     }
+
+
+async def process_and_save_email(
+    user_id: Optional[str], sender_name: str, sender_email: str,
+    subject: str, body: str, thread_id: str = None,
+    message_id: str = None, received_date: str = None, gmail_link: str = None,
+    fund_ctx: dict = None, skip_dedup: bool = False, force_replace: bool = False,
+    run_gate: bool = True,
+) -> Optional[dict]:
+    # Deduplicate (only if not already checked by caller's pre-fetched set)
+    if not skip_dedup and user_id and thread_id:
+        existing = await sb_select('deals', {
+            'user_id': f'eq.{user_id}', 'thread_id': f'eq.{thread_id}'
+        })
+        if existing:
+            logger.debug(f'[DEDUP] Thread {thread_id} already exists, skipping: "{subject}"')
+            return None
+
+    # ── AI Gate — run before full extraction ──────────────────────────────────
+    if run_gate:
+        gate = await gate_email(sender_name, sender_email, subject, body)
+        if not gate['belongs']:
+            logger.info(f'[GATE] Gated out: "{subject}" — {gate["reason"]}')
+            if user_id:
+                await save_gated_email(user_id, sender_name, sender_email,
+                                       subject, body, received_date, gate['reason'])
+            return 'gated'  # sentinel so callers can count it
+
+    ai = await analyze_email(
+        sender_name=sender_name, sender_email=sender_email,
+        subject=subject, body=body,
+        received_date=received_date,
+        fund_ctx=fund_ctx,
+    )
+
+    # NOTE: Spam is saved to DB — filtered from dashboard display only.
+    if ai.get('category') == 'Spam / irrelevant':
+        logger.info(f'[PROCESS] Classified as spam: "{subject}" from {sender_email} — saving to DB (filtered from dashboard)')
+
+    deal = _build_deal_dict(
+        user_id=user_id, thread_id=thread_id, message_id=message_id,
+        sender_name=sender_name, sender_email=sender_email,
+        subject=subject, body=body,
+        received_date=received_date, gmail_link=gmail_link,
+        ai=ai,
+    )
     saved = await sb_insert('deals', deal, upsert=force_replace)
     if not saved:
         # Fallback: retry without new schema fields if columns don't exist yet
@@ -991,6 +1013,88 @@ async def process_and_save_email(
     else:
         logger.error(f'[PROCESS] FAILED to save: "{subject}" from {sender_email}')
         return None
+
+async def _refresh_gmail_token_if_needed(user: dict, user_id: str, gmail, creds):
+    """Proactively refresh the Gmail OAuth token if expired. Returns (gmail, creds)."""
+    try:
+        needs_refresh = creds.expired or not creds.token
+    except Exception:
+        needs_refresh = True
+
+    if not (needs_refresh and creds.refresh_token):
+        return gmail, creds
+
+    logger.info(f'[SYNC] Refreshing access token for {user.get("email")}')
+    await asyncio.to_thread(creds.refresh, GoogleRequest())
+    new_expiry = None
+    if creds.expiry:
+        try:
+            e = creds.expiry
+            if hasattr(e, 'tzinfo') and e.tzinfo:
+                e = e.astimezone(timezone.utc).replace(tzinfo=None)
+            new_expiry = e.isoformat()
+        except Exception:
+            pass
+    await sb_update('users', {
+        'access_token': creds.token,
+        'token_expiry': new_expiry,
+    }, {'id': f'eq.{user_id}'})
+    updated_user = {**user, 'access_token': creds.token, 'token_expiry': new_expiry}
+    gmail, creds = await asyncio.to_thread(build_gmail_service, updated_user)
+    logger.info(f'[SYNC] Token refreshed. New expiry: {new_expiry}')
+    return gmail, creds
+
+
+def _build_gmail_query_params(
+    user: dict, is_initial: bool, force_full_scan: bool, force_reprocess: bool,
+) -> dict:
+    """Build Gmail API list() params based on sync mode and last-sync timestamp."""
+    base_q = 'in:inbox -from:me -category:promotions -category:social -category:updates'
+    params: dict = {'userId': 'me', 'maxResults': 50, 'labelIds': ['INBOX']}
+    if not force_full_scan and not is_initial and not force_reprocess and user.get('last_synced'):
+        try:
+            ls = datetime.fromisoformat(user['last_synced'].replace('Z', '+00:00'))
+            params['q'] = f'{base_q} after:{int(ls.timestamp())}'
+            logger.info(f'[SYNC] Incremental scan after {user["last_synced"][:19]}')
+        except Exception as e:
+            logger.warning(f'[SYNC] Could not parse last_synced ({e}), falling back to full scan')
+            params['q'] = base_q
+    else:
+        params['q'] = base_q
+        logger.info(f'[SYNC] Full scan (force_full={force_full_scan}, initial={is_initial}, force_reprocess={force_reprocess})')
+    return params
+
+
+def _determine_contact_status(current_status: str, new_stage: str) -> str:
+    """Return the contact status that should be written — never downgrades."""
+    ex_idx = STATUS_ORDER.index(current_status) if current_status in STATUS_ORDER else -1
+    new_idx = STATUS_ORDER.index(new_stage) if new_stage in STATUS_ORDER else -1
+    return new_stage if new_idx > ex_idx else current_status
+
+
+def _build_new_contact_dict(
+    uid: str, email: str, deal: dict, new_stage: str, now_iso: str,
+) -> dict:
+    """Build a new contact dict for insertion from a deal and stage. Pure function."""
+    return {
+        'user_id': uid,
+        'name': (deal.get('sender_name') or deal.get('founder_name') or 'Unknown').strip(),
+        'email': email,
+        'company': deal.get('company_name'),
+        'role': deal.get('founder_role'),
+        'sector': deal.get('sector'),
+        'stage': deal.get('stage'),
+        'geography': deal.get('geography'),
+        'intro_source': deal.get('intro_source'),
+        'warm_or_cold': deal.get('warm_or_cold'),
+        'contact_status': new_stage,
+        'relevance_score': deal.get('relevance_score'),
+        'tags': deal.get('tags') or [],
+        'deal_count': 1,
+        'first_contacted': deal.get('received_date') or now_iso,
+        'last_contacted': deal.get('received_date') or now_iso,
+    }
+
 
 # ── Gmail sync ─────────────────────────────────────────────────────────────────────
 async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_scan: bool = False, force_reprocess: bool = False) -> int:
@@ -1010,49 +1114,10 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
     try:
         gmail, creds = await asyncio.to_thread(build_gmail_service, user)
 
-        # Always refresh token proactively — avoids mid-sync expiry
-        try:
-            needs_refresh = creds.expired or not creds.token
-        except Exception:
-            needs_refresh = True
+        # Proactively refresh token — avoids mid-sync expiry
+        gmail, creds = await _refresh_gmail_token_if_needed(user, user_id, gmail, creds)
 
-        if needs_refresh and creds.refresh_token:
-            logger.info(f'[SYNC] Refreshing access token for {user.get("email")}')
-            await asyncio.to_thread(creds.refresh, GoogleRequest())
-            new_expiry = None
-            if creds.expiry:
-                try:
-                    e = creds.expiry
-                    if hasattr(e, 'tzinfo') and e.tzinfo:
-                        e = e.astimezone(timezone.utc).replace(tzinfo=None)
-                    new_expiry = e.isoformat()
-                except Exception:
-                    pass
-            await sb_update('users', {
-                'access_token': creds.token,
-                'token_expiry': new_expiry,
-            }, {'id': f'eq.{user_id}'})
-            gmail, creds = await asyncio.to_thread(build_gmail_service, {
-                **user,
-                'access_token': creds.token,
-                'token_expiry': new_expiry,
-            })
-            logger.info(f'[SYNC] Token refreshed successfully. New expiry: {new_expiry}')
-
-        # Build Gmail query params — optimized for investment fund inboxes
-        base_q = 'in:inbox -from:me -category:promotions -category:social -category:updates'
-        params = {'userId': 'me', 'maxResults': 50, 'labelIds': ['INBOX']}
-        if not force_full_scan and not is_initial and not force_reprocess and user.get('last_synced'):
-            try:
-                ls = datetime.fromisoformat(user['last_synced'].replace('Z', '+00:00'))
-                params['q'] = f'{base_q} after:{int(ls.timestamp())}'
-                logger.info(f'[SYNC] Incremental scan after {user["last_synced"][:19]}')
-            except Exception as e:
-                logger.warning(f'[SYNC] Could not parse last_synced ({e}), falling back to full scan')
-                params['q'] = base_q
-        else:
-            params['q'] = base_q
-            logger.info(f'[SYNC] Full scan (force_full={force_full_scan}, initial={is_initial}, force_reprocess={force_reprocess})')
+        params = _build_gmail_query_params(user, is_initial, force_full_scan, force_reprocess)
 
         logger.info(f'[SYNC] Fetching messages from Gmail API...')
         resp = await asyncio.to_thread(
@@ -1505,7 +1570,14 @@ async def auth_callback(
 
         token = create_jwt(user_id, email)
         background_tasks.add_task(sync_user_emails, user_id, True)
-        return RedirectResponse(url=f'{FRONTEND_URL}/oauth-callback?token={token}')
+        _secure = FRONTEND_URL.startswith('https://')
+        resp = RedirectResponse(url=f'{FRONTEND_URL}/oauth-callback', status_code=302)
+        resp.set_cookie(
+            key='vc_token', value=token,
+            httponly=True, samesite='lax', secure=_secure,
+            max_age=30 * 24 * 3600, path='/',
+        )
+        return resp
     except Exception as e:
         logger.error(f'OAuth callback error: {e}')
         return RedirectResponse(url=f'{FRONTEND_URL}/?error=auth_failed')
@@ -1524,7 +1596,10 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/auth/logout")
 async def logout():
-    return {"message": "Logged out"}
+    _secure = FRONTEND_URL.startswith('https://')
+    resp = JSONResponse({"message": "Logged out"})
+    resp.delete_cookie('vc_token', samesite='lax', secure=_secure, path='/')
+    return resp
 
 @api_router.post("/auth/disconnect")
 async def disconnect_gmail(current_user: dict = Depends(get_current_user)):
@@ -1968,7 +2043,6 @@ async def restore_gated_email(gated_id: str, current_user: dict = Depends(get_cu
     if not rows:
         raise HTTPException(status_code=404, detail="Gated email not found")
     g = rows[0]
-    fund_ctx = get_fund_settings(uid)
     result = await process_and_save_email(
         user_id=uid,
         sender_name=g.get('sender_name', ''),
@@ -1998,8 +2072,10 @@ async def restore_gated_email(gated_id: str, current_user: dict = Depends(get_cu
 
 def generate_invite_code() -> str:
     """Format: 3 uppercase letters + dash + 4 uppercase alphanumeric. e.g. FFC-X7K2"""
-    prefix = ''.join(random.choices(string.ascii_uppercase, k=3))
-    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    alphabet_upper = string.ascii_uppercase
+    alphabet_alnum = string.ascii_uppercase + string.digits
+    prefix = ''.join(secrets.choice(alphabet_upper) for _ in range(3))
+    suffix = ''.join(secrets.choice(alphabet_alnum) for _ in range(4))
     return f"{prefix}-{suffix}"
 
 
@@ -2229,14 +2305,13 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[
 
     if existing:
         contact = existing[0]
-        ex_idx = STATUS_ORDER.index(contact['contact_status']) if contact.get('contact_status') in STATUS_ORDER else -1
-        new_idx = STATUS_ORDER.index(new_stage) if new_stage in STATUS_ORDER else -1
-        # Never downgrade: only move forward in the status order
-        updated_status = new_stage if new_idx > ex_idx else contact.get('contact_status', new_stage)
+        updated_status = _determine_contact_status(
+            contact.get('contact_status', new_stage), new_stage
+        )
 
         update_data = {
             'contact_status': updated_status,
-            'company': deal.get('company_name') or contact.get('company'),  # always update company
+            'company': deal.get('company_name') or contact.get('company'),
             'last_contacted': deal.get('received_date') or now_iso,
             'deal_count': (contact.get('deal_count') or 1) + 1,
             'updated_at': now_iso,
@@ -2259,24 +2334,7 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[
             logger.error(f'[Contact] UPDATE FAILED for contact {contact["id"]} email={email}')
             return None
     else:
-        new_contact = {
-            'user_id': uid,
-            'name': (deal.get('sender_name') or deal.get('founder_name') or 'Unknown').strip(),
-            'email': email,
-            'company': deal.get('company_name'),
-            'role': deal.get('founder_role'),
-            'sector': deal.get('sector'),
-            'stage': deal.get('stage'),
-            'geography': deal.get('geography'),
-            'intro_source': deal.get('intro_source'),
-            'warm_or_cold': deal.get('warm_or_cold'),
-            'contact_status': new_stage,
-            'relevance_score': deal.get('relevance_score'),
-            'tags': deal.get('tags') or [],
-            'deal_count': 1,
-            'first_contacted': deal.get('received_date') or now_iso,
-            'last_contacted': deal.get('received_date') or now_iso,
-        }
+        new_contact = _build_new_contact_dict(uid, email, deal, new_stage, now_iso)
         logger.info(f'[Contact] Attempting INSERT: email={email} company={new_contact["company"]} user={uid[:8]}')
         result = await sb_insert('contacts', new_contact)
         if result:
@@ -2589,9 +2647,10 @@ async def mark_notification_read(notif_id: str, current_user: dict = Depends(get
 
 # ── App setup ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)
+_cors_origins = [FRONTEND_URL, 'http://localhost:3000']
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
