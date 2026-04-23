@@ -2215,7 +2215,18 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str):
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{uid}'})
+    company = deal.get('company_name') or deal.get('company') or ''
+
+    # Deduplicate by (email + company) so each founder×company gets its own contact row.
+    # Same founder re-pitching the same company → update (deal_count++, Returning badge).
+    # Same founder pitching a NEW company → new contact row.
+    # No company known → fall back to email-only to avoid orphaned rows.
+    if company:
+        existing = await sb_select('contacts', {
+            'email': f'eq.{email}', 'company': f'eq.{company}', 'user_id': f'eq.{uid}'
+        })
+    else:
+        existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{uid}'})
 
     if existing:
         contact = existing[0]

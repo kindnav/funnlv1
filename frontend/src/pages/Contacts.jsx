@@ -73,8 +73,8 @@ export default function Contacts({ user, onLogout }) {
     const q = search.toLowerCase();
     return contacts
       .filter(c => filter === 'All' || c.contact_status === filter)
-      .filter(c => !q || (c.name || '').toLowerCase().includes(q)
-        || (c.company || '').toLowerCase().includes(q)
+      .filter(c => !q || (c.company || '').toLowerCase().includes(q)
+        || (c.name || '').toLowerCase().includes(q)
         || (c.email || '').toLowerCase().includes(q));
   }, [contacts, filter, search]);
 
@@ -245,7 +245,7 @@ export default function Contacts({ user, onLogout }) {
               <table className="w-full border-collapse text-sm" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    {['Name / Email', 'Company / Sector', 'Status', 'Score', 'Source', 'Geography', 'Last Contacted', 'Deals', 'Notes'].map(h => (
+                    {['Company / Founder', 'Email / Sector', 'Status', 'Score', 'Source', 'Geography', 'Last Contacted', 'Deals', 'Notes'].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-b" style={{ color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.07)' }}>
                         {h}
                       </th>
@@ -270,29 +270,18 @@ export default function Contacts({ user, onLogout }) {
                         onMouseEnter={e => !isSelected && (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
                         onMouseLeave={e => !isSelected && (e.currentTarget.style.background = 'transparent')}
                       >
-                        {/* Name + email */}
+                        {/* Company (primary) + founder name */}
                         <td className="px-4 py-3">
                           <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-semibold text-white text-sm">{contact.name || '—'}</span>
-                              {(contact.deal_count || 0) > 1 && (
-                                <span
-                                  data-testid="returning-badge"
-                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                                  style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}
-                                >
-                                  Returning
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{contact.email || '—'}</div>
+                            <div className="font-semibold text-white text-sm">{contact.company || contact.name || '—'}</div>
+                            <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{contact.name || '—'}</div>
                           </div>
                         </td>
 
-                        {/* Company + sector */}
+                        {/* Email + sector */}
                         <td className="px-4 py-3">
-                          <div className="font-medium text-white text-sm">{contact.company || '—'}</div>
-                          <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{contact.sector || '—'}</div>
+                          <div className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>{contact.email || '—'}</div>
+                          <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{contact.sector || '—'}</div>
                         </td>
 
                         {/* Status badge */}
@@ -336,11 +325,22 @@ export default function Contacts({ user, onLogout }) {
                           {fmtDate(contact.last_contacted)}
                         </td>
 
-                        {/* Deal count */}
+                        {/* Deal count + returning badge */}
                         <td className="px-4 py-3">
-                          <span className="text-sm font-bold tabular-nums" style={{ color: (contact.deal_count || 0) > 1 ? '#7c6dfa' : 'rgba(255,255,255,0.4)' }}>
-                            {(contact.deal_count || 0) > 1 ? `${contact.deal_count}x` : '1'}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-bold tabular-nums" style={{ color: (contact.deal_count || 0) > 1 ? '#7c6dfa' : 'rgba(255,255,255,0.4)' }}>
+                              {(contact.deal_count || 0) > 1 ? `${contact.deal_count}x` : '1'}
+                            </span>
+                            {(contact.deal_count || 0) > 1 && (
+                              <span
+                                data-testid="returning-badge"
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded w-fit"
+                                style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}
+                              >
+                                Returning
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Notes preview */}
