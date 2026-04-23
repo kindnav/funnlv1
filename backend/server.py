@@ -2293,14 +2293,21 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[
 async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     new_stage = (data.get('stage') or '').strip()
+
+    logger.info(f'[STAGE] Request: deal={deal_id[:8]} stage={new_stage} user={uid[:8]}')
+
     if not new_stage:
         raise HTTPException(status_code=400, detail="stage is required")
+
     update_data = {'deal_stage': new_stage}
     if 'pass_reason' in data:
         update_data['pass_reason'] = data['pass_reason']
     if 'watchlist_revisit_date' in data:
         update_data['watchlist_revisit_date'] = data['watchlist_revisit_date']
+
     await sb_update('deals', update_data, {'id': f'eq.{deal_id}'})
+    logger.info(f'[STAGE] Deal updated to {new_stage}')
+
     fund_info = await get_user_fund_info(uid)
     if fund_info:
         u = await sb_select('users', {'id': f'eq.{uid}'})
@@ -2309,13 +2316,68 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
             'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_info['fund']['id'],
             'body': f"{name} moved this to {new_stage}", 'type': 'system',
         })
-    # Auto-create/update contact for contact-worthy stages
+
     contact_result = None
     if new_stage in CONTACT_STAGES:
         deal_rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
+        logger.info(f'[STAGE] Deal rows fetched: {len(deal_rows) if deal_rows else 0}')
         if deal_rows:
-            contact_result = await auto_upsert_contact(uid, deal_rows[0], new_stage)
+            deal = deal_rows[0]
+            logger.info(f'[STAGE] Deal sender_email: {deal.get("sender_email", "MISSING")}')
+            logger.info(f'[STAGE] Deal user_id: {deal.get("user_id", "MISSING")}')
+            contact_result = await auto_upsert_contact(uid, deal, new_stage)
+            logger.info(f'[STAGE] Contact result: {contact_result}')
+        else:
+            logger.error(f'[STAGE] Deal {deal_id} not found after update')
+    else:
+        logger.info(f'[STAGE] Stage {new_stage} not in CONTACT_STAGES, skipping contact')
+
     return {"ok": True, "stage": new_stage, "contact": contact_result}
+
+
+@api_router.post("/debug/test-contact")
+async def test_contact_creation(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint: create a synthetic test contact for the current user."""
+    uid = current_user['user_id']
+    test_deal = {
+        'id': f'test-{uid[:8]}',
+        'user_id': uid,
+        'sender_email': f'testfounder+{uid[:6]}@testcompany.com',
+        'sender_name': 'Test Founder',
+        'company_name': 'Test Company',
+        'founder_role': 'CEO',
+        'sector': 'SaaS',
+        'relevance_score': 8,
+        'tags': ['test'],
+        'received_date': datetime.now(timezone.utc).isoformat(),
+    }
+    logger.info(f'[DEBUG] Testing contact creation for user {uid[:8]}')
+    result = await auto_upsert_contact(uid, test_deal, 'First Look')
+    logger.info(f'[DEBUG] Result: {result}')
+    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
+    return {
+        'result': result,
+        'total_contacts_for_user': len(contacts) if contacts else 0,
+        'contacts_sample': (contacts or [])[:3],
+    }
+
+
+@api_router.get("/debug/contacts-raw")
+async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint: show all contacts and pipeline deals for current user."""
+    uid = current_user['user_id']
+    all_contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
+    all_pipeline = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'deal_stage': f'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
+    })
+    pipeline_with_email = [d for d in (all_pipeline or []) if d.get('sender_email')]
+    return {
+        'contacts_count': len(all_contacts) if all_contacts else 0,
+        'contacts': all_contacts or [],
+        'pipeline_deals_count': len(all_pipeline) if all_pipeline else 0,
+        'pipeline_deals_with_email': pipeline_with_email,
+    }
 
 
 @api_router.post("/contacts/sync-pipeline")
