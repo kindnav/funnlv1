@@ -380,7 +380,7 @@ export default function Dashboard({ user, onLogout }) {
         </a>
         <button
           data-testid="fund-thesis-btn"
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate('/fund-focus')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
           style={{
             background: 'rgba(124,109,250,0.08)',
@@ -390,6 +390,20 @@ export default function Dashboard({ user, onLogout }) {
         >
           <BookOpen size={13} />
           <span className="hidden sm:inline">Fund Focus</span>
+        </button>
+        <button
+          data-testid="settings-btn"
+          onClick={() => navigate('/settings')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.5)',
+          }}
+          title="Settings"
+        >
+          <SettingsIcon size={13} />
+          <span className="hidden sm:inline">Settings</span>
         </button>
         <button
           data-testid="logout-btn"

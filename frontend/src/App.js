@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
+import FundFocus from './pages/FundFocus';
 import ConnectPage from './pages/ConnectPage';
 import OAuthCallback from './pages/OAuthCallback';
 import Pipeline from './pages/Pipeline';
@@ -71,6 +72,10 @@ function App() {
               ? <Settings user={user} onLogout={handleLogout} onUserUpdate={setUser} />
               : <Navigate to="/" />
           }
+        />
+        <Route
+          path="/fund-focus"
+          element={user ? <FundFocus /> : <Navigate to="/" />}
         />
         <Route
           path="/pipeline"
