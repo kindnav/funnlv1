@@ -435,9 +435,31 @@ async def init_database():
         await purge_expired_archived_deals()
         await migrate_sample_thesis()
         await seed_sample_data()
+        await _auto_populate_contacts_if_empty()
         return True
     logger.warning("DB tables not found — please run the schema SQL in Supabase SQL Editor")
     return False
+
+
+async def _auto_populate_contacts_if_empty():
+    """On startup, for any user with 0 contacts, rebuild from all their deals."""
+    try:
+        real_users = await sb_select('users', {'refresh_token': 'not.is.null'})
+        for user in (real_users or []):
+            uid = user['id']
+            existing = await sb_select('contacts', {'user_id': f'eq.{uid}'})
+            if existing:
+                continue  # already has contacts — skip to preserve notes/tags
+            deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+            count = 0
+            for deal in (deals or []):
+                r = await sync_contact(uid, deal)
+                if r:
+                    count += 1
+            if count > 0:
+                logger.info(f'[Startup] Auto-populated {count} contacts for user {uid[:8]}')
+    except Exception as exc:
+        logger.error(f'[Startup] auto-populate contacts failed: {exc}')
 
 async def seed_sample_data():
     # Ensure system user exists first
@@ -1045,6 +1067,9 @@ async def process_and_save_email(
         saved = await sb_insert('deals', deal, upsert=force_replace)
     if saved:
         logger.info(f'[PROCESS] Saved: "{subject}" from {sender_email} | category={ai.get("category")} score={ai.get("relevance_score")}')
+        # Auto-create / update contact for every saved deal (not stage-gated)
+        if user_id:
+            await sync_contact(user_id, saved, is_new_deal=True)
         return saved
     else:
         logger.error(f'[PROCESS] FAILED to save: "{subject}" from {sender_email}')
@@ -1714,9 +1739,8 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if rows:
         deal = rows[0]
-        trigger_value = update.get('deal_stage') or update.get('status')
-        contact_result = await sync_contact_from_deal(uid, deal, trigger_value=trigger_value)
-        logger.info(f'[Contact Trigger] PATCH /deals/{deal_id[:8]} trigger={trigger_value} result={contact_result}')
+        contact_result = await sync_contact(uid, deal)
+        logger.info(f'[Contact Trigger] PATCH /deals/{deal_id[:8]} result={contact_result}')
     else:
         logger.warning(f'[Contact Trigger] Could not re-fetch deal {deal_id} after update')
 
@@ -1798,16 +1822,32 @@ async def trigger_sync(
 
 @api_router.post("/contacts/upsert")
 async def upsert_contact(data: dict, current_user: dict = Depends(get_current_user)):
-    """Kept for backward compatibility — delegates to sync_contact_from_deal."""
+    """Kept for backward compatibility — delegates to sync_contact."""
     uid = current_user['user_id']
     deal = data.get('deal', {})
     if not deal:
         raise HTTPException(status_code=400, detail="No deal payload provided")
-    trigger = data.get('contact_status') or data.get('deal_stage')
-    result = await sync_contact_from_deal(uid, deal, trigger_value=trigger)
+    result = await sync_contact(uid, deal)
     if not result:
-        raise HTTPException(status_code=400, detail="Contact not created — deal may be ineligible (spam, missing email, non-contact stage)")
+        raise HTTPException(status_code=400, detail="Contact not eligible — missing email or spam category")
     return result
+
+
+@api_router.post("/contacts/rebuild")
+async def rebuild_contacts(current_user: dict = Depends(get_current_user)):
+    """Delete all contacts for this user and rebuild from scratch from all deals."""
+    uid = current_user['user_id']
+    await sb_delete('contacts', {'user_id': f'eq.{uid}'})
+    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+    created = skipped = 0
+    for deal in (deals or []):
+        r = await sync_contact(uid, deal)
+        if r:
+            created += 1
+        else:
+            skipped += 1
+    logger.info(f'[Rebuild] user={uid[:8]} created={created} skipped={skipped}')
+    return {'message': 'Contacts rebuilt', 'created': created, 'skipped': skipped}
 
 
 @api_router.get("/contacts")
@@ -1839,7 +1879,7 @@ async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_u
 
     created = updated = skipped = failed = 0
     for deal in (deals or []):
-        result = await sync_contact_from_deal(uid, deal)
+        result = await sync_contact(uid, deal)
         if result is None:
             skipped += 1
         elif result.get('status') == 'created':
@@ -2316,101 +2356,75 @@ async def recover_deal(deal_id: str, current_user: dict = Depends(get_current_us
 
 
 # ── Contact sync engine ──────────────────────────────────────────────────────────────
-CONTACT_STAGES          = {'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'}
-STATUS_ORDER            = ['Watch List', 'First Look', 'In Conversation', 'Due Diligence', 'Closed']
-CONTACT_STATUS_ALIASES: dict[str, str] = {
-    'Pipeline':         'First Look',
-    'In Pipeline':      'First Look',
-    'In Review':        'First Look',
-    'Reviewed':         'First Look',
-    'Saved for Review': 'First Look',
-}
-CONTACT_SKIP_STATUSES   = {'Passed', 'Archived', 'deleted', 'New', 'Inbound'}
-CONTACT_SKIP_CATEGORIES = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
+# Categories that represent non-founder senders — skip contact creation for these
+_CONTACT_SKIP_CATEGORIES = frozenset({
+    'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'
+})
 
 
-async def sync_contact_from_deal(
-    user_id: str, deal: dict, trigger_value: str = None
-) -> Optional[dict]:
+async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> Optional[dict]:
     """
-    Single source of truth for contact creation / update from a deal.
+    Create or update a contact from ANY deal — not stage-gated.
 
-    Called automatically by:
-      - PATCH /deals/{id}          (when deal_stage or status changes)
-      - PATCH /deals/{id}/stage    (always)
-      - POST  /deals/{id}/assign   (when assignee set → First Look)
+    This is the single source of truth for the Contacts system.
+    Fires on:  inbound email save | deal PATCH | stage change | deal assign
 
-    Never called directly from the frontend.
-    Dedup key: UNIQUE(user_id, email).  Status never downgrades.
+    Dedup key: UNIQUE(user_id, email).
+    - contact_status  = last known deal_stage for this contact
+    - relevance_score = highest score seen across all their deals
+    - deal_count      = number of distinct inbound emails from this sender
     """
     # 1. Resolve email — founder_email takes precedence over sender_email
     email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
     if not email:
-        logger.info(f'[Contact] Skip — no email on deal {(deal.get("id") or "?")[:8]}')
         return None
 
-    # 2. Skip non-investment categories
-    category = deal.get('category', '')
-    if category in CONTACT_SKIP_CATEGORIES:
-        logger.info(f'[Contact] Skip — category={category!r}')
+    # 2. Skip non-founder categories
+    if deal.get('category', '') in _CONTACT_SKIP_CATEGORIES:
         return None
-
-    # 3. Resolve canonical stage
-    raw_stage = trigger_value or deal.get('deal_stage') or deal.get('status') or ''
-    stage = CONTACT_STATUS_ALIASES.get(raw_stage, raw_stage)
-
-    # 4. Skip non-contact-worthy stages
-    if not stage or stage in CONTACT_SKIP_STATUSES or stage not in CONTACT_STAGES:
-        logger.info(f'[Contact] Skip — stage={stage!r} deal={( deal.get("id") or "?")[:8]}')
-        return None
-
-    deal_id_short = (deal.get('id') or '?')[:8]
-    logger.info(f'[Contact] sync deal={deal_id_short} email={email} stage={stage} user={user_id[:8]}')
 
     now_iso = datetime.now(timezone.utc).isoformat()
+    last_stage = deal.get('deal_stage') or deal.get('status') or 'Inbound'
+    new_score  = deal.get('relevance_score') or 0
+
     existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
 
     if existing:
         contact = existing[0]
-
-        # 5. Never downgrade status
-        cur_idx = STATUS_ORDER.index(contact['contact_status']) if contact.get('contact_status') in STATUS_ORDER else -1
-        new_idx = STATUS_ORDER.index(stage) if stage in STATUS_ORDER else -1
-        final_status = stage if new_idx > cur_idx else contact['contact_status']
-
-        # 6. Keep the higher relevance score
-        new_score = deal.get('thesis_match_score') or deal.get('relevance_score') or 0
-        update_data: dict = {
-            'contact_status': final_status,
+        update: dict = {
+            'contact_status': last_stage,
             'last_contacted': deal.get('received_date') or now_iso,
             'updated_at': now_iso,
         }
+        if is_new_deal:
+            update['deal_count'] = (contact.get('deal_count') or 1) + 1
         if new_score > (contact.get('relevance_score') or 0):
-            update_data['relevance_score'] = new_score
+            update['relevance_score'] = new_score
 
-        # 7. Fill in any missing fields from deal
+        # Fill any missing fields from the deal
         for cf, df in [
-            ('company', 'company_name'), ('role', 'founder_role'), ('sector', 'sector'),
-            ('geography', 'geography'), ('intro_source', 'intro_source'),
+            ('company', 'company_name'), ('role', 'founder_role'),
+            ('sector', 'sector'), ('geography', 'geography'),
+            ('intro_source', 'intro_source'), ('warm_or_cold', 'warm_or_cold'),
         ]:
             if not contact.get(cf) and deal.get(df):
-                update_data[cf] = deal[df]
+                update[cf] = deal[df]
         if not contact.get('name') and (deal.get('founder_name') or deal.get('sender_name')):
-            update_data['name'] = (deal.get('founder_name') or deal.get('sender_name')).strip()
+            update['name'] = (deal.get('founder_name') or deal.get('sender_name')).strip()
 
-        ok = await sb_update('contacts', update_data, {'id': f'eq.{contact["id"]}'})
+        # Merge tags (deduplicated, capped at 12)
+        merged = list(dict.fromkeys((contact.get('tags') or []) + (deal.get('tags') or [])))[:12]
+        if merged != (contact.get('tags') or []):
+            update['tags'] = merged
+
+        ok = await sb_update('contacts', update, {'id': f'eq.{contact["id"]}'})
         if ok:
-            logger.info(f'[Contact] Updated: {email} → {final_status}')
-            return {
-                'status': 'updated', 'contact_id': contact['id'],
-                'name': contact.get('name'),
-                'company': update_data.get('company') or contact.get('company'),
-                'contact_status': final_status, 'returning': True,
-            }
+            logger.info(f'[Contact] Updated: {email} stage={last_stage} user={user_id[:8]}')
+            return {'status': 'updated', 'contact_id': contact['id'], 'email': email, 'returning': True}
         logger.error(f'[Contact] UPDATE FAILED email={email}')
         return None
 
-    # 8. New contact — insert
+    # New contact — insert
     new_contact = {
         'user_id': user_id,
         'name': (deal.get('founder_name') or deal.get('sender_name') or '').strip() or None,
@@ -2422,8 +2436,8 @@ async def sync_contact_from_deal(
         'geography': deal.get('geography'),
         'intro_source': deal.get('intro_source'),
         'warm_or_cold': deal.get('warm_or_cold'),
-        'contact_status': stage,
-        'relevance_score': deal.get('thesis_match_score') or deal.get('relevance_score'),
+        'contact_status': last_stage,
+        'relevance_score': new_score or None,
         'tags': deal.get('tags') or [],
         'deal_count': 1,
         'first_contacted': deal.get('received_date') or now_iso,
@@ -2431,12 +2445,8 @@ async def sync_contact_from_deal(
     }
     result = await sb_insert('contacts', new_contact)
     if result:
-        logger.info(f'[Contact] Created: {email} → {stage} id={result.get("id", "?")}')
-        return {
-            'status': 'created', 'contact_id': result.get('id'),
-            'name': new_contact['name'], 'company': new_contact['company'],
-            'contact_status': stage, 'returning': False,
-        }
+        logger.info(f'[Contact] Created: {email} stage={last_stage} id={result.get("id", "?")}')
+        return {'status': 'created', 'contact_id': result.get('id'), 'email': email, 'returning': False}
     logger.error(f'[Contact] INSERT FAILED email={email} user={user_id[:8]}')
     return None
 
@@ -2472,7 +2482,7 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
     contact_result = None
     deal_rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if deal_rows:
-        contact_result = await sync_contact_from_deal(uid, deal_rows[0], trigger_value=new_stage)
+        contact_result = await sync_contact(uid, deal_rows[0])
         logger.info(f'[STAGE] Contact result: {contact_result}')
     else:
         logger.error(f'[STAGE] Deal {deal_id} not found after update')
@@ -2497,7 +2507,7 @@ async def test_contact_creation(current_user: dict = Depends(get_current_user)):
         'received_date': datetime.now(timezone.utc).isoformat(),
     }
     logger.info(f'[DEBUG] Testing contact creation for user {uid[:8]}')
-    result = await sync_contact_from_deal(uid, test_deal, trigger_value='First Look')
+    result = await sync_contact(uid, test_deal)
     logger.info(f'[DEBUG] Result: {result}')
     contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
     return {
@@ -2594,7 +2604,7 @@ async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get
         # Auto-create contact for the assigning user since deal is now at First Look
         if d_rows:
             logger.info(f'[ASSIGN] Syncing contact for deal {deal_id[:8]} at First Look (assigned by {uid[:8]})')
-            contact_result = await sync_contact_from_deal(uid, d_rows[0], trigger_value='First Look')
+            contact_result = await sync_contact(uid, d_rows[0])
             logger.info(f'[Assign Contact] deal={deal_id[:8]} result={contact_result}')
     else:
         await sb_insert('deal_comments', {

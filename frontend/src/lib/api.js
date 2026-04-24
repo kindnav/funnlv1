@@ -114,6 +114,9 @@ export const markNotifRead = (id) => fetchJson(`${API}/notifications/${id}/read`
 export const syncContactPipeline = () =>
   fetchJson(`${API}/contacts/sync-pipeline`, { method: 'POST' });
 
+export const rebuildContacts = () =>
+  fetchJson(`${API}/contacts/rebuild`, { method: 'POST' });
+
 // ── AI Gate ─────────────────────────────────────────────────────────────────────
 export const getGatedEmails = () => fetchJson(`${API}/gated-emails`);
 export const restoreGatedEmail = (id) => fetchJson(`${API}/gated-emails/${id}/restore`, { method: 'POST' });
