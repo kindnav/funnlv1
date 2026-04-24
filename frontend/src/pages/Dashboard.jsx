@@ -14,7 +14,7 @@ import { StatsBar } from '../components/dashboard/StatsBar';
 import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import { toast } from '../components/ui/sonner';
-import { getDeals, getStats, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal } from '../lib/api';
+import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -28,17 +28,17 @@ const fmtLastSynced = (ts) => {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros', 'Assigned to me'];
+const BASE_FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros'];
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
   const [fundDeals, setFundDeals] = useState([]);
-  const [stats, setStats] = useState({ total: 0, founder_pitches: 0, avg_relevance: 0, high_score: 0, unreviewed: 0 });
   const [fundName, setFundName] = useState('');
   const [fundSettings, setFundSettings] = useState({});
   const [fundInfo, setFundInfo] = useState(null);
   const [viewMode, setViewMode] = useState('my-inbox'); // 'my-inbox' | 'fund-dashboard'
+  const FILTERS = fundInfo ? [...BASE_FILTERS, 'Assigned to me'] : BASE_FILTERS;
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -82,13 +82,12 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, s, f, status, fi] = await Promise.all([
-        getDeals(), getStats(), getFundSettings(),
+      const [d, f, status, fi] = await Promise.all([
+        getDeals(), getFundSettings(),
         getSyncStatus().catch(() => null),
         getMyFund().catch(() => null),
       ]);
       if (d) setDeals(d);
-      if (s) setStats(s);
       if (f) { setFundSettings(f); if (f.fund_name) setFundName(f.fund_name); }
       if (status?.last_synced) setLastSynced(status.last_synced);
       if (fi?.fund) {
@@ -152,15 +151,13 @@ export default function Dashboard({ user, onLogout }) {
     const poll = setInterval(async () => {
       polls++;
       try {
-        const [status, d, s] = await Promise.all([
+        const [status, d] = await Promise.all([
           getSyncStatus().catch(() => null),
           getDeals(),
-          getStats(),
         ]);
         if (status?.message) setSyncMessage(status.message);
         if (status?.last_synced) setLastSynced(status.last_synced);
         if (d) setDeals(d);
-        if (s) setStats(s);
         const newDeals = Math.max(0, (d || []).length - dealsCountBefore);
         const done = polls >= maxPolls || status?.step === 5;
         if (done) {
@@ -193,7 +190,6 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleProcessed = (newDeal) => {
     setDeals((prev) => [newDeal, ...prev]);
-    setStats((prev) => ({ ...prev, total: prev.total + 1, unreviewed: prev.unreviewed + 1 }));
   };
 
   const handleDealUpdated = (updated) => {
@@ -364,20 +360,22 @@ export default function Dashboard({ user, onLogout }) {
           <span className="hidden sm:inline">Review Mode</span>
           <span className="sm:hidden">Review</span>
         </button>
-        <a
-          data-testid="enable-sending-btn"
-          href={`${BACKEND_URL}/api/auth/google`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{
-            background: 'rgba(77,166,255,0.08)',
-            border: '1px solid rgba(77,166,255,0.25)',
-            color: '#4da6ff',
-          }}
-          title="Click to grant Gmail send permission — required for one-click email replies"
-        >
-          <Send size={12} />
-          <span className="hidden sm:inline">Enable Sending</span>
-        </a>
+        {!user?.gmail_send_enabled && (
+          <a
+            data-testid="enable-sending-btn"
+            href={`${BACKEND_URL}/api/auth/google`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+            style={{
+              background: 'rgba(77,166,255,0.08)',
+              border: '1px solid rgba(77,166,255,0.25)',
+              color: '#4da6ff',
+            }}
+            title="Click to grant Gmail send permission — required for one-click email replies"
+          >
+            <Send size={12} />
+            <span className="hidden sm:inline">Enable Sending</span>
+          </a>
+        )}
         <button
           data-testid="fund-thesis-btn"
           onClick={() => navigate('/fund-focus')}

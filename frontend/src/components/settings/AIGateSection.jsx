@@ -1,89 +1,16 @@
-import { Check, AlertTriangle, ChevronRight, RefreshCw, Filter, FlaskConical, RotateCcw } from 'lucide-react';
+import { Check, AlertTriangle, RefreshCw, Filter, RotateCcw } from 'lucide-react';
 
 /**
- * AIGateSection — displays Gate Tests + Filtered Emails in Settings.
+ * AIGateSection — displays Filtered Emails in Settings.
  * All state lives in Settings; this is a pure presentation + handler-call component.
  */
 export function AIGateSection({
   cardCls,
-  // Gate tests
-  gateTestResults, gateTestRunning, onRunGateTests,
   // Filtered emails
   gatedEmails, gatedLoading, gatedTableMissing, restoringId, onRestore,
 }) {
   return (
     <>
-      {/* ── Gate Tests ── */}
-      <div className={cardCls} data-testid="gate-tests-section">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <FlaskConical size={15} className="text-[#7c6dfa]" />
-            <h2 className="text-white font-semibold text-sm">AI Gate Tests</h2>
-          </div>
-          <button
-            data-testid="run-gate-tests-btn"
-            onClick={onRunGateTests}
-            disabled={gateTestRunning}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
-            style={{ background: 'rgba(124,109,250,0.1)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}
-          >
-            {gateTestRunning
-              ? <RefreshCw size={11} className="animate-spin" />
-              : <ChevronRight size={11} />}
-            {gateTestRunning ? 'Running...' : 'Run 12 Tests'}
-          </button>
-        </div>
-        <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4 leading-relaxed">
-          Validate the AI gate against 12 benchmark emails — 3 that should be filtered, 9 that should pass through.
-        </p>
-        {gateTestResults && (
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="text-sm font-bold font-mono"
-                style={{ color: gateTestResults.passed === gateTestResults.total ? '#3dd68c' : '#f5a623' }}
-              >
-                {gateTestResults.passed}/{gateTestResults.total}
-              </span>
-              <span className="text-[rgba(255,255,255,0.4)] text-xs">tests passed</span>
-            </div>
-            <div className="space-y-1.5">
-              {gateTestResults.results.map((r) => (
-                <div
-                  key={r.id}
-                  data-testid={`gate-test-${r.id}`}
-                  className="flex items-start gap-2.5 rounded-lg px-3 py-2.5"
-                  style={{
-                    background: r.pass ? 'rgba(61,214,140,0.04)' : 'rgba(240,82,82,0.06)',
-                    border: `1px solid ${r.pass ? 'rgba(61,214,140,0.15)' : 'rgba(240,82,82,0.2)'}`,
-                  }}
-                >
-                  <span className="mt-0.5 shrink-0" style={{ color: r.pass ? '#3dd68c' : '#f05252' }}>
-                    {r.pass ? <Check size={12} /> : <AlertTriangle size={12} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-xs font-medium truncate">{r.name}</p>
-                    <p className="text-[rgba(255,255,255,0.3)] text-xs truncate font-mono">"{r.subject}"</p>
-                    <p className="text-[rgba(255,255,255,0.25)] text-xs mt-0.5">
-                      Expected:{' '}
-                      <span style={{ color: r.expected ? '#3dd68c' : '#f05252' }}>
-                        {r.expected ? 'pass through' : 'filter out'}
-                      </span>
-                      {' · '}
-                      Got:{' '}
-                      <span style={{ color: r.actual ? '#3dd68c' : '#f05252' }}>
-                        {r.actual ? 'passed' : 'filtered'}
-                      </span>
-                      {' · '}{r.reason}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* ── Filtered Emails ── */}
       <div className={cardCls} data-testid="filtered-emails-section">
         <div className="flex items-center gap-2 mb-1">

@@ -3,6 +3,22 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-25 v5) — 7 Fixes + 3 Cleanups
+
+### Fixes
+- **FIX 1** `Contacts.jsx`: Removed auto-rebuild `useRef`/`useEffect` that silently wiped contacts on empty load
+- **FIX 2** `server.py` + `Contacts.jsx`: Removed `contact_status: neq.Passed` server filter; added "Passed" to frontend filter tabs so the Passed filter actually works
+- **FIX 3** `Pipeline.jsx`: Due Diligence column color changed from `#3dd68c` (green) to `#a594ff` (purple) — matches app-wide usage
+- **FIX 4** `Dashboard.jsx`: "Assigned to me" filter hidden for solo users — only shown when `fundInfo` is set
+- **FIX 5** `ReviewMode.jsx`: Added `SYSTEM_USER_ID` constant and filter to exclude demo/sample deals from review queue
+- **FIX 6** `Dashboard.jsx`: Removed redundant `getStats()` from `fetchAll` and sync polling; removed `stats` state; StatsBar uses `deals` prop directly
+- **FIX 7** `server.py` + `Dashboard.jsx`: Added `gmail_send_enabled` field — set `True` on OAuth callback completion; `Enable Sending` button hidden when `user.gmail_send_enabled` is true
+
+### Cleanups
+- **CLEANUP 1** `Contacts.jsx`: Debug panel already absent from previous rewrite — confirmed clean
+- **CLEANUP 2** `Settings.jsx` + `AIGateSection.jsx`: Removed gate test runner (state, function, button, results) — Filtered Emails section retained
+- **CLEANUP 3** `Settings.jsx`: Removed "Sync contacts from pipeline" button and Data Management section
+
 ## Latest Changes (2026-04-25 v4) — Contacts/Pipeline Sync Fixes
 - **FIX 1** `PATCH /deals/{id}` now auto-maps `status → deal_stage` (`Pipeline→First Look`, `In Review→First Look`, `Passed→Passed`, `New→Inbound`) so Dashboard categorization immediately appears in the correct Pipeline column
 - **FIX 2** `sync_contact`: When deal moves to Passed, resolves the contact email then DELETES the contact row — previously it returned None without cleanup, leaving stale contacts

@@ -53,7 +53,7 @@ const getInitials = (name, email) => {
   return '?';
 };
 
-const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'];
+const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed'];
 const AVATAR_COLORS = [
   ['rgba(124,109,250,0.2)', '#7c6dfa'],
   ['rgba(77,166,255,0.18)', '#4da6ff'],
@@ -130,15 +130,6 @@ export default function Contacts({ user, onLogout }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  // Auto-rebuild on first load if table is empty
-  const didAutoRebuild = useRef(false);
-  useEffect(() => {
-    if (!loading && contacts.length === 0 && !didAutoRebuild.current) {
-      didAutoRebuild.current = true;
-      handleRebuild(true);
-    }
-  }, [loading, contacts.length]); // eslint-disable-line
 
   // Load linked deals when contact changes
   useEffect(() => {

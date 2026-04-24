@@ -8,7 +8,7 @@ const STAGES = [
   { key: 'Inbound',          label: 'Inbound',          color: '#7c6dfa' },
   { key: 'First Look',       label: 'First Look',       color: '#4da6ff' },
   { key: 'In Conversation',  label: 'In Conversation',  color: '#f5a623' },
-  { key: 'Due Diligence',    label: 'Due Diligence',    color: '#3dd68c' },
+  { key: 'Due Diligence',    label: 'Due Diligence',    color: '#a594ff' },
   { key: 'Closed',           label: 'Closed',           color: '#22c55e' },
   { key: 'Passed',           label: 'Passed',           color: '#f05252' },
   { key: 'Watch List',       label: 'Watch List',       color: '#fbbf24' },

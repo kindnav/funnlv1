@@ -10,6 +10,8 @@ import { CardContent } from '../components/review/CardContent';
 const SWIPE_X = 110;
 const SWIPE_Y = 90;
 
+const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ReviewMode() {
   const [deals, setDeals] = useState([]);
@@ -31,7 +33,10 @@ export default function ReviewMode() {
   useEffect(() => {
     getDeals().then(data => {
       const q = (data || [])
-        .filter(d => d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New'))
+        .filter(d =>
+          d.user_id !== SYSTEM_USER_ID &&
+          (d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New'))
+        )
         .sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0));
       setDeals(q);
       setLoading(false);

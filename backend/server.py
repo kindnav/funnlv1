@@ -1620,6 +1620,9 @@ async def auth_callback(
         else:
             logger.info(f'[Auth] JWT will use verified user_id: {user_id[:8]}')
 
+        # Mark that this user has completed the full OAuth flow (includes gmail.send scope)
+        await sb_update('users', {'gmail_send_enabled': True}, {'id': f'eq.{user_id}'})
+
         token = create_jwt(user_id, email)
         background_tasks.add_task(sync_user_emails, user_id, True)
         _secure = FRONTEND_URL.startswith('https://')
@@ -1644,6 +1647,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         'id': u['id'], 'email': u['email'], 'name': u['name'],
         'picture': u['picture'], 'last_synced': u.get('last_synced'),
         'gmail_connected': bool(u.get('refresh_token')),
+        'gmail_send_enabled': bool(u.get('gmail_send_enabled')),
     }
 
 @api_router.post("/auth/logout")
@@ -1880,7 +1884,6 @@ async def get_contacts(current_user: dict = Depends(get_current_user)):
     logger.info(f'[Contacts] Fetching for user_id: {uid}')
     contacts = await sb_select('contacts', {
         'user_id': f'eq.{uid}',
-        'contact_status': 'neq.Passed',
         'order': 'last_contacted.desc',
     })
     count = len(contacts) if contacts else 0
