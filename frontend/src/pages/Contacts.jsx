@@ -49,7 +49,7 @@ const getInitials = (name, email) => {
   return '?';
 };
 
-const AVATAR_COLORS = [
+const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'];
   ['rgba(124,109,250,0.2)', '#7c6dfa'],
   ['rgba(77,166,255,0.18)', '#4da6ff'],
   ['rgba(61,214,140,0.15)', '#3dd68c'],
@@ -61,7 +61,10 @@ const avatarColor = (email = '') => {
   return AVATAR_COLORS[idx];
 };
 
-const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'];
+const fmtEmail = (email) => {
+  if (!email || email.endsWith('@deal.funnl')) return null;
+  return email;
+};
 
 /* ── Subcomponents ────────────────────────────────────────────────────────── */
 function StageBadge({ stage }) {
@@ -353,8 +356,8 @@ export default function Contacts({ user, onLogout }) {
                         </span>
                       </div>
                       {c.company && (
-                        <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</p>
-                      )}
+                          <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</p>
+                        )}
                       <div className="flex items-center gap-2 mt-1.5">
                         <StageBadge stage={c.contact_status} />
                         {c.relevance_score != null && (
@@ -513,7 +516,7 @@ function DetailPanel({
         {/* ── Contact info ──────────────────────────────────────────── */}
         <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
           <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Contact Info</p>
-          <InfoRow icon={Mail}      label="Email"      value={contact.email}       href={`mailto:${contact.email}`} />
+          <InfoRow icon={Mail}      label="Email"      value={fmtEmail(contact.email)}       href={fmtEmail(contact.email) ? `mailto:${contact.email}` : undefined} />
           <InfoRow icon={Building2} label="Company"    value={contact.company} />
           <InfoRow icon={Briefcase} label="Role"       value={contact.role} />
           <InfoRow icon={Globe}     label="Geography"  value={contact.geography} />

@@ -2386,16 +2386,13 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
       ✅  Deal has a meaningful AI-assigned category (not null / not yet classified)
       ✅  Category is NOT Spam, Vendor, or Recruiter
       ✅  Deal stage is NOT 'Passed'
-      ✅  Deal has a sender email
+      ✅  Deal has a usable email — or a company_name when the sender is the inbox owner
 
-    Callers: inbound email save | deal PATCH | stage change | deal assign
     Dedup key: UNIQUE(user_id, email).
+    When sender_email = the user's own email (thread reply), we derive a
+    synthetic contact email from company_name so each company gets its own
+    contact entry.
     """
-    # 1. Resolve email — founder_email takes precedence over sender_email
-    email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
-    if not email:
-        return None
-
     # 2. Require a meaningful AI-assigned category — skip uncategorized / inbound emails
     category = (deal.get('category') or '').strip()
     if not category or category in _CONTACT_SKIP_CATEGORIES:
@@ -2405,7 +2402,44 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
     # 3. Skip passed deals — they are no longer of interest
     stage = (deal.get('deal_stage') or deal.get('status') or '').strip()
     if stage == 'Passed':
-        logger.debug(f'[Contact] Skip — deal is Passed for {email}')
+        logger.debug(f'[Contact] Skip — deal is Passed')
+        return None
+
+    # 1. Resolve the best email identifier
+    raw_email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
+
+    # Detect "self-sent" deals — where sender_email is the inbox owner's own address.
+    # This happens when Gmail sync captures a REPLY the user sent (thread reply),
+    # so the From: header shows the user, not the founder.
+    # Fix: use company_name to form a unique synthetic contact email.
+    user_rows = await sb_select('users', {'id': f'eq.{user_id}'})
+    user_row = user_rows[0] if user_rows else {}
+    user_email = (user_row.get('email') or '').strip().lower()
+    user_name = (user_row.get('name') or '').strip().lower()
+
+    sender_name_lower = (deal.get('sender_name') or '').strip().lower()
+    # Primary check: sender email matches the user's login email
+    is_self_sent = bool(raw_email and raw_email == user_email)
+    # Secondary check: sender name matches the user's registered name
+    # (catches cases where Gmail sync email differs from login email, e.g. Gmail alias)
+    if not is_self_sent and user_name and sender_name_lower and sender_name_lower == user_name:
+        is_self_sent = True
+
+    if is_self_sent:
+        # Sender IS the user — use company_name as the unique identifier
+        company = (deal.get('company_name') or '').strip()
+        if not company:
+            logger.debug(f'[Contact] Skip — sender is self and no company_name')
+            return None
+        # Deterministic synthetic email so UNIQUE(user_id, email) still holds
+        slug = ''.join(c if c.isalnum() else '_' for c in company.lower())[:40]
+        email = f'{slug}@deal.funnl'
+        logger.debug(f'[Contact] Self-sent thread — using company email {email} for {company}')
+    else:
+        email = raw_email
+
+    if not email:
+        logger.debug(f'[Contact] Skip — no email and no company_name')
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -2450,9 +2484,17 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
         return None
 
     # New contact — insert
+    # For self-sent threads, prefer company_name as the display name since
+    # sender_name would just show the user's own name
+    is_synthetic = email.endswith('@deal.funnl')
+    display_name = (
+        deal.get('company_name')
+        if is_synthetic
+        else (deal.get('founder_name') or deal.get('sender_name') or '').strip() or deal.get('company_name')
+    )
     new_contact = {
         'user_id': user_id,
-        'name': (deal.get('founder_name') or deal.get('sender_name') or '').strip() or None,
+        'name': display_name or None,
         'email': email,
         'company': deal.get('company_name'),
         'role': deal.get('founder_role'),
