@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users, Trash2,
+  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users, Trash2, MoreHorizontal,
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -57,6 +57,8 @@ export default function Dashboard({ user, onLogout }) {
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [watchlistDue, setWatchlistDue] = useState([]);
   const [watchlistBannerDismissed, setWatchlistBannerDismissed] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -71,6 +73,17 @@ export default function Dashboard({ user, onLogout }) {
       window.history.replaceState({}, '');
     }
   }, [location.state?.openDealId, deals]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close ··· More menu when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Product tour — show once per session unless permanently dismissed
   useEffect(() => {
@@ -391,33 +404,72 @@ export default function Dashboard({ user, onLogout }) {
             <span className="hidden sm:inline">Enable Sending</span>
           </a>
         )}
-        <button
-          data-testid="fund-thesis-btn"
-          onClick={() => navigate('/fund-focus')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{
-            background: 'rgba(124,109,250,0.08)',
-            border: '1px solid rgba(124,109,250,0.25)',
-            color: '#7c6dfa',
-          }}
-        >
-          <BookOpen size={13} />
-          <span className="hidden sm:inline">Fund Focus</span>
-        </button>
-        <button
-          data-testid="settings-btn"
-          onClick={() => navigate('/settings')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.5)',
-          }}
-          title="Settings"
-        >
-          <SettingsIcon size={13} />
-          <span className="hidden sm:inline">Settings</span>
-        </button>
+
+        {/* ··· More menu (Archive, Fund Focus, Settings) */}
+        <div className="relative" ref={moreMenuRef}>
+          <button
+            data-testid="more-menu-btn"
+            onClick={() => setMoreMenuOpen((o) => !o)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all"
+            style={{
+              color: moreMenuOpen ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
+              border: moreMenuOpen ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.07)',
+              background: moreMenuOpen ? 'rgba(255,255,255,0.06)' : 'transparent',
+            }}
+            title="More options"
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {moreMenuOpen && (
+            <div
+              className="absolute right-0 top-full mt-1.5 w-44 rounded-xl overflow-hidden z-50"
+              style={{
+                background: '#1a1a26',
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              }}
+            >
+              <button
+                data-testid="archive-btn"
+                onClick={() => { handleViewArchive(); setMoreMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
+                style={{ color: 'rgba(255,255,255,0.6)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+              >
+                <Trash2 size={13} />
+                Archive
+              </button>
+              <button
+                data-testid="fund-thesis-btn"
+                onClick={() => { navigate('/fund-focus'); setMoreMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
+                style={{ color: 'rgba(255,255,255,0.6)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+              >
+                <BookOpen size={13} />
+                Fund Focus
+              </button>
+              <button
+                data-testid="settings-btn"
+                onClick={() => { navigate('/settings'); setMoreMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
+                style={{ color: 'rgba(255,255,255,0.6)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+              >
+                <SettingsIcon size={13} />
+                Settings
+              </button>
+            </div>
+          )}
+        </div>
+
+        <NotificationBell onNavigateToDeal={(dealId) => {
+          const d = [...deals, ...fundDeals].find((x) => x.id === dealId);
+          if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
+        }} />
         <button
           data-testid="logout-btn"
           onClick={onLogout}
@@ -425,10 +477,6 @@ export default function Dashboard({ user, onLogout }) {
         >
           <LogOut size={15} />
         </button>
-        <NotificationBell onNavigateToDeal={(dealId) => {
-          const d = [...deals, ...fundDeals].find((x) => x.id === dealId);
-          if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
-        }} />
       </nav>
 
       {/* Stats Bar */}

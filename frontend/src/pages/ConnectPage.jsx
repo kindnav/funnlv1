@@ -411,7 +411,7 @@ export default function ConnectPage() {
         <footer className="px-6 py-8 text-center"
           style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: "'DM Mono', monospace" }}>
-            funnl &nbsp;·&nbsp; Built for emerging fund managers &nbsp;·&nbsp; Privacy &nbsp;·&nbsp; Terms
+            funnl &nbsp;·&nbsp; Built for emerging fund managers
           </p>
         </footer>
       </div>
