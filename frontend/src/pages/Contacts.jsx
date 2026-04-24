@@ -50,6 +50,7 @@ const getInitials = (name, email) => {
 };
 
 const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'];
+const AVATAR_COLORS = [
   ['rgba(124,109,250,0.2)', '#7c6dfa'],
   ['rgba(77,166,255,0.18)', '#4da6ff'],
   ['rgba(61,214,140,0.15)', '#3dd68c'],

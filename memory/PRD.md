@@ -3,6 +3,10 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-25 v3) — Bug Fixes
+- **FIX 1** `Contacts.jsx` syntax error: Missing `const AVATAR_COLORS = [` declaration at line 52 caused a Babel parse failure — restored the declaration
+- **FIX 2** `server.py` self-sent email detection: Added name-based fallback in `sync_contact` — if `deal.sender_name` matches user's registered `name` from DB, treats it as self-sent even when Gmail alias differs from login email (e.g. `kindranaveen@gmail.com` vs `navbir12345@gmail.com`)
+
 ## Latest Changes (2026-04-25 v2) — Contacts Auto-Populate Fix
 - **Root cause**: rebuild/sync/auto-populate were only fetching `user_id = uid` deals, but the UI shows system/sample deals too (same as `GET /deals` which uses `user_id in (uid, SYSTEM_USER_ID)`)
 - **Fix**: Updated `POST /contacts/rebuild`, `POST /contacts/sync-pipeline`, and `_auto_populate_contacts_if_empty` to use the inclusive deal query (own + system sample deals)
