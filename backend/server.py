@@ -1729,12 +1729,11 @@ async def process_email_manual(data: dict, current_user: dict = Depends(get_curr
 
 @api_router.patch("/deals/{deal_id}")
 async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
-    allowed = {'status', 'notes', 'next_action'}
+    allowed = {'status', 'notes', 'next_action', 'deal_stage'}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         raise HTTPException(status_code=400, detail="No valid fields to update")
     uid = current_user['user_id']
-    # Allow updating own deals or sample deals
     ok = await sb_update('deals', update, {
         'id': f'eq.{deal_id}',
         'user_id': f'in.({uid},{SYSTEM_USER_ID})'
@@ -1742,18 +1741,23 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update deal")
 
-    # Auto-create contact whenever status implies future interest
     contact_result = None
-    new_status = update.get('status')
-    if new_status:
-        contact_stage = _contact_stage_for(None, new_status)
-        if contact_stage:
-            deal_rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
-            if deal_rows:
-                logger.info(f'[DEAL] status={new_status} → contact_stage={contact_stage} deal={deal_id[:8]}')
-                contact_result = await auto_upsert_contact(uid, deal_rows[0], contact_stage)
+    rows = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if rows:
+        deal = rows[0]
+        explicit_value = update.get('deal_stage') or update.get('status')
+        should_create, contact_stage, reason = should_create_contact_from_deal(deal, explicit_value)
+        logger.info(
+            f'[Contact Trigger] PATCH /deals/{deal_id[:8]} explicit={explicit_value} '
+            f'stage={contact_stage} should_create={should_create} reason={reason}'
+        )
+        if should_create:
+            contact_result = await auto_upsert_contact(uid, deal, contact_stage)
+            logger.info(f'[Contact Trigger] PATCH contact_result={contact_result}')
+    else:
+        logger.warning(f'[Contact Trigger] Could not re-fetch deal {deal_id} after update')
 
-    return {"message": "Updated", "contact": contact_result}
+    return {"message": "Updated", "deal_id": deal_id, "contact": contact_result}
 
 @api_router.post("/deals/{deal_id}/generate-action")
 async def generate_deal_action(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
@@ -1892,22 +1896,24 @@ async def _create_new_contact(uid: str, email: str, deal: dict, contact_status: 
 @api_router.post("/contacts/upsert")
 async def upsert_contact(data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    raw_status = data.get('contact_status', 'First Look')
+    contact_status = normalize_contact_stage(data.get('contact_status', 'First Look'))
     deal = data.get('deal', {})
 
-    # Normalize alias → canonical stage; default to 'First Look' if unrecognised
-    stage = STATUS_TO_CONTACT_STAGE.get(raw_status, raw_status)
-    if stage not in CONTACT_STAGES:
-        stage = 'First Look'
+    if not deal:
+        raise HTTPException(status_code=400, detail="No deal payload provided")
 
-    email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
-    if not email:
-        raise HTTPException(status_code=400, detail="No email found on deal")
+    should_create, contact_stage, reason = should_create_contact_from_deal(deal, contact_status)
+    logger.info(
+        f'[Contact] manual upsert user={uid[:8]} status={contact_status} '
+        f'stage={contact_stage} should_create={should_create} reason={reason}'
+    )
 
-    logger.info(f'[Contact] upsert endpoint — user={uid[:8]} email={email} stage={stage}')
-    result = await auto_upsert_contact(uid, deal, stage)
-    if result is None:
-        raise HTTPException(status_code=400, detail="Could not create/update contact — check deal data")
+    if not should_create:
+        raise HTTPException(status_code=400, detail=f"Contact not created: {reason}")
+
+    result = await auto_upsert_contact(uid, deal, contact_stage)
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to create/update contact")
     return result
 
 
@@ -1940,23 +1946,21 @@ async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_u
 
     created = updated = skipped = failed = 0
     for deal in (deals or []):
-        stage = _contact_stage_for(deal.get('deal_stage'), deal.get('status'))
-        if not stage:
+        should_create, contact_stage, reason = should_create_contact_from_deal(deal)
+        if not should_create:
+            logger.info(f'[Pipeline Sync] Skipped deal {(deal.get("id") or "?")[:8]}: {reason}')
             skipped += 1
             continue
-        email = deal.get('founder_email') or deal.get('sender_email')
-        if not email:
-            logger.warning(f'[Pipeline Sync] Skipping deal {(deal.get("id") or "?")[:8]} — no email')
-            skipped += 1
-            continue
-        result = await auto_upsert_contact(uid, deal, stage)
+        result = await auto_upsert_contact(uid, deal, contact_stage)
         if result:
+            email = deal.get('sender_email') or deal.get('founder_email') or '?'
             if result['status'] == 'created':
                 created += 1
                 logger.info(f'[Pipeline Sync] CREATED: {email}')
             else:
                 updated += 1
         else:
+            email = deal.get('sender_email') or deal.get('founder_email') or '?'
             logger.error(f'[Pipeline Sync] FAILED: {email}')
             failed += 1
 
@@ -2428,8 +2432,7 @@ async def recover_deal(deal_id: str, current_user: dict = Depends(get_current_us
 CONTACT_STAGES = {'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'}
 STATUS_ORDER   = ['Watch List', 'First Look', 'In Conversation', 'Due Diligence', 'Closed']
 
-# Map deal status values → canonical CONTACT_STAGES entry
-STATUS_TO_CONTACT_STAGE: dict[str, str] = {
+CONTACT_STATUS_ALIASES: dict[str, str] = {
     'Pipeline':         'First Look',
     'In Pipeline':      'First Look',
     'In Review':        'First Look',
@@ -2437,29 +2440,43 @@ STATUS_TO_CONTACT_STAGE: dict[str, str] = {
     'Saved for Review': 'First Look',
 }
 
-# Stages/statuses that must NEVER create a contact
-_CONTACT_SKIP = frozenset({
-    'Passed', 'Archived', 'deleted', 'Inbound', 'New',
-    'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring',
-})
+CONTACT_SKIP_STATUSES  = {'Passed', 'Archived', 'deleted', 'New', 'Inbound'}
+CONTACT_SKIP_CATEGORIES = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
 
 
-def _contact_stage_for(deal_stage: Optional[str], deal_status: Optional[str] = None) -> str:
-    """Return the canonical CONTACT_STAGES value for a deal, or '' if no contact should be created.
+def normalize_contact_stage(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = str(value).strip()
+    return CONTACT_STATUS_ALIASES.get(value, value)
 
-    Checks deal_stage first, then deal_status.  Any value in _CONTACT_SKIP short-circuits to ''.
+
+def should_create_contact_from_deal(
+    deal: dict, explicit_value: str | None = None
+) -> tuple[bool, str | None, str]:
+    """Decide whether a deal should trigger contact creation.
+
+    Returns (should_create, canonical_contact_stage, reason_string).
+    The caller should check should_create before calling auto_upsert_contact.
     """
-    for raw in (deal_stage, deal_status):
-        if not raw:
-            continue
-        if raw in _CONTACT_SKIP:
-            return ''
-        if raw in CONTACT_STAGES:
-            return raw
-        mapped = STATUS_TO_CONTACT_STAGE.get(raw)
-        if mapped:
-            return mapped
-    return ''
+    category = deal.get('category')
+    if category in CONTACT_SKIP_CATEGORIES:
+        return False, None, f'skip category {category}'
+
+    raw = explicit_value or deal.get('deal_stage') or deal.get('status')
+    stage = normalize_contact_stage(raw)
+
+    if not stage or stage in CONTACT_SKIP_STATUSES:
+        return False, stage, f'skip status/stage {stage}'
+
+    if stage not in CONTACT_STAGES:
+        return False, stage, f'stage not contact-worthy: {stage}'
+
+    email = (deal.get('sender_email') or deal.get('founder_email') or '').strip()
+    if not email:
+        return False, stage, 'missing sender_email/founder_email'
+
+    return True, stage, 'ok'
 
 
 async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[dict]:
@@ -2470,7 +2487,7 @@ async def auto_upsert_contact(uid: str, deal: dict, new_stage: str) -> Optional[
     (only set to 1 on creation) to avoid inflated counts from repeated stage moves.
     """
     # Normalize status aliases (e.g. 'In Review' → 'First Look') before any check
-    new_stage = STATUS_TO_CONTACT_STAGE.get(new_stage, new_stage)
+    new_stage = normalize_contact_stage(new_stage) or new_stage
 
     if new_stage not in CONTACT_STAGES:
         logger.info(f'[Contact] Skipped — stage "{new_stage}" not in CONTACT_STAGES')
@@ -2680,6 +2697,7 @@ async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     await sb_update('deals', update_data, {'id': f'eq.{deal_id}'})
     u_by = await sb_select('users', {'id': f'eq.{uid}'})
     name_by = u_by[0].get('name', 'Someone') if u_by else 'Someone'
+    contact_result = None
     if assignee_id:
         await sb_insert('deal_assignments', {
             'deal_id': deal_id, 'assigned_to': assignee_id,
@@ -2698,13 +2716,14 @@ async def assign_deal(deal_id: str, data: dict, current_user: dict = Depends(get
         # Auto-create contact for the assigning user since deal is now at First Look
         if d_rows:
             logger.info(f'[ASSIGN] Creating contact for deal {deal_id[:8]} at First Look (assigned by {uid[:8]})')
-            await auto_upsert_contact(uid, d_rows[0], 'First Look')
+            contact_result = await auto_upsert_contact(uid, d_rows[0], 'First Look')
+            logger.info(f'[Assign Contact] deal={deal_id[:8]} result={contact_result}')
     else:
         await sb_insert('deal_comments', {
             'deal_id': deal_id, 'user_id': uid, 'fund_id': fund_id,
             'body': f"{name_by} unassigned this deal", 'type': 'system',
         })
-    return {"ok": True, "assigned_to": assignee_id}
+    return {"ok": True, "assigned_to": assignee_id, "contact": contact_result}
 
 
 # ── Votes ───────────────────────────────────────────────────────────────────────
