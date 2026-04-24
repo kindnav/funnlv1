@@ -3,6 +3,13 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-24 v2) — Fund Focus Separate Page
+- **New route `/fund-focus`**: `FundFocus.jsx` page with full thesis form (fund name, type, investment focus, sectors, check size, preferred stages) — extracted from Settings
+- **Settings.jsx pruned**: All Fund Focus state, handlers, constants, and UI removed; page now shows Team, Gmail, AI Config, Data Management, Account only
+- **Dashboard.jsx nav updated**: Fund Focus button now routes to `/fund-focus`; new Settings gear button added routing to `/settings`
+- **App.js**: `/fund-focus` route registered, protected behind auth
+- **Test coverage**: iteration_17.json — 100% frontend pass
+
 ## Latest Changes (2026-04-24) — Code Quality Report: Full Polish Pass
 - **Nested ternaries eliminated**: Dashboard.jsx (`syncBtnStyle`/`syncBtnLabel`), Settings.jsx (`thesisBtnIcon`/`thesisBtnLabel`), DetailPanel.jsx (`outreachColor`, `pipelineBtnStyle`, `reviewBtnStyle`, `passBtnStyle`, `archiveBtnStyle`, `pipelineBtnLabel`, `reviewBtnLabel`) — all replaced with explicit `if/else` blocks before `return`
 - **Backend refactoring — upsert_contact**: Split into `_validate_contact_email()`, `_update_existing_contact()`, `_create_new_contact()` helpers + thin `upsert_contact()` orchestrator; full type annotations added
