@@ -1626,7 +1626,7 @@ async def auth_callback(
         resp = RedirectResponse(url=f'{FRONTEND_URL}/oauth-callback', status_code=302)
         resp.set_cookie(
             key='vc_token', value=token,
-            httponly=True, samesite='lax', secure=_secure,
+            httponly=True, samesite='none', secure=True,
             max_age=30 * 24 * 3600, path='/',
         )
         return resp
@@ -1650,7 +1650,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 async def logout():
     _secure = FRONTEND_URL.startswith('https://')
     resp = JSONResponse({"message": "Logged out"})
-    resp.delete_cookie('vc_token', samesite='lax', secure=_secure, path='/')
+    resp.delete_cookie('vc_token', samesite='none', secure=True, path='/')
     return resp
 
 @api_router.post("/auth/disconnect")

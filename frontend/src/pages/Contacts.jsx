@@ -50,19 +50,29 @@ export default function Contacts({ user, onLogout }) {
   const [debugInfo, setDebugInfo] = useState(null);
   const [loadingDebug, setLoadingDebug] = useState(false);
 
-  const loadContacts = useCallback(() => {
+  const loadContacts = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
-    getContacts()
-      .then(data => {
-        setContacts(data || []);
-        setLastSync(new Date().toLocaleTimeString());
-      })
-      .catch(err => {
-        setFetchError(err?.message || 'Failed to load contacts');
-        toast.error('Failed to load contacts');
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await getContacts();
+
+      if (data === null) {
+        console.error('[Contacts] API returned null — likely a 401 auth failure');
+        setFetchError('Session expired — please log out and log back in');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Contacts] Loaded:', data.length, 'contacts');
+      setContacts(data);
+      setLastSync(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('[Contacts] Error:', err);
+      setFetchError(err?.message || 'Failed to load contacts');
+      toast.error('Failed to load contacts');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -339,20 +349,41 @@ export default function Contacts({ user, onLogout }) {
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-60 gap-3">
-                <Users size={32} style={{ color: 'rgba(255,255,255,0.1)' }} />
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                  {contacts.length === 0
-                    ? 'No contacts yet — move deals into the pipeline to start tracking founders'
-                    : 'No contacts match your filter'}
-                </p>
-                {contacts.length === 0 && (
-                  <button
-                    onClick={() => navigate('/settings')}
-                    className="text-xs px-3 py-1.5 rounded-lg border transition-all"
-                    style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.07)' }}
-                  >
-                    Sync from pipeline in Settings
-                  </button>
+                {fetchError?.includes('Session') ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <p className="text-sm mb-3" style={{ color: '#f05252' }}>
+                      {fetchError}
+                    </p>
+                    <button
+                      onClick={onLogout}
+                      className="text-xs px-4 py-2 rounded-lg"
+                      style={{
+                        background: 'rgba(124,109,250,0.15)',
+                        color: '#7c6dfa',
+                        border: '1px solid rgba(124,109,250,0.3)',
+                      }}
+                    >
+                      Log out and log back in
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Users size={32} style={{ color: 'rgba(255,255,255,0.1)' }} />
+                    <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                      {contacts.length === 0
+                        ? 'No contacts yet — move deals into the pipeline to start tracking founders'
+                        : 'No contacts match your filter'}
+                    </p>
+                    {contacts.length === 0 && (
+                      <button
+                        onClick={() => navigate('/settings')}
+                        className="text-xs px-3 py-1.5 rounded-lg border transition-all"
+                        style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.07)' }}
+                      >
+                        Sync from pipeline in Settings
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
