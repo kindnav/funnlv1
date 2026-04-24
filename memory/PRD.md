@@ -1,7 +1,20 @@
 # VC Deal Flow Intelligence Tool — PRD
 **Project**: VC Deal Flow Intelligence  
 **Created**: 2026-04-15  
-**Last Updated**: 2026-04-23
+**Last Updated**: 2026-04-24
+
+## Latest Changes (2026-04-24) — Code Quality Report: Full Polish Pass
+- **Nested ternaries eliminated**: Dashboard.jsx (`syncBtnStyle`/`syncBtnLabel`), Settings.jsx (`thesisBtnIcon`/`thesisBtnLabel`), DetailPanel.jsx (`outreachColor`, `pipelineBtnStyle`, `reviewBtnStyle`, `passBtnStyle`, `archiveBtnStyle`, `pipelineBtnLabel`, `reviewBtnLabel`) — all replaced with explicit `if/else` blocks before `return`
+- **Backend refactoring — upsert_contact**: Split into `_validate_contact_email()`, `_update_existing_contact()`, `_create_new_contact()` helpers + thin `upsert_contact()` orchestrator; full type annotations added
+- **Type hints — Python test files**: All test methods across all 10 test files have `-> None` return type; module-level dicts annotated `dict[str, str]`; `conftest.py` rewritten with full type annotations
+- **Component extraction — Dashboard.jsx** (931→731 lines):
+  - `DealRow` → `/components/dashboard/DealRow.jsx` (self-contained with local style helpers)
+  - `SyncLogModal` → `/components/dashboard/SyncLogModal.jsx`
+- **Component extraction — DetailPanel.jsx** (713→410 lines):
+  - `DealStageSection` → `/components/detail/DealStageSection.jsx` (manages own dealStage/assignedTo/passReason/watchlistDate state)
+  - `CategorizeDealSection` → `/components/detail/CategorizeDealSection.jsx` (manages own saving state)
+- **Test fix**: `test_no_auth_header_in_apijs` updated to reflect intentional conditional Bearer fallback
+- **Lint fixes**: ruff auto-fixed f-string placeholders in server.py and test files
 
 ## Latest Changes (2026-04-23 Round 2) — Code Quality Report Round 2
 - **Empty catch blocks fixed**: Dashboard polling `catch (_) {}` now handles max-polls on error; Onboarding silent catch documented
