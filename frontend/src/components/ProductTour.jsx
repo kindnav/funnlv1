@@ -178,7 +178,7 @@ export default function ProductTour({ onDismiss }) {
           <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
             {steps.map((_, i) => (
               <div
-                key={i}
+                key={`tour-dot-${i}`}
                 style={{
                   flex: 1, height: 2.5, borderRadius: 2,
                   background: i <= step ? '#7c6dfa' : 'rgba(255,255,255,0.08)',

@@ -2,6 +2,7 @@ import os
 import re
 import json
 import uuid
+from dataclasses import dataclass
 import string
 import asyncio
 import logging
@@ -761,29 +762,21 @@ async def save_gated_email(user_id: str, sender_name: str, sender_email: str,
     except Exception as e:
         logger.warning(f'[GATE] gated_emails insert failed: {e}')
 
-async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str,
-                        received_date: str = None, attachments: str = None,
-                        fund_ctx: dict = None) -> dict:
-    # Build fund context block
-    fund_block_lines = []
+def _build_fund_context_block(fund_ctx: Optional[dict]) -> tuple[str, str]:
+    """Return (fund_block, thesis_instruction) for the Claude prompt."""
+    lines = []
     if fund_ctx:
-        if fund_ctx.get('fund_name'):   fund_block_lines.append(f"Fund Name: {fund_ctx['fund_name']}")
-        if fund_ctx.get('fund_type'):   fund_block_lines.append(f"Fund Type: {fund_ctx['fund_type']}")
-        if fund_ctx.get('thesis'):      fund_block_lines.append(f"Investment Thesis: {fund_ctx['thesis']}")
+        if fund_ctx.get('fund_name'):  lines.append(f"Fund Name: {fund_ctx['fund_name']}")
+        if fund_ctx.get('fund_type'):  lines.append(f"Fund Type: {fund_ctx['fund_type']}")
+        if fund_ctx.get('thesis'):     lines.append(f"Investment Thesis: {fund_ctx['thesis']}")
         if fund_ctx.get('stages'):
             s = fund_ctx['stages'] if isinstance(fund_ctx['stages'], str) else ', '.join(fund_ctx['stages'])
-            fund_block_lines.append(f"Preferred Stages: {s}")
-        if fund_ctx.get('sectors'):     fund_block_lines.append(f"Sector Focus: {fund_ctx['sectors']}")
-        if fund_ctx.get('check_size'):  fund_block_lines.append(f"Typical Check Size: {fund_ctx['check_size']}")
+            lines.append(f"Preferred Stages: {s}")
+        if fund_ctx.get('sectors'):    lines.append(f"Sector Focus: {fund_ctx['sectors']}")
+        if fund_ctx.get('check_size'): lines.append(f"Typical Check Size: {fund_ctx['check_size']}")
 
-    fund_block = "\n".join(fund_block_lines) if fund_block_lines else (
-        "This fund receives emails from founders seeking investment, LPs, warm intro connections, "
-        "portfolio companies, service vendors, recruiters, press, event organizers, co-investors, "
-        "and students seeking advice."
-    )
-
-    thesis_instruction = ""
-    if fund_block_lines:
+    if lines:
+        fund_block = "\n".join(lines)
         thesis_instruction = (
             "\nAlso compute fund-fit fields:\n"
             "- thesis_match_score: 0-100 integer (80+=strong fit, 50=neutral, 30-=poor). null if no thesis.\n"
@@ -791,8 +784,23 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
             "- fit_weaknesses: array of 2-3 short strings of thesis gaps. [] if no thesis.\n"
             "- match_reasoning: 1-2 sentence thesis alignment summary. null if no thesis."
         )
+    else:
+        fund_block = (
+            "This fund receives emails from founders seeking investment, LPs, warm intro connections, "
+            "portfolio companies, service vendors, recruiters, press, event organizers, co-investors, "
+            "and students seeking advice."
+        )
+        thesis_instruction = ""
+    return fund_block, thesis_instruction
 
-    prompt = (
+
+def _build_analysis_prompt(
+    sender_name: str, sender_email: str, subject: str, body: str,
+    received_date: Optional[str], attachments: Optional[str],
+    fund_block: str, thesis_instruction: str,
+) -> str:
+    """Build the complete Claude prompt for email analysis. Pure function."""
+    return (
         "Analyze this email received by an investment fund and extract every piece of relevant information.\n\n"
         f"EMAIL METADATA:\nReceived: {received_date or 'Unknown'}\n"
         f"From: {sender_name} <{sender_email}>\nSubject: {subject}\n"
@@ -858,6 +866,16 @@ async def analyze_email(sender_name: str, sender_email: str, subject: str, body:
         '  "fit_weaknesses": array of strings,\n'
         '  "match_reasoning": string or null\n'
         '}'
+    )
+
+
+async def analyze_email(sender_name: str, sender_email: str, subject: str, body: str,
+                        received_date: str = None, attachments: str = None,
+                        fund_ctx: dict = None) -> dict:
+    fund_block, thesis_instruction = _build_fund_context_block(fund_ctx)
+    prompt = _build_analysis_prompt(
+        sender_name, sender_email, subject, body,
+        received_date, attachments, fund_block, thesis_instruction,
     )
 
     try:
@@ -955,6 +973,24 @@ def _build_deal_dict(
         'processed_at': now,
         'created_at': now,
     }
+
+
+@dataclass
+class EmailPayload:
+    """Groups the parameters for process_and_save_email to reduce function arity."""
+    user_id: str
+    sender_name: str
+    sender_email: str
+    subject: str
+    body: str
+    thread_id: Optional[str] = None
+    message_id: Optional[str] = None
+    received_date: Optional[str] = None
+    gmail_link: Optional[str] = None
+    fund_ctx: Optional[dict] = None
+    skip_dedup: bool = False
+    force_replace: bool = False
+    attachments: Optional[str] = None
 
 
 async def process_and_save_email(
@@ -1097,6 +1133,83 @@ def _build_new_contact_dict(
 
 
 # ── Gmail sync ─────────────────────────────────────────────────────────────────────
+async def _process_single_message(
+    gmail, ref: dict, idx: int, total: int,
+    user: dict, user_id: str,
+    existing_thread_ids: set, fund_ctx: dict,
+    force_reprocess: bool,
+) -> str:
+    """
+    Fetch one Gmail message, run noise filters, and save to DB.
+    Returns: 'dup' | 'noise' | 'gated' | 'saved' | 'unsaved'
+    Raises on unrecoverable errors (caller catches and counts as 'error').
+    """
+    msg = await asyncio.to_thread(
+        lambda mid=ref['id']: gmail.users().messages().get(
+            userId='me', id=mid, format='full'
+        ).execute()
+    )
+    headers = msg.get('payload', {}).get('headers', [])
+    subject_for_log = get_header(headers, 'Subject') or '(No Subject)'
+    thread_id = msg.get('threadId', ref['id'])
+
+    if thread_id in existing_thread_ids:
+        logger.debug(f'[SYNC] [{idx}/{total}] SKIP (dup) thread={thread_id}: "{subject_for_log}"')
+        return 'dup'
+
+    from_header = get_header(headers, 'From') or ''
+    if '<' in from_header:
+        from_name = from_header.split('<')[0].strip().strip('"')
+        from_email = from_header.split('<')[1].strip('> ')
+    else:
+        from_email = from_header.strip()
+        from_name = from_email.split('@')[0] if '@' in from_email else from_email
+
+    subject = get_header(headers, 'Subject') or '(No Subject)'
+    body = extract_body(msg.get('payload', {}))
+
+    # ── Noise filters — run BEFORE Claude to save API credits ──
+    if is_newsletter(headers):
+        logger.info(f'[SYNC] [{idx}] SKIP (unsubscribe-header): "{subject_for_log}"')
+        existing_thread_ids.add(thread_id)
+        return 'noise'
+    if is_automated_sender(from_email, from_name):
+        logger.info(f'[SYNC] [{idx}] SKIP (automated-sender): {from_email}')
+        existing_thread_ids.add(thread_id)
+        return 'noise'
+    if is_noisy_subject(subject):
+        logger.info(f'[SYNC] [{idx}] SKIP (noisy-subject): "{subject_for_log}"')
+        existing_thread_ids.add(thread_id)
+        return 'noise'
+    if len(body.strip()) < MIN_BODY_LENGTH:
+        logger.info(f'[SYNC] [{idx}] SKIP (body-too-short {len(body.strip())} chars): "{subject_for_log}"')
+        existing_thread_ids.add(thread_id)
+        return 'noise'
+    if from_email.lower() == (user.get('email') or '').lower():
+        logger.info(f'[SYNC] [{idx}] SKIP (self-sent): "{subject_for_log}"')
+        existing_thread_ids.add(thread_id)
+        return 'noise'
+
+    date_str = get_header(headers, 'Date')
+    try:
+        received_date = parsedate_to_datetime(date_str).isoformat() if date_str else None
+    except Exception:
+        received_date = None
+
+    gmail_link = f'https://mail.google.com/mail/u/0/#inbox/{thread_id}'
+    logger.info(f'[SYNC] [{idx}/{total}] SENDING TO CLAUDE: "{subject}" from {from_email}')
+
+    result = await process_and_save_email(
+        user_id=user_id, sender_name=from_name, sender_email=from_email,
+        subject=subject, body=body, thread_id=thread_id,
+        message_id=ref['id'], received_date=received_date,
+        gmail_link=gmail_link, fund_ctx=fund_ctx,
+        skip_dedup=True, force_replace=force_reprocess,
+    )
+    existing_thread_ids.add(thread_id)
+    return result if result in ('gated', None) else 'saved'
+
+
 async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_scan: bool = False, force_reprocess: bool = False) -> int:
     users = await sb_select('users', {'id': f'eq.{user_id}'})
     if not users:
@@ -1149,102 +1262,27 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
 
         for i, ref in enumerate(messages):
             try:
-                msg = await asyncio.to_thread(
-                    lambda mid=ref['id']: gmail.users().messages().get(
-                        userId='me', id=mid, format='full'
-                    ).execute()
+                _set_sync_progress(user_id, 3, f'Processing email {i+1} of {len(messages)}…', len(messages), i + 1)
+                outcome = await _process_single_message(
+                    gmail, ref, i + 1, len(messages),
+                    user, user_id, existing_thread_ids,
+                    fund_ctx, force_reprocess,
                 )
-                headers = msg.get('payload', {}).get('headers', [])
-                subject_for_log = get_header(headers, 'Subject') or '(No Subject)'
-                thread_id = msg.get('threadId', ref['id'])
-
-                # Fast O(1) deduplication using pre-fetched set
-                if thread_id in existing_thread_ids:
-                    logger.debug(f'[SYNC] [{i+1}/{len(messages)}] SKIP (dup) thread={thread_id}: "{subject_for_log}"')
+                if outcome == 'dup':
                     skipped_dup += 1
-                    continue
-
-                from_header = get_header(headers, 'From') or ''
-                if '<' in from_header:
-                    from_name = from_header.split('<')[0].strip().strip('"')
-                    from_email = from_header.split('<')[1].strip('> ')
-                else:
-                    from_email = from_header.strip()
-                    from_name = from_email.split('@')[0] if '@' in from_email else from_email
-
-                subject = get_header(headers, 'Subject') or '(No Subject)'
-                body = extract_body(msg.get('payload', {}))
-
-                # ── NOISE FILTERS — run BEFORE Claude to save API credits ──
-                # Filter 1: List-Unsubscribe header (bulk/marketing emails)
-                if is_newsletter(headers):
-                    logger.info(f'[SYNC] [{i+1}] SKIP (unsubscribe-header): "{subject_for_log}"')
-                    existing_thread_ids.add(thread_id)
+                elif outcome == 'noise':
                     skipped_noise += 1
-                    continue
-
-                # Filter 2: Known automated sender address or name pattern
-                if is_automated_sender(from_email, from_name):
-                    logger.info(f'[SYNC] [{i+1}] SKIP (automated-sender): {from_email}')
-                    existing_thread_ids.add(thread_id)
-                    skipped_noise += 1
-                    continue
-
-                # Filter 3: Noisy subject line keywords
-                if is_noisy_subject(subject):
-                    logger.info(f'[SYNC] [{i+1}] SKIP (noisy-subject): "{subject_for_log}"')
-                    existing_thread_ids.add(thread_id)
-                    skipped_noise += 1
-                    continue
-
-                # Filter 4: Body too short (automated pings / empty notifications)
-                if len(body.strip()) < MIN_BODY_LENGTH:
-                    logger.info(f'[SYNC] [{i+1}] SKIP (body-too-short {len(body.strip())} chars): "{subject_for_log}"')
-                    existing_thread_ids.add(thread_id)
-                    skipped_noise += 1
-                    continue
-
-                # Filter 5: Self-sent (exact email match)
-                if from_email.lower() == (user.get('email') or '').lower():
-                    logger.info(f'[SYNC] [{i+1}] SKIP (self-sent): "{subject_for_log}"')
-                    existing_thread_ids.add(thread_id)
-                    skipped_noise += 1
-                    continue
-
-                date_str = get_header(headers, 'Date')
-                try:
-                    received_date = parsedate_to_datetime(date_str).isoformat() if date_str else None
-                except Exception:
-                    received_date = None
-
-                gmail_link = f'https://mail.google.com/mail/u/0/#inbox/{thread_id}'
-
-                logger.info(f'[SYNC] [{i+1}/{len(messages)}] SENDING TO CLAUDE: "{subject}" from {from_email}')
-                _set_sync_progress(user_id, 3, f'Processing: "{subject[:60]}"', len(messages), i + 1)
-
-                result = await process_and_save_email(
-                    user_id=user_id, sender_name=from_name,
-                    sender_email=from_email, subject=subject,
-                    body=body, thread_id=thread_id,
-                    message_id=ref['id'], received_date=received_date,
-                    gmail_link=gmail_link, fund_ctx=fund_ctx,
-                    skip_dedup=True,
-                    force_replace=force_reprocess,
-                )
-                existing_thread_ids.add(thread_id)
-                if result == 'gated':
+                elif outcome == 'gated':
                     gated_out += 1
-                elif result:
+                elif outcome == 'saved':
                     processed += 1
-                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED: "{subject}" | category={result.get("category")}')
+                    logger.info(f'[SYNC] [{i+1}/{len(messages)}] SAVED')
                 else:
-                    logger.warning(f'[SYNC] [{i+1}/{len(messages)}] Save returned None for: "{subject}"')
-                # 500ms delay between emails to avoid rate limits
+                    logger.warning(f'[SYNC] [{i+1}/{len(messages)}] Save returned None')
                 await asyncio.sleep(0.5)
             except Exception as e:
-                logger.error(f'[SYNC] [{i+1}/{len(messages)}] Error processing message {ref["id"]}: {e}')
+                logger.error(f'[SYNC] [{i+1}/{len(messages)}] Error on message {ref["id"]}: {e}')
                 errors += 1
-                continue
 
         await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
         fetched = len(messages)

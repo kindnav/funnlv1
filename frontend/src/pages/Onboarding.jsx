@@ -36,7 +36,7 @@ function StepFundSetup({ form, setForm, onNext, onSkip }) {
 
   const handleNext = async () => {
     setSaving(true);
-    try { await saveFundSettings(form); } catch (_) {}
+    try { await saveFundSettings(form); } catch { /* non-critical — user can update in Settings later */ }
     setSaving(false);
     onNext();
   };

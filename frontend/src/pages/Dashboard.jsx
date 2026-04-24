@@ -215,7 +215,14 @@ export default function Dashboard({ user, onLogout }) {
           }
           setTimeout(() => { setSyncResult(null); setSyncMessage(''); }, 8000);
         }
-      } catch (_) {}
+      } catch {
+        // Transient API error during polling — keep polling until maxPolls
+        if (polls >= maxPolls) {
+          clearInterval(poll);
+          setIsSyncing(false);
+          setSyncMessage('Sync check timed out — please try again');
+        }
+      }
     }, 5000);
   };
 

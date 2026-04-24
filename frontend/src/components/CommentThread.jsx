@@ -17,8 +17,8 @@ function highlightMentions(text) {
   const parts = text.split(/(@\w[\w\s]*)(?=\s|$|[^a-zA-Z])/g);
   return parts.map((part, i) =>
     part.startsWith('@')
-      ? <span key={i} className="font-semibold" style={{ color: '#7c6dfa' }}>{part}</span>
-      : <span key={i}>{part}</span>
+      ? <span key={`mention-${i}`} className="font-semibold" style={{ color: '#7c6dfa' }}>{part}</span>
+      : <span key={`text-${i}`}>{part}</span>
   );
 }
 

@@ -100,7 +100,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
     setAssignedTo(deal.assigned_to || '');
     setPassReason(deal.pass_reason || '');
     setWatchlistDate(deal.watchlist_revisit_date ? deal.watchlist_revisit_date.slice(0,10) : '');
-  }, [deal.id]); // eslint-disable-line react-hooks/exhaustive-deps — intentional: reset local state only when the selected deal changes, not on every field update
+  }, [deal.id]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: reset local state only when the selected deal changes, not on every field update
 
   const handleStageChange = useCallback(async (stage, extra = {}) => {
     setDealStage(stage);
@@ -535,16 +535,13 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                 if (saving === 'pipeline') return;
                 setSaving('pipeline');
                 try {
-                  console.log('[Contact] Add to Pipeline triggered for:', deal.sender_email, 'deal:', deal.id);
                   await updateDeal(deal.id, { status: 'Pipeline' });
                   onDealUpdated({ ...deal, status: 'Pipeline' });
                   const res = await upsertContact(deal, 'In Pipeline');
-                  console.log('[Contact] Upsert result:', res);
                   if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
                   else toast.success(`Added to Pipeline · Contact saved`);
-                } catch (e) {
-                  console.error('[Contact] Add to Pipeline error:', e);
-                  toast.error('Action failed — check console');
+                } catch {
+                  toast.error('Action failed — please try again');
                 }
                 setSaving(null);
               }}
@@ -566,16 +563,13 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                 if (saving === 'reviewed') return;
                 setSaving('reviewed');
                 try {
-                  console.log('[Contact] Save for Review triggered for:', deal.sender_email, 'deal:', deal.id);
                   await updateDeal(deal.id, { status: 'In Review' });
                   onDealUpdated({ ...deal, status: 'In Review' });
                   const res = await upsertContact(deal, 'In Review');
-                  console.log('[Contact] Upsert result:', res);
                   if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
                   else toast.success(`Saved for Review · Contact saved`);
-                } catch (e) {
-                  console.error('[Contact] Save for Review error:', e);
-                  toast.error('Action failed — check console');
+                } catch {
+                  toast.error('Action failed — please try again');
                 }
                 setSaving(null);
               }}

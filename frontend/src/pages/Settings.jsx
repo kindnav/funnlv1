@@ -48,6 +48,8 @@ export default function Settings({ user, onLogout }) {
 
   const navigate = useNavigate();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Initial data load — runs once on mount. All called functions are stable API imports.
   useEffect(() => {
     Promise.all([getSettings(), getFundSettings(), getMyFund()]).then(([s, f, fi]) => {
       if (s) setSettings(s);

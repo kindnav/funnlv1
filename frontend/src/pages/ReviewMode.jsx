@@ -126,7 +126,8 @@ export default function ReviewMode() {
       setAnimating(false);
       navigate('/', { state: { openDealId: deal.id } });
     }
-  }, [animating, currentIndex, deals, navigate]); // eslint-disable-line
+  }, [animating, currentIndex, deals, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+  // `flyOff` and `advance` are plain functions using only refs/stable state-setters — no stale-closure risk
 
   const handlePassSubmit = useCallback((reason) => {
     if (pendingDeal) {
@@ -235,14 +236,16 @@ export default function ReviewMode() {
     if (!dragRef.current.active) return;
     const t = e.touches[0];
     applyDrag(t.clientX - dragRef.current.startX, t.clientY - dragRef.current.startY);
-  }, []); // eslint-disable-line
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // `applyDrag` only reads cardRef/overlayRef/labelRef — all stable refs, safe to omit
 
   const onTouchEnd = useCallback((e) => {
     if (!dragRef.current.active) return;
     dragRef.current.active = false;
     const t = e.changedTouches[0];
     handleRelease(t.clientX - dragRef.current.startX, t.clientY - dragRef.current.startY);
-  }, [currentDeal, navigate, commitAction]); // eslint-disable-line
+  }, [currentDeal, navigate, commitAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  // `handleRelease` calls `commitAction` (in deps) + `snapBack` (refs-only, stable)
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────
   const onMouseDown = useCallback((e) => {
@@ -264,7 +267,8 @@ export default function ReviewMode() {
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [animating, currentDeal, navigate, commitAction]); // eslint-disable-line
+  }, [animating, currentDeal, navigate, commitAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Inline onMove/onUp closures use the same stable deps; window listeners are cleaned up inside
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {

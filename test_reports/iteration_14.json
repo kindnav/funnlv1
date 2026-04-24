@@ -1,0 +1,37 @@
+{
+  "summary": "Regression test for Code Quality Round 2 fixes. All 8 backend endpoints pass. Fixed a critical frontend compile error caused by em-dash (—) in eslint-disable comments in DetailPanel.jsx and ContactDetailPanel.jsx — ESLint was treating text after the em-dash as invalid rule names, causing a 'Compiled with problems' overlay on every page load. Fixed to use double-dash (--) syntax. After fix, ConnectPage loads cleanly with no compile errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "DetailPanel.jsx + ContactDetailPanel.jsx",
+        "issue": "eslint-disable-line comments used em-dash (—) instead of double-dash (--) for inline description. ESLint treated words after em-dash as rule names, causing 'Compiled with problems' overlay blocking the entire app.",
+        "selector": "N/A — compile-time error",
+        "priority": "CRITICAL — FIXED by T1"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_14.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ESLint inline disable comment format: always use double-dash (--) not em-dash (—) when adding explanations: // eslint-disable-line rule-name -- explanation"
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/DetailPanel.jsx",
+    "/app/frontend/src/components/ContactDetailPanel.jsx"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 endpoints tested: /api/auth/me, /api/deals, /api/settings, PATCH /api/deals/{id}/stage)",
+    "frontend": "100% (after fix)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All backend APIs working. ConnectPage renders for unauthenticated users. Settings Promise.all confirmed present at line 54. Dashboard polling catch block verified at line 218-225. DetailPanel has no console.log. Critical fix applied: eslint-disable em-dash → double-dash in DetailPanel.jsx (line 103) and ContactDetailPanel.jsx (line 48).",
+  "rca_of_the_issue": "Root cause: When adding human-readable explanations to ESLint disable comments, code used Unicode em-dash (—) as separator. ESLint's comment parser only recognizes '--' (double hyphen) as a separator between rule names and description. Everything after '—' was parsed as additional rule names (e.g. 'intentional:', 'reset', 'local', etc.) which don't exist, causing compilation errors. Fix: replace '—' with '--' in all eslint-disable comments."
+}

@@ -45,7 +45,7 @@ export default function ContactDetailPanel({ contact, onClose, onUpdated, onNavi
     setNotes(contact.notes || '');
     setTags(contact.tags || []);
     setStatus(contact.contact_status || 'In Review');
-  }, [contact.id]); // eslint-disable-line react-hooks/exhaustive-deps — intentional: reset local state only when contact selection changes
+  }, [contact.id]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: reset local state only when contact selection changes
   useEffect(() => {
     if (!contact.id) return;
     setLoadingDeals(true);
