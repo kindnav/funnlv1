@@ -55,16 +55,22 @@ export default function Dashboard({ user, onLogout }) {
   const [syncLog, setSyncLog] = useState(null);
   const [archivedDeals, setArchivedDeals] = useState([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
+  const [watchlistDue, setWatchlistDue] = useState([]);
+  const [watchlistBannerDismissed, setWatchlistBannerDismissed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   // Auto-open deal detail if returning from ReviewMode with a deal ID
   useEffect(() => {
-    if (location.state?.openDealId && deals.length > 0) {
-      const deal = deals.find(d => d.id === location.state.openDealId);
-      if (deal) setSelectedDeal(deal);
+    if (!location.state?.openDealId) return;
+    if (deals.length === 0) return;
+    const deal = deals.find(d => d.id === location.state.openDealId);
+    if (deal) {
+      setSelectedDeal(deal);
+      // Clear the state so refreshing doesn't reopen the panel
+      window.history.replaceState({}, '');
     }
-  }, [location.state, deals]);
+  }, [location.state?.openDealId, deals]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Product tour — show once per session unless permanently dismissed
   useEffect(() => {
@@ -87,7 +93,16 @@ export default function Dashboard({ user, onLogout }) {
         getSyncStatus().catch(() => null),
         getMyFund().catch(() => null),
       ]);
-      if (d) setDeals(d);
+      if (d) {
+        setDeals(d);
+        const today = new Date().toISOString().slice(0, 10);
+        const due = d.filter(deal =>
+          deal.deal_stage === 'Watch List' &&
+          deal.watchlist_revisit_date &&
+          deal.watchlist_revisit_date.slice(0, 10) <= today
+        );
+        setWatchlistDue(due);
+      }
       if (f) { setFundSettings(f); if (f.fund_name) setFundName(f.fund_name); }
       if (status?.last_synced) setLastSynced(status.last_synced);
       if (fi?.fund) {
@@ -418,6 +433,37 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Stats Bar */}
       <StatsBar deals={activeDeals} />
+
+      {/* Watch List revisit banner */}
+      {watchlistDue.length > 0 && !watchlistBannerDismissed && (
+        <div
+          className="shrink-0 flex items-center justify-between px-5 py-2.5"
+          style={{ background: 'rgba(45,212,191,0.08)', borderBottom: '1px solid rgba(45,212,191,0.2)' }}
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#2dd4bf' }} />
+            <span className="text-sm" style={{ color: '#2dd4bf' }}>
+              {watchlistDue.length} Watch List {watchlistDue.length === 1 ? 'deal' : 'deals'} ready for another look
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setFilter('All'); setSearch(''); }}
+              className="text-xs font-medium underline underline-offset-2"
+              style={{ color: '#2dd4bf' }}
+            >
+              Review now
+            </button>
+            <button
+              onClick={() => setWatchlistBannerDismissed(true)}
+              className="text-xs"
+              style={{ color: 'rgba(45,212,191,0.5)' }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="h-12 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-4 gap-3 bg-[#0c0c12]">

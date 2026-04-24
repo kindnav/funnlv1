@@ -3,6 +3,19 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-25 v6) — Polish Pass: 4 Fixes + 3 Improvements
+
+### Fixes
+- **FIX 1** `DetailPanel.jsx` + `DealStageSection.jsx`: DealStageSection (7-stage selector) now shown for ALL users. Added `showAssignment` prop — solo users see full stage selector, fund users see stage + assignment dropdown. Removed `CategorizeDealSection` from DetailPanel entirely.
+- **FIX 2** `DetailPanel.jsx`: Replaced `window.confirm()` with inline two-button confirmation (Confirm remove / Cancel) — stays in dark theme
+- **FIX 3** `Dashboard.jsx`: Fixed swipe-down navigation from ReviewMode — useEffect now waits for deals to load before trying to open panel, and clears history state after opening to prevent re-opening on refresh
+- **FIX 4** `DetailPanel.jsx`: `handleSent` now uses `deal_stage` values (`reject→Passed`, `request_info/forward_partner→In Conversation`) instead of old `status` values (`Archived/Reviewed`)
+
+### Improvements
+- **IMP 1** `Dashboard.jsx`: Watch List revisit banner — appears above stats bar when any Watch List deals have `watchlist_revisit_date <= today`. Includes "Review now" and "Dismiss" actions.
+- **IMP 2** `Pipeline.jsx`: Deal age indicator on kanban cards — shows days in current stage; >14 days shows amber warning color
+- **IMP 3** `ConnectPage.jsx`: Removed DB migration warning from landing page. Removed `getDbStatus` import and `dbReady` state.
+
 ## Latest Changes (2026-04-25 v5) — 7 Fixes + 3 Cleanups
 
 ### Fixes

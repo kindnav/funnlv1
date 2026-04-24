@@ -17,7 +17,7 @@ const STAGE_COLORS = {
   'Watch List':      ['rgba(251,191,36,0.15)',  '#fbbf24'],
 };
 
-export function DealStageSection({ deal, members, userId, onDealUpdated }) {
+export function DealStageSection({ deal, members, userId, onDealUpdated, showAssignment = false }) {
   const [dealStage, setDealStage] = useState(deal.deal_stage || 'Inbound');
   const [assignedTo, setAssignedTo] = useState(deal.assigned_to || '');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
@@ -131,6 +131,7 @@ export function DealStageSection({ deal, members, userId, onDealUpdated }) {
         </div>
       )}
 
+      {showAssignment && (
       <div className="mt-3 relative">
         <p className="text-[rgba(255,255,255,0.3)] text-xs mb-1.5">Assigned to</p>
         <button
@@ -181,6 +182,7 @@ export function DealStageSection({ deal, members, userId, onDealUpdated }) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, Mail, Brain, Zap, Target, Clock, Layers, Database, MessageSquare, Users } from 'lucide-react';
-import { getDbStatus } from '../lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -116,12 +115,10 @@ function GoogleG() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ConnectPage() {
-  const [dbReady, setDbReady] = useState(true);
   const [urlError, setUrlError] = useState(null);
   const [heroVisible, setHeroVisible] = useState(false);
 
   useEffect(() => {
-    // Inject DM Sans + DM Mono from Google Fonts
     const link = document.createElement('link');
     link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap';
     link.rel = 'stylesheet';
@@ -130,10 +127,9 @@ export default function ConnectPage() {
     const params = new URLSearchParams(window.location.search);
     const err = params.get('error');
     if (err) setUrlError(err);
-    getDbStatus().then((s) => setDbReady(s.tables_ready));
     // Stagger hero in
     setTimeout(() => setHeroVisible(true), 80);
-    return () => { try { document.head.removeChild(link); } catch { /* safe: element may already be removed */ } };
+    return () => { try { document.head.removeChild(link); } catch { /* safe */ } };
   }, []);
 
   const handleConnect = () => {
@@ -394,15 +390,6 @@ export default function ConnectPage() {
           <p className="text-sm mb-8" style={{ color: 'rgba(255,255,255,0.4)' }}>
             Connect Gmail once. Claude handles everything after that.
           </p>
-          {!dbReady && (
-            <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg mb-6"
-              style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}>
-              <AlertTriangle size={13} className="text-[#f5a623]" />
-              <p className="text-[rgba(255,255,255,0.5)] text-xs">
-                Run the database migration SQL in Supabase before connecting.
-              </p>
-            </div>
-          )}
           <button
             data-testid="footer-connect-btn"
             onClick={handleConnect}

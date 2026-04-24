@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
-  X, ExternalLink, Check, ChevronRight, XCircle,
+  X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
   MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, RefreshCw,
 } from 'lucide-react';
-import { updateDeal } from '../lib/api';
+import { updateDeal, deleteDeal } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 import { VotingSection } from './VotingSection';
 import { CommentThread } from './CommentThread';
 import { DealStageSection } from './detail/DealStageSection';
-import { CategorizeDealSection } from './detail/CategorizeDealSection';
 
 const CATEGORY_STYLES = {
   'Founder pitch': 'bg-[#7c6dfa]/10 text-[#7c6dfa] border-[#7c6dfa]/30',
@@ -68,10 +67,11 @@ const ThesisRing = ({ score }) => {
 };
 
 export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fundInfo, userId }) {
-  const [saving, setSaving] = useState(null);  // only for notes saving
+  const [saving, setSaving] = useState(null);
   const [actionModal, setActionModal] = useState(null);
   const [notes, setNotes] = useState(deal.notes || '');
   const [notesSaved, setNotesSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const members = fundInfo?.members || [];
   const inFund = !!fundInfo?.fund;
@@ -100,8 +100,13 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
   const urgColor = urgScore >= 7 ? '#f05252' : urgScore >= 4 ? '#f5a623' : '#3dd68c';
 
   const handleSent = (actionType) => {
-    const statusMap = { reject: 'Archived', request_info: 'Reviewed', forward_partner: 'Reviewed' };
-    onDealUpdated({ ...deal, status: statusMap[actionType] || 'Reviewed' });
+    const stageMap = {
+      reject: 'Passed',
+      request_info: 'In Conversation',
+      forward_partner: 'In Conversation',
+    };
+    const newStage = stageMap[actionType] || 'In Conversation';
+    onDealUpdated({ ...deal, deal_stage: newStage });
   };
 
   const hasThesisData = deal.thesis_match_score != null;
@@ -146,15 +151,14 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
             <p className="text-[rgba(255,255,255,0.5)] text-xs mt-2 leading-snug">{deal.subject}</p>
           </div>
 
-          {/* ── Deal Stage (fund only) ── */}
-          {inFund && (
-            <DealStageSection
-              deal={deal}
-              members={members}
-              userId={userId}
-              onDealUpdated={onDealUpdated}
-            />
-          )}
+          {/* ── Deal Stage (all users) ── */}
+          <DealStageSection
+            deal={deal}
+            members={members}
+            userId={userId}
+            onDealUpdated={onDealUpdated}
+            showAssignment={inFund}
+          />
 
           {/* AI Summary */}
           {deal.summary && (
@@ -353,8 +357,55 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
             </div>
           </div>
 
-          {/* ── Categorize Deal (also saves contact) ── */}
-          <CategorizeDealSection deal={deal} onDealUpdated={onDealUpdated} onDelete={onDelete} />
+          {/* ── Remove deal ── */}
+          <div className="px-5 py-3 border-b border-[rgba(255,255,255,0.05)]">
+            {onDelete && !confirmDelete && (
+              <button
+                data-testid="action-delete-deal"
+                onClick={() => setConfirmDelete(true)}
+                className="w-full flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                style={{
+                  background: 'rgba(240,82,82,0.05)',
+                  border: '1px solid rgba(240,82,82,0.12)',
+                  color: 'rgba(240,82,82,0.5)',
+                }}
+              >
+                <Trash2 size={12} />
+                Remove from dashboard
+              </button>
+            )}
+            {onDelete && confirmDelete && (
+              <div className="flex gap-2">
+                <button
+                  data-testid="action-confirm-delete"
+                  onClick={async () => {
+                    await deleteDeal(deal.id);
+                    onDelete(deal.id);
+                  }}
+                  className="flex-1 text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{
+                    background: 'rgba(240,82,82,0.15)',
+                    color: '#f05252',
+                    border: '1px solid rgba(240,82,82,0.3)',
+                  }}
+                >
+                  Confirm remove
+                </button>
+                <button
+                  data-testid="action-cancel-delete"
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1 text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'rgba(255,255,255,0.4)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* ── Voting + Comments (fund only) / Notes (solo) ── */}
           {inFund ? (

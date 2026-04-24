@@ -27,7 +27,23 @@ const ThesisMini = ({ score }) => {
   );
 };
 
-const DealCard = ({ deal, stageIndex, onMove, onOpen, isSelected }) => (
+const dealAge = (deal) => {
+  const date = deal.updated_at || deal.created_at;
+  if (!date) return null;
+  const days = Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'Today';
+  if (days === 1) return '1d';
+  return `${days}d`;
+};
+
+const DealCard = ({ deal, stageIndex, onMove, onOpen, isSelected }) => {
+  const age = dealAge(deal);
+  const ageColor = !age || age === 'Today'
+    ? 'rgba(255,255,255,0.2)'
+    : age.includes('d') && parseInt(age) > 14
+      ? '#f5a623'
+      : 'rgba(255,255,255,0.2)';
+  return (
   <div
     data-testid={`pipeline-card-${deal.id}`}
     onClick={() => onOpen(deal)}
@@ -77,6 +93,10 @@ const DealCard = ({ deal, stageIndex, onMove, onOpen, isSelected }) => (
       )}
     </div>
 
+    {age && (
+      <p className="text-xs font-mono mt-1" style={{ color: ageColor }}>{age} in this stage</p>
+    )}
+
     {/* Move arrows */}
     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
       {stageIndex > 0 && (
@@ -107,7 +127,8 @@ const DealCard = ({ deal, stageIndex, onMove, onOpen, isSelected }) => (
       )}
     </div>
   </div>
-);
+  );
+};
 
 export default function Pipeline({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
