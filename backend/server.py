@@ -1921,6 +1921,59 @@ async def get_contacts(current_user: dict = Depends(get_current_user)):
     return contacts or []
 
 
+@api_router.post("/contacts/sync-pipeline")
+async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
+    """Retroactively sync contacts from all active pipeline deals."""
+    uid = current_user['user_id']
+    logger.info(f'[Pipeline Sync] Starting for user: {uid}')
+
+    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+    logger.info(f'[Pipeline Sync] Found {len(deals) if deals else 0} deals for user {uid[:8]}')
+
+    created = updated = skipped = 0
+    for deal in (deals or []):
+        stage = deal.get('deal_stage', '')
+        if stage not in CONTACT_STAGES:
+            skipped += 1
+            continue
+        if not deal.get('sender_email'):
+            logger.warning(f'[Pipeline Sync] Skipping deal {(deal.get("id") or "?")[:8]} — no sender_email')
+            skipped += 1
+            continue
+        result = await auto_upsert_contact(uid, deal, stage)
+        if result:
+            if result['status'] == 'created':
+                created += 1
+                logger.info(f'[Pipeline Sync] CREATED: {deal.get("sender_email")}')
+            else:
+                updated += 1
+        else:
+            logger.error(f'[Pipeline Sync] FAILED: {deal.get("sender_email")}')
+            skipped += 1
+
+    synced = created + updated
+    logger.info(f'[Pipeline Sync] Done: created={created} updated={updated} skipped={skipped} user={uid[:8]}')
+    return {'synced': synced, 'created': created, 'updated': updated, 'skipped': skipped, 'user_id': uid}
+
+
+@api_router.get("/debug/contacts-raw")
+async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint: show all contacts and pipeline deals for current user."""
+    uid = current_user['user_id']
+    all_contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
+    all_pipeline = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
+    })
+    pipeline_with_email = [d for d in (all_pipeline or []) if d.get('sender_email')]
+    return {
+        'contacts_count': len(all_contacts) if all_contacts else 0,
+        'contacts': all_contacts or [],
+        'pipeline_deals_count': len(all_pipeline) if all_pipeline else 0,
+        'pipeline_deals_with_email': pipeline_with_email,
+    }
+
+
 @api_router.patch("/contacts/{contact_id}")
 async def update_contact(contact_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
@@ -2506,22 +2559,6 @@ async def test_contact_creation(current_user: dict = Depends(get_current_user)):
     }
 
 
-@api_router.get("/debug/contacts-raw")
-async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
-    """Debug endpoint: show all contacts and pipeline deals for current user."""
-    uid = current_user['user_id']
-    all_contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
-    all_pipeline = await sb_select('deals', {
-        'user_id': f'eq.{uid}',
-        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
-    })
-    pipeline_with_email = [d for d in (all_pipeline or []) if d.get('sender_email')]
-    return {
-        'contacts_count': len(all_contacts) if all_contacts else 0,
-        'contacts': all_contacts or [],
-        'pipeline_deals_count': len(all_pipeline) if all_pipeline else 0,
-        'pipeline_deals_with_email': pipeline_with_email,
-    }
 
 
 @api_router.get("/debug/user-check")
@@ -2575,41 +2612,6 @@ async def debug_user_check(current_user: dict = Depends(get_current_user)):
             for d in (pipeline_deals or [])[:5]
         ],
     }
-
-
-@api_router.post("/contacts/sync-pipeline")
-async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
-    """Retroactively sync contacts from all active pipeline deals."""
-    uid = current_user['user_id']
-    logger.info(f'[Pipeline Sync] Starting for user: {uid}')
-
-    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
-    logger.info(f'[Pipeline Sync] Found {len(deals) if deals else 0} deals for user {uid[:8]}')
-
-    created = updated = skipped = 0
-    for deal in (deals or []):
-        stage = deal.get('deal_stage', '')
-        if stage not in CONTACT_STAGES:
-            skipped += 1
-            continue
-        if not deal.get('sender_email'):
-            logger.warning(f'[Pipeline Sync] Skipping deal {(deal.get("id") or "?")[:8]} — no sender_email')
-            skipped += 1
-            continue
-        result = await auto_upsert_contact(uid, deal, stage)
-        if result:
-            if result['status'] == 'created':
-                created += 1
-                logger.info(f'[Pipeline Sync] CREATED: {deal.get("sender_email")}')
-            else:
-                updated += 1
-        else:
-            logger.error(f'[Pipeline Sync] FAILED: {deal.get("sender_email")}')
-            skipped += 1
-
-    synced = created + updated
-    logger.info(f'[Pipeline Sync] Done: created={created} updated={updated} skipped={skipped} user={uid[:8]}')
-    return {'synced': synced, 'created': created, 'updated': updated, 'skipped': skipped, 'user_id': uid}
 
 
 @api_router.post("/deals/{deal_id}/assign")
