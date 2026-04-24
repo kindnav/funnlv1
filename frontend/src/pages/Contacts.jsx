@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, RefreshCw, Users, Mail, Building2, MapPin, Briefcase,
-  Calendar, Star, ChevronRight, X, Plus, Tag, ExternalLink, Globe
+  Calendar, Star, ChevronRight, X, Plus, Tag, ExternalLink, Globe,
+  LayoutGrid, LogOut, BookOpen
 } from 'lucide-react';
 import { getContacts, getContactDeals, updateContact, rebuildContacts } from '../lib/api';
 import { toast } from '../components/ui/sonner';
@@ -222,8 +223,50 @@ export default function Contacts({ user, onLogout }) {
     <div
       data-testid="contacts-page"
       className="flex flex-col overflow-hidden"
-      style={{ height: 'calc(100vh - 60px)', background: '#0d0d14', fontFamily: "'DM Sans', system-ui, sans-serif" }}
+      style={{ height: '100vh', background: '#0d0d14', fontFamily: "'DM Sans', system-ui, sans-serif" }}
     >
+      {/* ── Top Nav ──────────────────────────────────────────────────────── */}
+      <nav className="h-14 shrink-0 border-b border-[rgba(255,255,255,0.07)] flex items-center px-5 gap-4">
+        <div className="flex items-center gap-2.5 mr-auto">
+          <div className="w-7 h-7 rounded flex items-center justify-center text-white font-bold text-xs shrink-0"
+            style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}>
+            FF
+          </div>
+          <div className="hidden sm:flex items-center gap-3">
+            <button
+              onClick={() => navigate('/')}
+              className="text-[rgba(255,255,255,0.45)] hover:text-white text-sm font-medium transition-colors"
+            >
+              Dashboard
+            </button>
+            <span className="text-[rgba(255,255,255,0.15)]">/</span>
+            <span className="text-white text-sm font-semibold">Contacts</span>
+          </div>
+        </div>
+
+        <button onClick={() => navigate('/')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}>
+          <LayoutGrid size={12} />
+          <span className="hidden sm:inline">Deal Inbox</span>
+        </button>
+        <button onClick={() => navigate('/pipeline')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}>
+          <Users size={12} />
+          <span className="hidden sm:inline">Pipeline</span>
+        </button>
+        <button onClick={() => navigate('/fund-focus')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
+          style={{ background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.25)', color: '#7c6dfa' }}>
+          <BookOpen size={13} />
+          <span className="hidden sm:inline">Fund Focus</span>
+        </button>
+        <button onClick={onLogout} className="text-[rgba(255,255,255,0.35)] hover:text-white transition-colors p-1">
+          <LogOut size={15} />
+        </button>
+      </nav>
+
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div
         className="shrink-0 px-6 py-3 border-b flex items-center justify-between gap-4"
