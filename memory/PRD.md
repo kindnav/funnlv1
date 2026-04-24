@@ -3,7 +3,13 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-23
 
-## Latest Changes (2026-04-23) — Code Quality Refactor Sprint
+## Latest Changes (2026-04-23 Round 2) — Code Quality Report Round 2
+- **Empty catch blocks fixed**: Dashboard polling `catch (_) {}` now handles max-polls on error; Onboarding silent catch documented
+- **console.log removed**: All 4 production console.log calls removed from DetailPanel.jsx
+- **Index-as-key fixed**: ProductTour (`tour-dot-${i}`), CommentThread (`mention-${i}`, `text-${i}`)
+- **Hook dep comments**: ReviewMode eslint-disable-lines now have `--` explanations; Settings initial-load effect documented
+- **Backend refactoring**: `_build_fund_context_block`, `_build_analysis_prompt` extracted from `analyze_email`; `_process_single_message` extracted from `sync_user_emails` inner loop; `EmailPayload` dataclass added
+- **Bug fix**: Settings.jsx Promise.all accidentally dropped then restored; em-dash in eslint-disable comments fixed to double-dash
 - **Phase 1 (Security)**: Hardcoded JWTs removed from all 7 test files → `TEST_JWT_TOKEN` env var; `random.choices` → `secrets.choice`; `is True/False` → `== True/False`; `conftest.py` created
 - **Phase 2 (React Hooks)**: Dashboard `useEffect` deps fixed; `console.warn` removed
 - **Phase 3 (httpOnly Cookies)**: Full auth migration — `get_current_user` dual-mode (cookie first, Bearer fallback); `auth_callback` sets httpOnly cookie; `api.js` uses `credentials:include`; `App.js` cookie-based auth; CORS scoped to `FRONTEND_URL`
