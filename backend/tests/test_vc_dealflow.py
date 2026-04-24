@@ -159,12 +159,12 @@ class TestSettings:
         data = r.json()
         assert "gmail_connected" in data
         assert "anthropic_key_set" in data
-        assert data["anthropic_key_set"] == True
+        assert data.get("anthropic_key_set")
         print(f"PASS: /settings returns {data}")
 
     def test_db_status(self):
         r = requests.get(f"{BASE_URL}/api/status/db")
         assert r.status_code == 200
         data = r.json()
-        assert data.get("tables_ready") == True
+        assert data.get("tables_ready")
         print("PASS: DB tables ready")

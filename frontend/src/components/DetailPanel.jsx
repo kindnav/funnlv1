@@ -48,9 +48,15 @@ const SignalChip = ({ label, value, active, activeColor = '#3dd68c' }) => (
 );
 
 // Thesis match score ring
+const getThresholdColor = (score, high = 70, mid = 45) => {
+  if (score >= high) return '#3dd68c';
+  if (score >= mid) return '#f5a623';
+  return '#f05252';
+};
+
 const ThesisRing = ({ score }) => {
   const pct = Math.min(100, Math.max(0, score || 0));
-  const color = pct >= 70 ? '#3dd68c' : pct >= 45 ? '#f5a623' : '#f05252';
+  const color = getThresholdColor(pct, 70, 45);
   const r = 22;
   const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
@@ -134,7 +140,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
 
   const relScore = deal.relevance_score || 0;
   const urgScore = deal.urgency_score || 0;
-  const relColor = relScore >= 7 ? '#3dd68c' : relScore >= 4 ? '#f5a623' : '#f05252';
+  const relColor = getThresholdColor(relScore, 7, 4);
   const urgColor = urgScore >= 7 ? '#f05252' : urgScore >= 4 ? '#f5a623' : '#3dd68c';
 
   const handleAction = async (field, value, label) => {

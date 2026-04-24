@@ -29,6 +29,12 @@ const CATEGORY_STYLES = {
 const getCatStyle = (cat) =>
   CATEGORY_STYLES[cat] || 'bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.35)] border-[rgba(255,255,255,0.08)]';
 
+const getThresholdColor = (score, high = 70, mid = 45) => {
+  if (score >= high) return '#3dd68c';
+  if (score >= mid) return '#f5a623';
+  return '#f05252';
+};
+
 const getScoreStyle = (s) => {
   if (s >= 7) return 'bg-[#3dd68c]/10 text-[#3dd68c] border-[#3dd68c]/30';
   if (s >= 4) return 'bg-[#f5a623]/10 text-[#f5a623] border-[#f5a623]/30';
@@ -744,9 +750,9 @@ export default function Dashboard({ user, onLogout }) {
                           className="inline-flex items-center justify-center h-6 px-1.5 rounded border font-mono text-xs font-bold"
                           style={{
                             minWidth: 36,
-                            background: deal.thesis_match_score >= 70 ? 'rgba(61,214,140,0.1)' : deal.thesis_match_score >= 45 ? 'rgba(245,166,35,0.1)' : 'rgba(240,82,82,0.1)',
-                            borderColor: deal.thesis_match_score >= 70 ? 'rgba(61,214,140,0.3)' : deal.thesis_match_score >= 45 ? 'rgba(245,166,35,0.3)' : 'rgba(240,82,82,0.3)',
-                            color: deal.thesis_match_score >= 70 ? '#3dd68c' : deal.thesis_match_score >= 45 ? '#f5a623' : '#f05252',
+                            background: `${getThresholdColor(deal.thesis_match_score)}1a`,
+                            borderColor: `${getThresholdColor(deal.thesis_match_score)}4d`,
+                            color: getThresholdColor(deal.thesis_match_score),
                           }}
                         >
                           {deal.thesis_match_score}

@@ -133,7 +133,7 @@ export default function ConnectPage() {
     getDbStatus().then((s) => setDbReady(s.tables_ready));
     // Stagger hero in
     setTimeout(() => setHeroVisible(true), 80);
-    return () => { try { document.head.removeChild(link); } catch (_) {} };
+    return () => { try { document.head.removeChild(link); } catch { /* safe: element may already be removed */ } };
   }, []);
 
   const handleConnect = () => {

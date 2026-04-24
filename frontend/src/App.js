@@ -31,6 +31,7 @@ function App() {
   useEffect(() => { refreshUser(); }, [refreshUser]);
 
   const handleLogout = useCallback(async () => {
+    localStorage.removeItem('vc_token'); // clear legacy token
     try { await logout(); } catch { /* ignore */ }
     setUser(null);
   }, []);

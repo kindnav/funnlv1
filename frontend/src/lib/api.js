@@ -1,14 +1,20 @@
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const fetchJson = async (url, options = {}) => {
+  // httpOnly cookie is the primary auth mechanism for browser sessions.
+  // Legacy localStorage token is sent as a Bearer fallback so existing sessions
+  // keep working after the cookie migration. Once a user re-authenticates via
+  // Google OAuth, the httpOnly cookie takes over and the localStorage token is cleared.
+  const legacyToken = localStorage.getItem('vc_token');
+  const authHeader = legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {};
+
   const resp = await fetch(url, {
     ...options,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeader, ...options.headers },
   });
   if (resp.status === 401) {
-    // Only redirect away from the app if we are not already on the root/sign-in page.
-    // This prevents a redirect loop when App.js checks auth on initial load.
+    localStorage.removeItem('vc_token'); // clear stale token on auth failure
     if (window.location.pathname !== '/') {
       window.location.href = '/';
     }

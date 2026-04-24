@@ -57,7 +57,7 @@ class TestDealStages:
         )
         assert patch_resp.status_code == 200
         data = patch_resp.json()
-        assert data.get('ok') == True
+        assert data.get('ok')
         assert data.get('stage') == 'First Look'
 
         # Restore
@@ -81,7 +81,7 @@ class TestDealStages:
         )
         assert patch_resp.status_code == 200
         data = patch_resp.json()
-        assert data.get('ok') == True
+        assert data.get('ok')
         assert data.get('stage') == 'Passed'
 
         # Restore
