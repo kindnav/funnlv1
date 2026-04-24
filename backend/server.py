@@ -1864,7 +1864,11 @@ async def rebuild_contacts(current_user: dict = Depends(get_current_user)):
 async def get_contacts(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     logger.info(f'[Contacts] Fetching for user_id: {uid}')
-    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}', 'order': 'last_contacted.desc'})
+    contacts = await sb_select('contacts', {
+        'user_id': f'eq.{uid}',
+        'contact_status': 'neq.Passed',
+        'order': 'last_contacted.desc',
+    })
     count = len(contacts) if contacts else 0
     logger.info(f'[Contacts] Found: {count} contacts for user {uid[:8]}')
     if count == 0:
@@ -2368,7 +2372,7 @@ async def recover_deal(deal_id: str, current_user: dict = Depends(get_current_us
 
 
 # ── Contact sync engine ──────────────────────────────────────────────────────────────
-# Categories that represent non-founder senders — skip contact creation for these
+# Categories that disqualify a sender from being tracked as a contact
 _CONTACT_SKIP_CATEGORIES = frozenset({
     'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'
 })
@@ -2376,27 +2380,36 @@ _CONTACT_SKIP_CATEGORIES = frozenset({
 
 async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> Optional[dict]:
     """
-    Create or update a contact from ANY deal — not stage-gated.
+    Create or update a contact from a categorized, non-passed deal.
 
-    This is the single source of truth for the Contacts system.
-    Fires on:  inbound email save | deal PATCH | stage change | deal assign
+    Inclusion rules:
+      ✅  Deal has a meaningful AI-assigned category (not null / not yet classified)
+      ✅  Category is NOT Spam, Vendor, or Recruiter
+      ✅  Deal stage is NOT 'Passed'
+      ✅  Deal has a sender email
 
+    Callers: inbound email save | deal PATCH | stage change | deal assign
     Dedup key: UNIQUE(user_id, email).
-    - contact_status  = last known deal_stage for this contact
-    - relevance_score = highest score seen across all their deals
-    - deal_count      = number of distinct inbound emails from this sender
     """
     # 1. Resolve email — founder_email takes precedence over sender_email
     email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
     if not email:
         return None
 
-    # 2. Skip non-founder categories
-    if deal.get('category', '') in _CONTACT_SKIP_CATEGORIES:
+    # 2. Require a meaningful AI-assigned category — skip uncategorized / inbound emails
+    category = (deal.get('category') or '').strip()
+    if not category or category in _CONTACT_SKIP_CATEGORIES:
+        logger.debug(f'[Contact] Skip — no/bad category={category!r}')
+        return None
+
+    # 3. Skip passed deals — they are no longer of interest
+    stage = (deal.get('deal_stage') or deal.get('status') or '').strip()
+    if stage == 'Passed':
+        logger.debug(f'[Contact] Skip — deal is Passed for {email}')
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    last_stage = deal.get('deal_stage') or deal.get('status') or 'Inbound'
+    last_stage = stage or 'Inbound'
     new_score  = deal.get('relevance_score') or 0
 
     existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})

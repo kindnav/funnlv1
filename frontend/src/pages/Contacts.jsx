@@ -61,7 +61,7 @@ const avatarColor = (email = '') => {
   return AVATAR_COLORS[idx];
 };
 
-const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed'];
+const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List'];
 
 /* ── Subcomponents ────────────────────────────────────────────────────────── */
 function StageBadge({ stage }) {
