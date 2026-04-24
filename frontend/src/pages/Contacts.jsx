@@ -28,6 +28,9 @@ const scoreColor = (s) => {
   return '#f05252';
 };
 
+// Normalize score to 0-100: old contacts stored 0-10, new ones 0-100
+const normScore = (s) => (s == null ? null : s <= 10 ? s * 10 : s);
+
 const fmtDate = (d) => {
   if (!d) return '—';
   try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
@@ -211,7 +214,7 @@ export default function Contacts({ user, onLogout }) {
   ).length;
 
   const avgScore = contacts.length
-    ? Math.round(contacts.reduce((s, c) => s + (c.relevance_score || 0), 0) / contacts.length)
+    ? Math.round(contacts.reduce((s, c) => s + (normScore(c.relevance_score) || 0), 0) / contacts.length)
     : 0;
 
   /* ── Render ───────────────────────────────────────────────────────────── */
@@ -362,8 +365,8 @@ export default function Contacts({ user, onLogout }) {
                       <div className="flex items-center gap-2 mt-1.5">
                         <StageBadge stage={c.contact_status} />
                         {c.relevance_score != null && (
-                          <span className="text-[10px] font-bold font-mono" style={{ color: scoreColor(c.relevance_score) }}>
-                            {c.relevance_score}
+                          <span className="text-[10px] font-bold font-mono" style={{ color: scoreColor(normScore(c.relevance_score)) }}>
+                            {normScore(c.relevance_score)}
                           </span>
                         )}
                         {(c.deal_count || 0) > 1 && (
@@ -461,9 +464,9 @@ function DetailPanel({
               {contact.relevance_score != null && (
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-xs font-bold"
-                  style={{ background: 'transparent', borderColor: scoreColor(contact.relevance_score) + '66', color: scoreColor(contact.relevance_score) }}
+                  style={{ background: 'transparent', borderColor: scoreColor(normScore(contact.relevance_score)) + '66', color: scoreColor(normScore(contact.relevance_score)) }}
                 >
-                  <Star size={9} /> {contact.relevance_score}
+                  <Star size={9} /> {normScore(contact.relevance_score)}
                 </span>
               )}
               {(contact.deal_count || 0) > 1 && (
@@ -485,14 +488,14 @@ function DetailPanel({
           <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Relevance Score</span>
-              <span className="text-sm font-bold font-mono" style={{ color: scoreColor(contact.relevance_score) }}>{contact.relevance_score}/100</span>
+              <span className="text-sm font-bold font-mono" style={{ color: scoreColor(normScore(contact.relevance_score)) }}>{normScore(contact.relevance_score)}/100</span>
             </div>
             <div className="flex gap-0.5">
               {Array.from({ length: 10 }, (_, i) => (
                 <div
                   key={i}
                   className="h-1.5 flex-1 rounded-sm transition-colors"
-                  style={{ background: i < Math.round((contact.relevance_score || 0) / 10) ? scoreColor(contact.relevance_score) : 'rgba(255,255,255,0.06)' }}
+                  style={{ background: i < Math.round((normScore(contact.relevance_score) || 0) / 10) ? scoreColor(normScore(contact.relevance_score)) : 'rgba(255,255,255,0.06)' }}
                 />
               ))}
             </div>

@@ -1733,6 +1733,20 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    # Auto-sync deal_stage when status is provided from the dashboard buttons
+    # so Pipeline page (which reads deal_stage) stays in sync
+    STATUS_TO_STAGE = {
+        'Pipeline':  'First Look',
+        'In Review': 'First Look',
+        'Passed':    'Passed',
+        'New':       'Inbound',
+    }
+    if 'status' in update and 'deal_stage' not in update:
+        mapped_stage = STATUS_TO_STAGE.get(update['status'])
+        if mapped_stage:
+            update['deal_stage'] = mapped_stage
+
     uid = current_user['user_id']
     ok = await sb_update('deals', update, {
         'id': f'eq.{deal_id}',
@@ -2393,19 +2407,13 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
     synthetic contact email from company_name so each company gets its own
     contact entry.
     """
-    # 2. Require a meaningful AI-assigned category — skip uncategorized / inbound emails
+    # 1. Require a meaningful AI-assigned category — skip uncategorized / inbound emails
     category = (deal.get('category') or '').strip()
     if not category or category in _CONTACT_SKIP_CATEGORIES:
         logger.debug(f'[Contact] Skip — no/bad category={category!r}')
         return None
 
-    # 3. Skip passed deals — they are no longer of interest
-    stage = (deal.get('deal_stage') or deal.get('status') or '').strip()
-    if stage == 'Passed':
-        logger.debug(f'[Contact] Skip — deal is Passed')
-        return None
-
-    # 1. Resolve the best email identifier
+    # 2. Resolve the best email identifier
     raw_email = (deal.get('founder_email') or deal.get('sender_email') or '').strip().lower()
 
     # Detect "self-sent" deals — where sender_email is the inbox owner's own address.
@@ -2418,20 +2426,15 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
     user_name = (user_row.get('name') or '').strip().lower()
 
     sender_name_lower = (deal.get('sender_name') or '').strip().lower()
-    # Primary check: sender email matches the user's login email
     is_self_sent = bool(raw_email and raw_email == user_email)
-    # Secondary check: sender name matches the user's registered name
-    # (catches cases where Gmail sync email differs from login email, e.g. Gmail alias)
     if not is_self_sent and user_name and sender_name_lower and sender_name_lower == user_name:
         is_self_sent = True
 
     if is_self_sent:
-        # Sender IS the user — use company_name as the unique identifier
         company = (deal.get('company_name') or '').strip()
         if not company:
             logger.debug(f'[Contact] Skip — sender is self and no company_name')
             return None
-        # Deterministic synthetic email so UNIQUE(user_id, email) still holds
         slug = ''.join(c if c.isalnum() else '_' for c in company.lower())[:40]
         email = f'{slug}@deal.funnl'
         logger.debug(f'[Contact] Self-sent thread — using company email {email} for {company}')
@@ -2442,9 +2445,21 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
         logger.debug(f'[Contact] Skip — no email and no company_name')
         return None
 
+    # 3. Handle Passed deals — remove the contact so it no longer appears in Contacts
+    stage = (deal.get('deal_stage') or deal.get('status') or '').strip()
+    if stage == 'Passed':
+        existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
+        if existing:
+            await sb_delete('contacts', {'id': f'eq.{existing[0]["id"]}'})
+            logger.info(f'[Contact] Deleted (deal Passed): {email} user={user_id[:8]}')
+        else:
+            logger.debug(f'[Contact] Skip — deal is Passed, no existing contact to remove')
+        return None
+
     now_iso = datetime.now(timezone.utc).isoformat()
     last_stage = stage or 'Inbound'
-    new_score  = deal.get('relevance_score') or 0
+    # Use thesis_match_score (0-100) if available; else scale relevance_score (0-10) × 10
+    new_score = deal.get('thesis_match_score') or ((deal.get('relevance_score') or 0) * 10)
 
     existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
 
