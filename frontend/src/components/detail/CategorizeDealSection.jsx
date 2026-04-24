@@ -67,7 +67,7 @@ export function CategorizeDealSection({ deal, onDealUpdated, onDelete }) {
           try {
             await updateDeal(deal.id, { status: 'Pipeline' });
             onDealUpdated({ ...deal, status: 'Pipeline' });
-            const res = await upsertContact(deal, 'In Pipeline');
+            const res = await upsertContact(deal, 'First Look');
             if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
             else toast.success(`Added to Pipeline · Contact saved`);
           } catch {
@@ -92,7 +92,7 @@ export function CategorizeDealSection({ deal, onDealUpdated, onDelete }) {
           try {
             await updateDeal(deal.id, { status: 'In Review' });
             onDealUpdated({ ...deal, status: 'In Review' });
-            const res = await upsertContact(deal, 'In Review');
+            const res = await upsertContact(deal, 'First Look');
             if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
             else toast.success(`Saved for Review · Contact saved`);
           } catch {

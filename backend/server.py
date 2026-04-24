@@ -1661,6 +1661,40 @@ async def get_deals(current_user: dict = Depends(get_current_user)):
         return cat not in irrelevant
     return [d for d in (user_deals or []) + (sample_deals or []) if is_relevant(d)]
 
+
+@api_router.get("/deals/fund")
+async def get_fund_deals(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    fund_info = await get_user_fund_info(uid)
+    if not fund_info:
+        return []
+    SKIP = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
+    all_deals = []
+    for member in fund_info['members']:
+        rows = await sb_select('deals', {'user_id': f'eq.{member["user_id"]}', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '100'})
+        for deal in (rows or []):
+            if deal.get('category') not in SKIP:
+                deal['inbox_owner_name'] = member['display_name']
+                deal['inbox_owner_email'] = member['email']
+                all_deals.append(deal)
+    all_deals.sort(key=lambda d: d.get('created_at') or '', reverse=True)
+    return all_deals
+
+
+@api_router.get("/deals/archived")
+async def get_archived_deals(current_user: dict = Depends(get_current_user)):
+    """Return soft-deleted deals within the 30-day recovery window."""
+    uid = current_user['user_id']
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    rows = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'status': 'eq.deleted',
+        'updated_at': f'gte.{cutoff}',
+        'order': 'updated_at.desc',
+    })
+    return rows or []
+
+
 @api_router.post("/deals/process")
 async def process_email_manual(data: dict, current_user: dict = Depends(get_current_user)):
     body = data.get('body', '').strip()
@@ -1832,8 +1866,17 @@ async def _create_new_contact(uid: str, email: str, deal: dict, contact_status: 
 @api_router.post("/contacts/upsert")
 async def upsert_contact(data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    contact_status = data.get('contact_status', 'In Review')
+    contact_status = data.get('contact_status', 'First Look')
     deal = data.get('deal', {})
+
+    # Map legacy / frontend status values to valid CONTACT_STAGES entries
+    _STATUS_ALIASES = {
+        'In Pipeline': 'First Look',
+        'Pipeline':    'First Look',
+        'In Review':   'First Look',
+        'Reviewed':    'First Look',
+    }
+    contact_status = _STATUS_ALIASES.get(contact_status, contact_status)
 
     email = _validate_contact_email(deal)
     logger.info(f'[Contact] upsert — user={uid} email={email} status={contact_status}')
@@ -2255,27 +2298,6 @@ async def delete_fund(fund_id: str, current_user: dict = Depends(get_current_use
     return {"ok": True}
 
 
-# ── Fund dashboard deals ────────────────────────────────────────────────────────
-
-@api_router.get("/deals/fund")
-async def get_fund_deals(current_user: dict = Depends(get_current_user)):
-    uid = current_user['user_id']
-    fund_info = await get_user_fund_info(uid)
-    if not fund_info:
-        return []
-    SKIP = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
-    all_deals = []
-    for member in fund_info['members']:
-        rows = await sb_select('deals', {'user_id': f'eq.{member["user_id"]}', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '100'})
-        for deal in (rows or []):
-            if deal.get('category') not in SKIP:
-                deal['inbox_owner_name'] = member['display_name']
-                deal['inbox_owner_email'] = member['email']
-                all_deals.append(deal)
-    all_deals.sort(key=lambda d: d.get('created_at') or '', reverse=True)
-    return all_deals
-
-
 # ── Deal stage & assignment ─────────────────────────────────────────────────────
 
 @api_router.delete("/deals/{deal_id}")
@@ -2298,20 +2320,6 @@ async def delete_deal(deal_id: str, current_user: dict = Depends(get_current_use
         'updated_at': datetime.now(timezone.utc).isoformat(),
     }, {'id': f'eq.{deal_id}'})
     return {"ok": True}
-
-
-@api_router.get("/deals/archived")
-async def get_archived_deals(current_user: dict = Depends(get_current_user)):
-    """Return soft-deleted deals within the 30-day recovery window."""
-    uid = current_user['user_id']
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    rows = await sb_select('deals', {
-        'user_id': f'eq.{uid}',
-        'status': 'eq.deleted',
-        'updated_at': f'gte.{cutoff}',
-        'order': 'updated_at.desc',
-    })
-    return rows or []
 
 
 @api_router.post("/deals/{deal_id}/recover")

@@ -3,6 +3,13 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-24 v3) — Five Bug Fixes
+- **FIX 1** `setup/migration.sql`: Replaced with complete schema including all missing columns (`deal_stage`, `fund_id`, `assigned_to`, `pass_reason`, `watchlist_revisit_date`, `thesis_match_score`, `fit_strengths/weaknesses`, `match_reasoning`, `updated_at`), all 10 tables with RLS, and `ALTER TABLE ADD COLUMN IF NOT EXISTS` guards for live databases
+- **FIX 2** Contact stage aliases: Frontend `CategorizeDealSection.jsx` — `upsertContact` calls now pass `'First Look'` (valid stage) instead of `'In Pipeline'`/`'In Review'` (invalid). Backend `upsert_contact` — added `_STATUS_ALIASES` dict mapping `'In Pipeline'`, `'Pipeline'`, `'In Review'`, `'Reviewed'` → `'First Look'` for backward compatibility
+- **FIX 3** FastAPI route ordering: Moved `GET /deals/fund` and `GET /deals/archived` to register before `PATCH /deals/{deal_id}` in `server.py` — static paths now precede dynamic `{deal_id}` routes preventing shadowing
+- **FIX 4** ProductTour: Already correctly implemented — `measure()` skips missing elements and overlay uses `pointerEvents: none` when `rect` is null
+- **FIX 5** data-testids: All 6 required testids verified present (`fund-thesis-btn`, `fit-pct-header`, `deals-table`, `pipeline-btn`, `contacts-btn`, `review-mode-btn`)
+
 ## Latest Changes (2026-04-24 v2) — Fund Focus Separate Page
 - **New route `/fund-focus`**: `FundFocus.jsx` page with full thesis form (fund name, type, investment focus, sectors, check size, preferred stages) — extracted from Settings
 - **Settings.jsx pruned**: All Fund Focus state, handlers, constants, and UI removed; page now shows Team, Gmail, AI Config, Data Management, Account only
