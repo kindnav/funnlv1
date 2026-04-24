@@ -6,9 +6,9 @@ const TOOLTIP_W = 296;  // fixed tooltip width
 
 const STEPS = [
   {
-    testId: 'fund-thesis-btn',
-    title: 'Fund Focus',
-    body: 'Set your investment thesis here. Claude uses this to score every inbound pitch 0–100 against your specific focus — not a generic algorithm.',
+    testId: 'more-menu-btn',
+    title: 'Fund Focus & Settings',
+    body: 'Access Fund Focus, Settings, and Archive from the ··· menu. Set your fund thesis to calibrate AI scoring to your specific focus — not a generic algorithm.',
   },
   {
     testId: 'fit-pct-header',

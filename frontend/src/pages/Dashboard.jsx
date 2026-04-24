@@ -361,19 +361,6 @@ export default function Dashboard({ user, onLogout }) {
           <span className="hidden sm:inline">Pipeline</span>
         </button>
         <button
-          data-testid="archive-btn"
-          onClick={handleViewArchive}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={viewMode === 'archived' ? {
-            background: 'rgba(240,82,82,0.1)', border: '1px solid rgba(240,82,82,0.3)', color: '#f05252',
-          } : {
-            color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent',
-          }}
-        >
-          <Trash2 size={12} />
-          <span className="hidden sm:inline">Archive</span>
-        </button>
-        <button
           data-testid="review-mode-btn"
           onClick={() => navigate('/review')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all"
