@@ -3,6 +3,22 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-25) — Contacts System Complete Rewrite
+- **DELETED** 8 old scattered contact helpers: `_determine_contact_status`, `_build_new_contact_dict`, `_validate_contact_email`, `_update_existing_contact`, `_create_new_contact`, `normalize_contact_stage`, `should_create_contact_from_deal`, `auto_upsert_contact`
+- **NEW** single `sync_contact_from_deal(user_id, deal, trigger_value=None)` — sole owner of contact logic
+  - Email resolution: `founder_email` first, fallback `sender_email`
+  - Skips spam/vendor/recruiter categories
+  - Normalizes stage aliases (`'In Review' → 'First Look'` etc.)
+  - Skips non-contact stages (Passed, Archived, New, Inbound)
+  - Deduplicates by `UNIQUE(user_id, email)` — never creates duplicates
+  - Status never downgrades (uses STATUS_ORDER)
+  - Keeps the higher of two relevance scores
+  - Fills in missing contact fields from deal on update
+- **WIRED** into all 3 backend triggers: `PATCH /deals/{id}`, `PATCH /deals/{id}/stage`, `POST /deals/{id}/assign`
+- **REBUILT** `POST /contacts/upsert` (backward-compat wrapper → calls `sync_contact_from_deal`)
+- **REBUILT** `POST /contacts/sync-pipeline` (retroactive backfill, no old `should_create` logic)
+- **Frontend untouched** — `CategorizeDealSection.jsx` already just calls `updateDeal`, never called upsertContact directly
+
 ## Latest Changes (2026-04-24 v4) — Contacts user_id Mismatch Diagnosis & Fix
 - **Diagnostic logging** added to `get_contacts`: when user has 0 contacts, logs ALL unique user_ids in table revealing mismatches
 - **`/api/debug/user-check`** endpoint added: returns `jwt_user_id`, `db_user_found`, `ids_match`, `contacts_for_this_user`, `total_contacts_in_table`, `all_contact_user_ids`, `pipeline_deals_sample`
