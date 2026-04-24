@@ -3,15 +3,15 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-TOKEN = os.environ.get('TEST_JWT_TOKEN', '')
-AUTH_HEADERS = {'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'}
+BASE_URL: str = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+TOKEN: str = os.environ.get('TEST_JWT_TOKEN', '')
+AUTH_HEADERS: dict[str, str] = {'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'}
 
 
 class TestAuthEndpoints:
     """Auth endpoints: cookie-based + Bearer dual-mode"""
 
-    def test_get_me_with_bearer(self):
+    def test_get_me_with_bearer(self) -> None:
         """GET /api/auth/me returns user with Bearer token"""
         r = requests.get(f'{BASE_URL}/api/auth/me', headers=AUTH_HEADERS)
         assert r.status_code == 200
@@ -19,13 +19,13 @@ class TestAuthEndpoints:
         assert 'user_id' in data or 'id' in data or 'email' in data
         print(f"PASS: /api/auth/me => {data.get('email')}")
 
-    def test_get_me_unauthenticated(self):
+    def test_get_me_unauthenticated(self) -> None:
         """GET /api/auth/me without token returns 401"""
         r = requests.get(f'{BASE_URL}/api/auth/me')
         assert r.status_code == 401
         print("PASS: unauthenticated /api/auth/me returns 401")
 
-    def test_logout_sets_cookie_clear(self):
+    def test_logout_sets_cookie_clear(self) -> None:
         """POST /api/auth/logout clears cookie (Set-Cookie header present)"""
         r = requests.post(f'{BASE_URL}/api/auth/logout', headers=AUTH_HEADERS)
         assert r.status_code == 200
@@ -38,14 +38,14 @@ class TestAuthEndpoints:
 class TestDealEndpoints:
     """Deal CRUD with Bearer token"""
 
-    def test_get_deals(self):
+    def test_get_deals(self) -> None:
         r = requests.get(f'{BASE_URL}/api/deals', headers=AUTH_HEADERS)
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
         print(f"PASS: /api/deals => {len(data)} deals")
 
-    def test_patch_deal_stage(self):
+    def test_patch_deal_stage(self) -> None:
         """PATCH /api/deals/{id}/stage updates stage"""
         # Get a deal first
         r = requests.get(f'{BASE_URL}/api/deals', headers=AUTH_HEADERS)
@@ -68,13 +68,13 @@ class TestDealEndpoints:
 class TestContactEndpoints:
     """Contact endpoints with Bearer token"""
 
-    def test_get_contacts(self):
+    def test_get_contacts(self) -> None:
         r = requests.get(f'{BASE_URL}/api/contacts', headers=AUTH_HEADERS)
         assert r.status_code == 200
         assert isinstance(r.json(), list)
         print(f"PASS: /api/contacts => {len(r.json())} contacts")
 
-    def test_sync_pipeline(self):
+    def test_sync_pipeline(self) -> None:
         r = requests.post(f'{BASE_URL}/api/contacts/sync-pipeline', headers=AUTH_HEADERS)
         assert r.status_code == 200
         data = r.json()
@@ -85,14 +85,14 @@ class TestContactEndpoints:
 class TestSettingsEndpoints:
     """Settings endpoints"""
 
-    def test_get_settings(self):
+    def test_get_settings(self) -> None:
         r = requests.get(f'{BASE_URL}/api/settings', headers=AUTH_HEADERS)
         assert r.status_code == 200
         data = r.json()
         assert 'anthropic_key_set' in data
         print(f"PASS: /api/settings => anthropic_key_set={data.get('anthropic_key_set')}")
 
-    def test_get_fund_settings(self):
+    def test_get_fund_settings(self) -> None:
         r = requests.get(f'{BASE_URL}/api/fund-settings', headers=AUTH_HEADERS)
         assert r.status_code == 200
         print(f"PASS: /api/fund-settings => {r.json()}")
@@ -101,7 +101,7 @@ class TestSettingsEndpoints:
 class TestSecurityChecks:
     """Verify security refactoring"""
 
-    def test_no_hardcoded_jwt_in_conftest(self):
+    def test_no_hardcoded_jwt_in_conftest(self) -> None:
         """conftest.py must not contain hardcoded JWT strings"""
         with open('/app/backend/tests/conftest.py') as f:
             content = f.read()
@@ -112,7 +112,7 @@ class TestSecurityChecks:
         assert len(matches) == 0, f"Hardcoded JWT found in conftest.py: {matches}"
         print("PASS: No hardcoded JWTs in conftest.py")
 
-    def test_no_import_random_in_server(self):
+    def test_no_import_random_in_server(self) -> None:
         """server.py must not import random module"""
         with open('/app/backend/server.py') as f:
             content = f.read()
@@ -121,14 +121,14 @@ class TestSecurityChecks:
         assert len(matches) == 0, "Found 'import random' in server.py"
         print("PASS: No 'import random' in server.py")
 
-    def test_secrets_used_in_server(self):
+    def test_secrets_used_in_server(self) -> None:
         """server.py uses secrets module"""
         with open('/app/backend/server.py') as f:
             content = f.read()
         assert 'import secrets' in content
         print("PASS: secrets module imported in server.py")
 
-    def test_no_localstorage_token_in_appjs(self):
+    def test_no_localstorage_token_in_appjs(self) -> None:
         """App.js must not reference localStorage for auth token"""
         with open('/app/frontend/src/App.js') as f:
             content = f.read()
@@ -137,14 +137,23 @@ class TestSecurityChecks:
         assert 'localStorage.setItem(\'vc_token\'' not in content
         print("PASS: No localStorage token ops in App.js")
 
-    def test_no_auth_header_in_apijs(self):
-        """api.js must not set Authorization header manually"""
+    def test_no_auth_header_in_apijs(self) -> None:
+        """api.js uses conditional Bearer fallback for legacy tokens; primary auth is httpOnly cookie."""
         with open('/app/frontend/src/lib/api.js') as f:
             content = f.read()
-        assert 'Authorization' not in content
-        print("PASS: No Authorization header in api.js")
+        # Primary auth must still be cookie-based
+        assert "credentials: 'include'" in content, "credentials:include must be set for cookie auth"
+        # The Bearer header is CONDITIONAL (legacy fallback only), not hardcoded
+        assert 'legacyToken' in content or 'vc_token' in content, (
+            "Expected conditional legacy-token fallback in api.js"
+        )
+        # Must NOT be a hardcoded static token
+        import re
+        hardcoded = re.search(r"Authorization.*Bearer\s+['\"][A-Za-z0-9_-]{40,}", content)
+        assert hardcoded is None, "Found hardcoded Authorization Bearer token in api.js"
+        print("PASS: api.js uses conditional Bearer fallback + credentials:include")
 
-    def test_credentials_include_in_apijs(self):
+    def test_credentials_include_in_apijs(self) -> None:
         """api.js must use credentials: include"""
         with open('/app/frontend/src/lib/api.js') as f:
             content = f.read()

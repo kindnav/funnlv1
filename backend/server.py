@@ -1232,7 +1232,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
 
         params = _build_gmail_query_params(user, is_initial, force_full_scan, force_reprocess)
 
-        logger.info(f'[SYNC] Fetching messages from Gmail API...')
+        logger.info('[SYNC] Fetching messages from Gmail API...')
         resp = await asyncio.to_thread(
             lambda: gmail.users().messages().list(**params).execute()
         )
@@ -1242,7 +1242,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
 
         if not messages:
             await sb_update('users', {'last_synced': datetime.now(timezone.utc).isoformat()}, {'id': f'eq.{user_id}'})
-            logger.info(f'[SYNC] No messages in Gmail response — inbox empty or no new mail since last sync')
+            logger.info('[SYNC] No messages in Gmail response — inbox empty or no new mail since last sync')
             return 0
 
         # ── PRE-FETCH all existing thread IDs in ONE query (avoids 100 round-trip HTTP calls) ──
@@ -1252,7 +1252,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
             logger.info(f'[SYNC] Pre-fetched {len(existing_thread_ids)} existing thread IDs (dedup set ready)')
         else:
             existing_thread_ids = set()
-            logger.info(f'[SYNC] force_reprocess=True — deduplication bypassed, reprocessing all messages')
+            logger.info('[SYNC] force_reprocess=True — deduplication bypassed, reprocessing all messages')
 
         processed = 0
         skipped_dup = 0
@@ -1770,65 +1770,80 @@ async def trigger_sync(
 # Stats
 # ── Contacts ─────────────────────────────────────────────────────────────────
 
+def _validate_contact_email(deal: dict) -> str:
+    """Extract contact email from deal payload; raises HTTP 400 if missing."""
+    email = deal.get('sender_email') or deal.get('founder_email')
+    if not email:
+        logger.warning(f'[Contact] Skipping — no email in deal payload: {list(deal.keys())}')
+        raise HTTPException(status_code=400, detail="No email found on deal")
+    return email
+
+
+async def _update_existing_contact(uid: str, email: str, deal: dict, existing: dict) -> dict:
+    """Increment deal count, preserve highest relevance score, refresh timestamps."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new_score = deal.get('thesis_match_score') or deal.get('relevance_score') or 0
+    update_data: dict = {
+        'last_contacted': deal.get('received_date') or now_iso,
+        'deal_count': (existing.get('deal_count') or 1) + 1,
+        'updated_at': now_iso,
+    }
+    if new_score > (existing.get('relevance_score') or 0):
+        update_data['relevance_score'] = new_score
+    await sb_update('contacts', update_data, {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
+    return {
+        'status': 'updated', 'contact_id': existing['id'], 'returning': True,
+        'name': existing.get('name'), 'company': existing.get('company'),
+    }
+
+
+async def _create_new_contact(uid: str, email: str, deal: dict, contact_status: str) -> dict:
+    """Insert a brand-new contact record derived from deal data."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new_contact = {
+        'user_id': uid,
+        'name': deal.get('sender_name') or deal.get('founder_name'),
+        'email': email,
+        'company': deal.get('company_name'),
+        'role': deal.get('founder_role'),
+        'sector': deal.get('sector'),
+        'stage': deal.get('stage'),
+        'geography': deal.get('geography'),
+        'intro_source': deal.get('intro_source'),
+        'warm_or_cold': deal.get('warm_or_cold'),
+        'relevance_score': deal.get('thesis_match_score') or deal.get('relevance_score'),
+        'tags': deal.get('tags') or [],
+        'contact_status': contact_status,
+        'first_contacted': deal.get('received_date') or now_iso,
+        'last_contacted': deal.get('received_date') or now_iso,
+        'deal_count': 1,
+    }
+    result = await sb_insert('contacts', new_contact)
+    if result:
+        logger.info(f'[Contact] Created: id={result.get("id")} name={new_contact.get("name")}')
+    else:
+        logger.error('[Contact] Insert returned None — check Supabase logs')
+    return {
+        'status': 'created', 'contact_id': result.get('id') if result else None, 'returning': False,
+        'name': new_contact['name'], 'company': new_contact['company'],
+    }
+
+
 @api_router.post("/contacts/upsert")
 async def upsert_contact(data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     contact_status = data.get('contact_status', 'In Review')
     deal = data.get('deal', {})
 
-    email = deal.get('sender_email') or deal.get('founder_email')
-    logger.info(f'[Contact] upsert triggered — user={uid} email={email} status={contact_status}')
-
-    if not email:
-        logger.warning(f'[Contact] Skipping — no email in deal payload: {list(deal.keys())}')
-        raise HTTPException(status_code=400, detail="No email found on deal")
+    email = _validate_contact_email(deal)
+    logger.info(f'[Contact] upsert — user={uid} email={email} status={contact_status}')
 
     existing = await sb_select('contacts', {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
     logger.info(f'[Contact] Existing contacts found: {len(existing) if existing else 0}')
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-
     if existing:
-        contact = existing[0]
-        new_score = deal.get('thesis_match_score') or deal.get('relevance_score') or 0
-        existing_score = contact.get('relevance_score') or 0
-        update_data = {
-            'last_contacted': deal.get('received_date') or now_iso,
-            'deal_count': (contact.get('deal_count') or 1) + 1,
-            'updated_at': now_iso,
-        }
-        if new_score > existing_score:
-            update_data['relevance_score'] = new_score
-        await sb_update('contacts', update_data, {'user_id': f'eq.{uid}', 'email': f'eq.{email}'})
-        return {'status': 'updated', 'contact_id': contact['id'], 'returning': True,
-                'name': contact.get('name'), 'company': contact.get('company')}
-    else:
-        new_contact = {
-            'user_id': uid,
-            'name': deal.get('sender_name') or deal.get('founder_name'),
-            'email': email,
-            'company': deal.get('company_name'),
-            'role': deal.get('founder_role'),
-            'sector': deal.get('sector'),
-            'stage': deal.get('stage'),
-            'geography': deal.get('geography'),
-            'intro_source': deal.get('intro_source'),
-            'warm_or_cold': deal.get('warm_or_cold'),
-            'relevance_score': deal.get('thesis_match_score') or deal.get('relevance_score'),
-            'tags': deal.get('tags') or [],
-            'contact_status': contact_status,
-            'first_contacted': deal.get('received_date') or now_iso,
-            'last_contacted': deal.get('received_date') or now_iso,
-            'deal_count': 1,
-        }
-        result = await sb_insert('contacts', new_contact)
-        if result:
-            logger.info(f'[Contact] Created successfully: id={result.get("id")} name={new_contact.get("name")}')
-        else:
-            logger.error(f'[Contact] Insert returned None — check Supabase logs')
-        contact_id = result.get('id') if result else None
-        return {'status': 'created', 'contact_id': contact_id, 'returning': False,
-                'name': new_contact['name'], 'company': new_contact['company']}
+        return await _update_existing_contact(uid, email, deal, existing[0])
+    return await _create_new_contact(uid, email, deal, contact_status)
 
 
 @api_router.get("/contacts")
@@ -2465,7 +2480,7 @@ async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
     all_contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
     all_pipeline = await sb_select('deals', {
         'user_id': f'eq.{uid}',
-        'deal_stage': f'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
+        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
     })
     pipeline_with_email = [d for d in (all_pipeline or []) if d.get('sender_email')]
     return {

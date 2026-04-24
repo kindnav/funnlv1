@@ -151,6 +151,17 @@ export default function Settings({ user, onLogout }) {
     'w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[#7c6dfa] transition-colors';
   const labelCls = 'block text-[rgba(255,255,255,0.45)] text-xs uppercase tracking-wider font-semibold mb-1.5';
 
+  // ── Thesis save button derived state ────────────────────────────────────
+  let thesisBtnIcon;
+  if (thesisSaving) thesisBtnIcon = <RefreshCw size={13} className="animate-spin" />;
+  else if (thesisSaved) thesisBtnIcon = <Check size={13} />;
+  else thesisBtnIcon = <Save size={13} />;
+
+  let thesisBtnLabel;
+  if (thesisSaving) thesisBtnLabel = 'Saving...';
+  else if (thesisSaved) thesisBtnLabel = 'Saved!';
+  else thesisBtnLabel = 'Save Thesis';
+
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0c0c12] overflow-hidden">
       {/* Nav */}
@@ -347,14 +358,8 @@ export default function Settings({ user, onLogout }) {
                     boxShadow: thesisSaved ? 'none' : '0 0 16px rgba(124,109,250,0.3)',
                   }}
                 >
-                  {thesisSaving ? (
-                    <RefreshCw size={13} className="animate-spin" />
-                  ) : thesisSaved ? (
-                    <Check size={13} />
-                  ) : (
-                    <Save size={13} />
-                  )}
-                  {thesisSaving ? 'Saving...' : thesisSaved ? 'Saved!' : 'Save Thesis'}
+                  {thesisBtnIcon}
+                  {thesisBtnLabel}
                 </button>
               </div>
             </div>

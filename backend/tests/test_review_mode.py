@@ -89,7 +89,7 @@ class TestPatchDeal:
         r = requests.patch(f"{BASE_URL}/api/deals/{deal_id}", json={"hacked_field": "xyz"}, headers=auth_headers)
         assert r.status_code == 400
 
-    def test_patch_requires_auth(self):
+    def test_patch_requires_auth(self) -> None:
         r = requests.patch(f"{BASE_URL}/api/deals/some-id", json={"status": "pipeline"})
         assert r.status_code == 401
 
@@ -108,6 +108,6 @@ class TestSyncEndpoint:
         assert "message" in data
         print(f"Sync returned in {elapsed:.2f}s: {data}")
 
-    def test_sync_requires_auth(self):
+    def test_sync_requires_auth(self) -> None:
         r = requests.post(f"{BASE_URL}/api/sync")
         assert r.status_code == 401

@@ -52,7 +52,7 @@ def test_deal_id(client):
 class TestStageChangesWithContactCreation:
     """PATCH /api/deals/{id}/stage - contact auto-creation"""
 
-    def test_move_deal_to_first_look(self, client, test_deal_id):
+    def test_move_deal_to_first_look(self, client, test_deal_id) -> None:
         """Moving deal to First Look should create a contact"""
         resp = client.patch(f"{BASE_URL}/api/deals/{test_deal_id}/stage", json={"stage": "First Look"})
         assert resp.status_code == 200, f"Failed: {resp.text}"
@@ -64,7 +64,7 @@ class TestStageChangesWithContactCreation:
         print(f"Contact created/updated: {contact}")
         assert contact is not None
 
-    def test_move_deal_to_in_conversation(self, client, test_deal_id):
+    def test_move_deal_to_in_conversation(self, client, test_deal_id) -> None:
         """Moving to In Conversation should update contact, not create new"""
         resp = client.patch(f"{BASE_URL}/api/deals/{test_deal_id}/stage", json={"stage": "In Conversation"})
         assert resp.status_code == 200, f"Failed: {resp.text}"
@@ -73,12 +73,12 @@ class TestStageChangesWithContactCreation:
         contact = data['contact']
         print(f"Contact after In Conversation: {contact}")
 
-    def test_no_downgrade_on_move_back(self, client, test_deal_id):
+    def test_no_downgrade_on_move_back(self, client, test_deal_id) -> None:
         """Moving back to First Look should NOT downgrade contact_status"""
         # First verify contact is at In Conversation
         contacts_resp = client.get(f"{BASE_URL}/api/contacts")
         assert contacts_resp.status_code == 200
-        contacts = contacts_resp.json()
+        _contacts = contacts_resp.json()  # verify endpoint responds correctly
         
         # Find contacts for our deal
         # Move back to First Look
@@ -102,7 +102,7 @@ class TestStageChangesWithContactCreation:
 class TestSyncPipeline:
     """POST /api/contacts/sync-pipeline"""
 
-    def test_sync_pipeline_returns_counts(self, client):
+    def test_sync_pipeline_returns_counts(self, client) -> None:
         """sync-pipeline should return synced/created/updated counts > 0"""
         resp = client.post(f"{BASE_URL}/api/contacts/sync-pipeline")
         assert resp.status_code == 200, f"Failed: {resp.text}"
@@ -121,14 +121,14 @@ class TestSyncPipeline:
 class TestGetContacts:
     """GET /api/contacts - contact listing"""
 
-    def test_get_contacts_returns_list(self, client):
+    def test_get_contacts_returns_list(self, client) -> None:
         resp = client.get(f"{BASE_URL}/api/contacts")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
         print(f"Total contacts: {len(data)}")
 
-    def test_contacts_have_required_fields(self, client):
+    def test_contacts_have_required_fields(self, client) -> None:
         resp = client.get(f"{BASE_URL}/api/contacts")
         assert resp.status_code == 200
         contacts = resp.json()
@@ -139,7 +139,7 @@ class TestGetContacts:
         assert 'contact_status' in c
         assert 'founder_name' in c or 'company_name' in c
 
-    def test_contact_status_values_are_valid(self, client):
+    def test_contact_status_values_are_valid(self, client) -> None:
         valid_statuses = {'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed'}
         resp = client.get(f"{BASE_URL}/api/contacts")
         contacts = resp.json()

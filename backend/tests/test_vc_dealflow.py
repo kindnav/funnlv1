@@ -6,14 +6,14 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-TOKEN = os.environ.get('TEST_JWT_TOKEN', '')
-HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+BASE_URL: str = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+TOKEN: str = os.environ.get('TEST_JWT_TOKEN', '')
+HEADERS: dict[str, str] = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 
 
 class TestHealth:
     """Health check"""
-    def test_api_root(self):
+    def test_api_root(self) -> None:
         r = requests.get(f"{BASE_URL}/api/")
         assert r.status_code == 200
         data = r.json()
@@ -23,7 +23,7 @@ class TestHealth:
 
 class TestAuth:
     """Auth endpoints"""
-    def test_get_me(self, auth_headers):
+    def test_get_me(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/auth/me", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
@@ -33,7 +33,7 @@ class TestAuth:
         assert data["email"] == "test@futurefrontiercapital.vc"
         print(f"PASS: /auth/me returns user, gmail_connected={data['gmail_connected']}")
 
-    def test_get_me_no_auth(self):
+    def test_get_me_no_auth(self) -> None:
         r = requests.get(f"{BASE_URL}/api/auth/me")
         assert r.status_code == 401
         print("PASS: /auth/me requires auth")
@@ -41,7 +41,7 @@ class TestAuth:
 
 class TestDeals:
     """Deals endpoints"""
-    def test_get_deals(self, auth_headers):
+    def test_get_deals(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
@@ -49,7 +49,7 @@ class TestDeals:
         assert len(data) >= 4
         print(f"PASS: GET /deals returns {len(data)} deals")
 
-    def test_deals_contain_sample_companies(self, auth_headers):
+    def test_deals_contain_sample_companies(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         data = r.json()
         companies = [d.get("company_name") for d in data]
@@ -58,7 +58,7 @@ class TestDeals:
         assert "CloudBase Solutions" in companies
         print(f"PASS: Sample companies present: {companies}")
 
-    def test_deals_have_required_fields(self, auth_headers):
+    def test_deals_have_required_fields(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         data = r.json()
         deal = data[0]
@@ -66,7 +66,7 @@ class TestDeals:
             assert field in deal, f"Missing field: {field}"
         print("PASS: Deals have required fields")
 
-    def test_vault_ai_score(self, auth_headers):
+    def test_vault_ai_score(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         data = r.json()
         vault = next((d for d in data if d.get("company_name") == "VaultAI"), None)
@@ -78,7 +78,7 @@ class TestDeals:
 
 class TestStats:
     """Stats endpoint"""
-    def test_get_stats(self, auth_headers):
+    def test_get_stats(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/stats", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
@@ -90,7 +90,7 @@ class TestStats:
         assert data["total"] >= 4
         print(f"PASS: /stats returns {data}")
 
-    def test_stats_values(self, auth_headers):
+    def test_stats_values(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/stats", headers=auth_headers)
         data = r.json()
         # 2 new deals (VaultAI, GreenLoop), 1 reviewed (LP Partners), 1 archived (CloudBase)
@@ -102,12 +102,12 @@ class TestStats:
 
 class TestProcessEmail:
     """Process email (Claude AI) endpoint"""
-    def test_process_email_requires_body(self, auth_headers):
+    def test_process_email_requires_body(self, auth_headers: dict[str, str]) -> None:
         r = requests.post(f"{BASE_URL}/api/deals/process", json={"sender_name": "Test"}, headers=auth_headers)
         assert r.status_code == 400
         print("PASS: process requires body field")
 
-    def test_process_email_claude_ai(self, auth_headers):
+    def test_process_email_claude_ai(self, auth_headers: dict[str, str]) -> None:
         payload = {
             "sender_name": "TEST_John Founder",
             "sender_email": "test_john@testcorp.io",
@@ -124,12 +124,11 @@ class TestProcessEmail:
         assert "category" in data
         assert "summary" in data
         print(f"PASS: Claude AI processed email - score={data['relevance_score']}, category={data['category']}")
-        return data["id"]
 
 
 class TestUpdateDeal:
     """PATCH /deals/{id}"""
-    def test_update_deal_status(self, auth_headers):
+    def test_update_deal_status(self, auth_headers: dict[str, str]) -> None:
         # Get any available deal
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         deals = r.json()
@@ -143,7 +142,7 @@ class TestUpdateDeal:
         # Reset to New
         requests.patch(f"{BASE_URL}/api/deals/{deal_id}", json={"status": "New"}, headers=auth_headers)
 
-    def test_update_invalid_field(self, auth_headers):
+    def test_update_invalid_field(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/deals", headers=auth_headers)
         deal_id = r.json()[0]["id"]
         r2 = requests.patch(f"{BASE_URL}/api/deals/{deal_id}", json={"invalid_field": "hack"}, headers=auth_headers)
@@ -153,7 +152,7 @@ class TestUpdateDeal:
 
 class TestSettings:
     """Settings endpoint"""
-    def test_get_settings(self, auth_headers):
+    def test_get_settings(self, auth_headers: dict[str, str]) -> None:
         r = requests.get(f"{BASE_URL}/api/settings", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
@@ -162,7 +161,7 @@ class TestSettings:
         assert data.get("anthropic_key_set")
         print(f"PASS: /settings returns {data}")
 
-    def test_db_status(self):
+    def test_db_status(self) -> None:
         r = requests.get(f"{BASE_URL}/api/status/db")
         assert r.status_code == 200
         data = r.json()
