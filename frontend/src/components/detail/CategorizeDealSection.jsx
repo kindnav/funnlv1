@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UserPlus, XCircle, Archive, Check, Bookmark, Trash2 } from 'lucide-react';
-import { updateDeal, upsertContact, deleteDeal } from '../../lib/api';
+import { updateDeal, deleteDeal } from '../../lib/api';
 import { toast } from '../ui/sonner';
 
 const normalizeStatus = (s) => {
@@ -65,11 +65,10 @@ export function CategorizeDealSection({ deal, onDealUpdated, onDelete }) {
           if (saving === 'pipeline') return;
           setSaving('pipeline');
           try {
-            await updateDeal(deal.id, { status: 'Pipeline' });
+            const res = await updateDeal(deal.id, { status: 'Pipeline' });
             onDealUpdated({ ...deal, status: 'Pipeline' });
-            const res = await upsertContact(deal, 'First Look');
-            if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
-            else toast.success(`Added to Pipeline · Contact saved`);
+            if (res?.contact?.returning) toast.info(`Returning founder — ${res.contact.name || 'Contact'} updated`);
+            else toast.success('Added to Pipeline');
           } catch {
             toast.error('Action failed — please try again');
           }
@@ -90,11 +89,10 @@ export function CategorizeDealSection({ deal, onDealUpdated, onDelete }) {
           if (saving === 'reviewed') return;
           setSaving('reviewed');
           try {
-            await updateDeal(deal.id, { status: 'In Review' });
+            const res = await updateDeal(deal.id, { status: 'In Review' });
             onDealUpdated({ ...deal, status: 'In Review' });
-            const res = await upsertContact(deal, 'First Look');
-            if (res?.returning) toast.info(`Returning founder — ${res.name || 'Contact'} updated`);
-            else toast.success(`Saved for Review · Contact saved`);
+            if (res?.contact?.returning) toast.info(`Returning founder — ${res.contact.name || 'Contact'} updated`);
+            else toast.success('Saved for Review');
           } catch {
             toast.error('Action failed — please try again');
           }
