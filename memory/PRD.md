@@ -3,6 +3,14 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-24 v4) — Contacts user_id Mismatch Diagnosis & Fix
+- **Diagnostic logging** added to `get_contacts`: when user has 0 contacts, logs ALL unique user_ids in table revealing mismatches
+- **`/api/debug/user-check`** endpoint added: returns `jwt_user_id`, `db_user_found`, `ids_match`, `contacts_for_this_user`, `total_contacts_in_table`, `all_contact_user_ids`, `pipeline_deals_sample`
+- **`sync_contacts_from_pipeline`** enhanced: per-deal logging (CREATED/UPDATED/FAILED/skipped), `skipped` count in response, `user_id` in return value
+- **Auth callback hardened**: after insert, re-fetches user by google_id if `new_user` response has no id; adds a verify step that logs CRITICAL if user_id isn't in DB before creating JWT — prevents stale/mismatched UUIDs in tokens
+- **Contacts.jsx debug panel**: added `runDebugCheck()` function calling `/api/debug/user-check`; shows `IDs match: yes/no`, all contact user_ids, comparison counts; added amber "Run diagnostic" button
+- **Fixed Fund Focus nav link** in Contacts.jsx to route to `/fund-focus` instead of `/settings`
+
 ## Latest Changes (2026-04-24 v3) — Five Bug Fixes
 - **FIX 1** `setup/migration.sql`: Replaced with complete schema including all missing columns (`deal_stage`, `fund_id`, `assigned_to`, `pass_reason`, `watchlist_revisit_date`, `thesis_match_score`, `fit_strengths/weaknesses`, `match_reasoning`, `updated_at`), all 10 tables with RLS, and `ALTER TABLE ADD COLUMN IF NOT EXISTS` guards for live databases
 - **FIX 2** Contact stage aliases: Frontend `CategorizeDealSection.jsx` — `upsertContact` calls now pass `'First Look'` (valid stage) instead of `'In Pipeline'`/`'In Review'` (invalid). Backend `upsert_contact` — added `_STATUS_ALIASES` dict mapping `'In Pipeline'`, `'Pipeline'`, `'In Review'`, `'Reviewed'` → `'First Look'` for backward compatibility

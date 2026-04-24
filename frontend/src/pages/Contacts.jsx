@@ -47,6 +47,8 @@ export default function Contacts({ user, onLogout }) {
   const [lastSync, setLastSync] = useState(null);
   const [debugDismissed, setDebugDismissed] = useState(false);
   const [syncingPipeline, setSyncingPipeline] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [loadingDebug, setLoadingDebug] = useState(false);
 
   const loadContacts = useCallback(() => {
     setLoading(true);
@@ -129,12 +131,28 @@ export default function Contacts({ user, onLogout }) {
     setSyncingPipeline(true);
     try {
       const res = await syncContactPipeline();
-      toast.success(`Sync complete — ${res.created} created, ${res.updated} updated`);
+      toast.success(`Sync complete — ${res.created} created, ${res.updated} updated (${res.skipped || 0} skipped)`);
       loadContacts();
     } catch {
       toast.error('Sync failed');
     } finally {
       setSyncingPipeline(false);
+    }
+  };
+
+  const runDebugCheck = async () => {
+    setLoadingDebug(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const res = await fetch(`${API}/api/debug/user-check`, { credentials: 'include' });
+      const data = await res.json();
+      setDebugInfo(data);
+      console.log('[Contacts Debug]', data);
+    } catch (e) {
+      console.error('Debug check failed:', e);
+      toast.error('Debug check failed');
+    } finally {
+      setLoadingDebug(false);
     }
   };
 
@@ -154,6 +172,23 @@ export default function Contacts({ user, onLogout }) {
               <span>Contacts in DB: <span style={{ color: '#3dd68c' }}>{loading ? '…' : contacts.length}</span></span>
               <span>Last fetched: <span style={{ color: 'rgba(255,255,255,0.75)' }}>{lastSync || 'never'}</span></span>
             </div>
+
+            {/* Diagnostic results */}
+            {debugInfo && (
+              <div className="mt-2 p-2 rounded text-xs space-y-0.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div>JWT user ID: <span className="font-mono" style={{ color: 'rgba(255,255,255,0.75)' }}>{debugInfo.jwt_user_id?.slice(0, 12)}…</span></div>
+                <div>DB user found: <span style={{ color: debugInfo.db_user_found ? '#3dd68c' : '#f05252' }}>{debugInfo.db_user_found ? 'yes' : 'NO'}</span></div>
+                <div>IDs match: <span style={{ color: debugInfo.ids_match ? '#3dd68c' : '#f05252', fontWeight: 700 }}>{debugInfo.ids_match ? 'yes ✓' : 'NO — MISMATCH DETECTED'}</span></div>
+                <div>Contacts for this user: <span style={{ color: '#3dd68c' }}>{debugInfo.contacts_for_this_user}</span></div>
+                <div>Total contacts in table: <span style={{ color: 'rgba(255,255,255,0.6)' }}>{debugInfo.total_contacts_in_table}</span></div>
+                {debugInfo.all_contact_user_ids?.length > 0 && (
+                  <div className="font-mono text-xs break-all" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    Contact UIDs: {debugInfo.all_contact_user_ids.map(id => id?.slice(0, 8)).join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <button
                 data-testid="debug-sync-pipeline"
@@ -163,6 +198,15 @@ export default function Contacts({ user, onLogout }) {
                 style={{ background: 'rgba(124,109,250,0.15)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)' }}
               >
                 {syncingPipeline ? 'Syncing…' : 'Sync all pipeline deals'}
+              </button>
+              <button
+                data-testid="debug-run-diagnostic"
+                onClick={runDebugCheck}
+                disabled={loadingDebug}
+                className="px-3 py-1 rounded text-xs font-medium transition-all disabled:opacity-50"
+                style={{ background: 'rgba(245,166,35,0.1)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)' }}
+              >
+                {loadingDebug ? 'Checking…' : 'Run diagnostic'}
               </button>
               <button
                 data-testid="debug-refresh"
@@ -193,7 +237,7 @@ export default function Contacts({ user, onLogout }) {
         <button onClick={() => navigate('/contacts')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all" style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.08)' }}>
           <Users size={12} /><span className="hidden sm:inline">Contacts</span>
         </button>
-        <button onClick={() => navigate('/settings')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all" style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)' }}>
+        <button onClick={() => navigate('/fund-focus')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all" style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)' }}>
           <BookOpen size={12} /><span className="hidden sm:inline">Fund Focus</span>
         </button>
         <button onClick={() => navigate('/settings')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all" style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)' }}>

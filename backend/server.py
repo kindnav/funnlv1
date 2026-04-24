@@ -1604,7 +1604,21 @@ async def auth_callback(
             user_data['id'] = str(uuid.uuid4())
             user_data['created_at'] = datetime.now(timezone.utc).isoformat()
             new_user = await sb_insert('users', user_data)
-            user_id = (new_user or {}).get('id', user_data['id'])
+            # Prefer the id Supabase actually stored over our locally-generated UUID.
+            # If the insert response is missing (rare Supabase edge-case), re-fetch to confirm.
+            if new_user and new_user.get('id'):
+                user_id = new_user['id']
+            else:
+                refetch = await sb_select('users', {'google_id': f'eq.{google_id}'})
+                user_id = refetch[0]['id'] if refetch else user_data['id']
+                logger.warning(f'[Auth] insert returned no id — refetched user_id: {user_id[:8]}')
+
+        # Verify the id we're about to embed in the JWT actually exists in the DB.
+        verify = await sb_select('users', {'id': f'eq.{user_id}'})
+        if not verify:
+            logger.error(f'[Auth] CRITICAL: user_id {user_id} not found in users table after insert/update')
+        else:
+            logger.info(f'[Auth] JWT will use verified user_id: {user_id[:8]}')
 
         token = create_jwt(user_id, email)
         background_tasks.add_task(sync_user_emails, user_id, True)
@@ -1892,7 +1906,18 @@ async def upsert_contact(data: dict, current_user: dict = Depends(get_current_us
 @api_router.get("/contacts")
 async def get_contacts(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    logger.info(f'[Contacts] Fetching for user_id: {uid}')
     contacts = await sb_select('contacts', {'user_id': f'eq.{uid}', 'order': 'last_contacted.desc'})
+    count = len(contacts) if contacts else 0
+    logger.info(f'[Contacts] Found: {count} contacts for user {uid[:8]}')
+    if count == 0:
+        # Cross-check: are there ANY contacts at all? Reveals user_id mismatch.
+        all_contacts = await sb_select('contacts', {})
+        total = len(all_contacts) if all_contacts else 0
+        logger.info(f'[Contacts] Total in table: {total}')
+        if total:
+            unique_uids = set(c.get('user_id') for c in all_contacts)
+            logger.info(f'[Contacts] user_ids in table: {unique_uids} — requesting uid={uid}')
     return contacts or []
 
 
@@ -2499,25 +2524,92 @@ async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
     }
 
 
+@api_router.get("/debug/user-check")
+async def debug_user_check(current_user: dict = Depends(get_current_user)):
+    """Diagnose user_id mismatch: compare JWT uid vs DB uid, show contact counts per uid."""
+    uid = current_user['user_id']
+
+    # Verify user exists in DB
+    db_users = await sb_select('users', {'id': f'eq.{uid}'})
+    db_user = db_users[0] if db_users else None
+
+    # Contacts for this JWT user_id
+    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
+
+    # ALL contacts in the table (to reveal mismatch)
+    all_contacts = await sb_select('contacts', {})
+
+    # Deals in contact-stages for this user
+    pipeline_deals = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
+    })
+
+    db_user_id = db_user.get('id') if db_user else None
+    ids_match = uid == db_user_id
+
+    unique_contact_uids = list(set(c.get('user_id') for c in (all_contacts or [])))
+
+    logger.info(
+        f'[debug/user-check] jwt_uid={uid[:8]} db_uid={str(db_user_id)[:8] if db_user_id else "NONE"} '
+        f'ids_match={ids_match} own_contacts={len(contacts) if contacts else 0} '
+        f'total_contacts={len(all_contacts) if all_contacts else 0}'
+    )
+
+    return {
+        'jwt_user_id': uid,
+        'db_user_found': db_user is not None,
+        'db_user_id': db_user_id,
+        'ids_match': ids_match,
+        'contacts_for_this_user': len(contacts) if contacts else 0,
+        'total_contacts_in_table': len(all_contacts) if all_contacts else 0,
+        'all_contact_user_ids': unique_contact_uids,
+        'pipeline_deals_count': len(pipeline_deals) if pipeline_deals else 0,
+        'pipeline_deals_sample': [
+            {
+                'id': d['id'][:8],
+                'stage': d.get('deal_stage'),
+                'email': d.get('sender_email'),
+                'user_id': (d.get('user_id') or '')[:8],
+            }
+            for d in (pipeline_deals or [])[:5]
+        ],
+    }
+
+
 @api_router.post("/contacts/sync-pipeline")
 async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
     """Retroactively sync contacts from all active pipeline deals."""
     uid = current_user['user_id']
+    logger.info(f'[Pipeline Sync] Starting for user: {uid}')
+
     deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
-    created = updated = 0
+    logger.info(f'[Pipeline Sync] Found {len(deals) if deals else 0} deals for user {uid[:8]}')
+
+    created = updated = skipped = 0
     for deal in (deals or []):
         stage = deal.get('deal_stage', '')
         if stage not in CONTACT_STAGES:
+            skipped += 1
+            continue
+        if not deal.get('sender_email'):
+            logger.warning(f'[Pipeline Sync] Skipping deal {(deal.get("id") or "?")[:8]} — no sender_email')
+            skipped += 1
             continue
         result = await auto_upsert_contact(uid, deal, stage)
         if result:
             if result['status'] == 'created':
                 created += 1
+                logger.info(f'[Pipeline Sync] CREATED: {deal.get("sender_email")}')
             else:
                 updated += 1
+        else:
+            logger.error(f'[Pipeline Sync] FAILED: {deal.get("sender_email")}')
+            skipped += 1
+
     synced = created + updated
-    logger.info(f'[Contact Sync] user={uid} synced={synced} created={created} updated={updated}')
-    return {'synced': synced, 'created': created, 'updated': updated}
+    logger.info(f'[Pipeline Sync] Done: created={created} updated={updated} skipped={skipped} user={uid[:8]}')
+    return {'synced': synced, 'created': created, 'updated': updated, 'skipped': skipped, 'user_id': uid}
 
 
 @api_router.post("/deals/{deal_id}/assign")
