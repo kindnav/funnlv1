@@ -442,22 +442,28 @@ async def init_database():
 
 
 async def _auto_populate_contacts_if_empty():
-    """On startup, for any user with 0 contacts, rebuild from all their deals."""
+    """
+    On startup, sync contacts from all visible deals (own + sample) for every real user.
+    Uses upsert logic — safe to run repeatedly, never wipes notes/tags.
+    """
     try:
         real_users = await sb_select('users', {'refresh_token': 'not.is.null'})
         for user in (real_users or []):
             uid = user['id']
-            existing = await sb_select('contacts', {'user_id': f'eq.{uid}'})
-            if existing:
-                continue  # already has contacts — skip to preserve notes/tags
-            deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+            # Mirror GET /deals: own deals + system sample deals
+            deals = await sb_select('deals', {
+                'user_id': f'in.({uid},{SYSTEM_USER_ID})',
+                'status': 'neq.deleted',
+            })
+            if not deals:
+                continue
             count = 0
-            for deal in (deals or []):
+            for deal in deals:
                 r = await sync_contact(uid, deal)
                 if r:
                     count += 1
             if count > 0:
-                logger.info(f'[Startup] Auto-populated {count} contacts for user {uid[:8]}')
+                logger.info(f'[Startup] Synced {count} contacts for user {uid[:8]}')
     except Exception as exc:
         logger.error(f'[Startup] auto-populate contacts failed: {exc}')
 
@@ -1835,10 +1841,14 @@ async def upsert_contact(data: dict, current_user: dict = Depends(get_current_us
 
 @api_router.post("/contacts/rebuild")
 async def rebuild_contacts(current_user: dict = Depends(get_current_user)):
-    """Delete all contacts for this user and rebuild from scratch from all deals."""
+    """Delete all contacts for this user and rebuild from ALL visible deals (own + sample)."""
     uid = current_user['user_id']
     await sb_delete('contacts', {'user_id': f'eq.{uid}'})
-    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+    # Mirror the same deal pool that GET /deals returns — own deals + shared sample deals
+    deals = await sb_select('deals', {
+        'user_id': f'in.({uid},{SYSTEM_USER_ID})',
+        'status': 'neq.deleted',
+    })
     created = skipped = 0
     for deal in (deals or []):
         r = await sync_contact(uid, deal)
@@ -1846,7 +1856,7 @@ async def rebuild_contacts(current_user: dict = Depends(get_current_user)):
             created += 1
         else:
             skipped += 1
-    logger.info(f'[Rebuild] user={uid[:8]} created={created} skipped={skipped}')
+    logger.info(f'[Rebuild] user={uid[:8]} created={created} skipped={skipped} from {len(deals or [])} deals')
     return {'message': 'Contacts rebuilt', 'created': created, 'skipped': skipped}
 
 
@@ -1870,11 +1880,14 @@ async def get_contacts(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/contacts/sync-pipeline")
 async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
-    """Retroactively sync contacts from all active pipeline deals."""
+    """Retroactively sync contacts from all visible deals (own + sample)."""
     uid = current_user['user_id']
     logger.info(f'[Pipeline Sync] Starting for user: {uid}')
 
-    deals = await sb_select('deals', {'user_id': f'eq.{uid}'})
+    deals = await sb_select('deals', {
+        'user_id': f'in.({uid},{SYSTEM_USER_ID})',
+        'status': 'neq.deleted',
+    })
     logger.info(f'[Pipeline Sync] Found {len(deals) if deals else 0} deals for user {uid[:8]}')
 
     created = updated = skipped = failed = 0
@@ -1884,7 +1897,6 @@ async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_u
             skipped += 1
         elif result.get('status') == 'created':
             created += 1
-            logger.info(f'[Pipeline Sync] CREATED: {deal.get("sender_email") or deal.get("founder_email") or "?"}')
         elif result.get('status') == 'updated':
             updated += 1
         else:

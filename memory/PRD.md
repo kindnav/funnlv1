@@ -3,6 +3,11 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-25 v2) — Contacts Auto-Populate Fix
+- **Root cause**: rebuild/sync/auto-populate were only fetching `user_id = uid` deals, but the UI shows system/sample deals too (same as `GET /deals` which uses `user_id in (uid, SYSTEM_USER_ID)`)
+- **Fix**: Updated `POST /contacts/rebuild`, `POST /contacts/sync-pipeline`, and `_auto_populate_contacts_if_empty` to use the inclusive deal query (own + system sample deals)
+- **Result**: Contacts now auto-populate from ALL deals visible in the dashboard on every startup (not just user's own deals); rebuild correctly syncs from all visible deals
+
 ## Latest Changes (2026-04-25) — Contacts System Complete Rewrite
 - **DELETED** 8 old scattered contact helpers: `_determine_contact_status`, `_build_new_contact_dict`, `_validate_contact_email`, `_update_existing_contact`, `_create_new_contact`, `normalize_contact_stage`, `should_create_contact_from_deal`, `auto_upsert_contact`
 - **NEW** single `sync_contact_from_deal(user_id, deal, trigger_value=None)` — sole owner of contact logic
