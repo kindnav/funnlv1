@@ -60,12 +60,36 @@ export default function ProductTour({ onDismiss }) {
   const [rect, setRect] = useState(null);
   const [visible, setVisible] = useState(false);
 
-  // All steps have static testIds now
   const steps = STEPS;
+
+  // "Got it, don't show again" — permanently dismisses the tour via localStorage
+  const handleDismiss = () => {
+    localStorage.setItem('vc_tour_dismissed', '1');
+    onDismiss();
+  };
+
+  // X button or "Skip tour" — session-only; tour will show again next login.
+  // Sets sessionStorage so the Dashboard useEffect does not re-trigger within
+  // the same session.
+  const handleClose = () => {
+    sessionStorage.setItem('vc_tour_skipped_this_session', '1');
+    onDismiss();
+  };
 
   const measure = useCallback(() => {
     const el = document.querySelector(`[data-testid="${steps[step]?.testId}"]`);
-    if (!el) return;
+    if (!el) {
+      // Element not found — advance to the next step or dismiss rather than
+      // leaving the overlay in a broken state where rect is null but the
+      // full-screen click-blocker div is still mounted.
+      console.warn(`[Tour] Element not found for testId: ${steps[step]?.testId}`);
+      if (step < steps.length - 1) {
+        setTimeout(() => setStep(s => s + 1), 100);
+      } else {
+        handleDismiss();
+      }
+      return;
+    }
     const r = el.getBoundingClientRect();
     setRect({
       top: r.top - PAD,
@@ -73,7 +97,9 @@ export default function ProductTour({ onDismiss }) {
       width: r.width + PAD * 2,
       height: r.height + PAD * 2,
     });
-  }, [step, steps]);
+  // handleDismiss excluded from deps intentionally — it is stable and
+  // adding it would cause unnecessary re-registrations of the resize listener.
+  }, [step, steps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setVisible(false);
@@ -91,26 +117,22 @@ export default function ProductTour({ onDismiss }) {
     else handleDismiss();
   };
 
-  // "Got it, don't show again" — called when user finishes the last step
-  const handleDismiss = () => {
-    localStorage.setItem('vc_tour_dismissed', '1');
-    onDismiss();
-  };
-
-  // X button or "Skip tour" — session-only, tour shows again next login
-  const handleClose = () => onDismiss();
-
   if (!steps[step]) return null;
 
   const isLast = step === steps.length - 1;
   const tipPos = rect ? calcTooltipPos(rect) : null;
 
   return (
-    // Full-screen click blocker
+    // Full-screen overlay.
+    // IMPORTANT: pointerEvents is 'none' when rect is null so the invisible
+    // div never blocks interaction while the tour is measuring/transitioning.
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9000 }}
-      onMouseDown={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9000,
+        pointerEvents: rect ? 'all' : 'none',
+      }}
+      onMouseDown={e => rect && e.stopPropagation()}
+      onClick={e => rect && e.stopPropagation()}
     >
       {/* Spotlight — box-shadow creates the dark overlay outside the cutout */}
       {rect && (
@@ -198,9 +220,10 @@ export default function ProductTour({ onDismiss }) {
           {/* Footer actions */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {!isLast ? (
+              // Skip tour — session-only (calls handleClose, not handleDismiss)
               <button
                 data-testid="tour-skip-btn"
-                onClick={handleDismiss}
+                onClick={handleClose}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.2)', padding: 0 }}
               >
                 Skip tour

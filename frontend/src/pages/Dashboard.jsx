@@ -66,13 +66,19 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [location.state, deals]);
 
-  // Product tour — show on every login (session-only state, not persisted to localStorage)
+  // Product tour — show once per session unless permanently dismissed
   useEffect(() => {
+    const permanentlyDismissed = localStorage.getItem('vc_tour_dismissed');
+    const skippedThisSession = sessionStorage.getItem('vc_tour_skipped_this_session');
+    if (permanentlyDismissed || skippedThisSession) return;
+
     if (deals.length > 0 && !showTour) {
       const t = setTimeout(() => setShowTour(true), 900);
       return () => clearTimeout(t);
     }
-  }, [deals.length, showTour]);
+  // showTour intentionally excluded from deps — we only want this to fire when
+  // deals first load, not every time the tour is toggled open/closed.
+  }, [deals.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchAll = useCallback(async () => {
     try {
@@ -674,6 +680,7 @@ export default function Dashboard({ user, onLogout }) {
                   ].map((h) => (
                     <th
                       key={h}
+                      data-testid={h === 'Score' ? 'fit-pct-header' : undefined}
                       className="border-b border-[rgba(255,255,255,0.07)] px-3 py-2.5 text-[rgba(255,255,255,0.4)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
                     >
                       {h}
