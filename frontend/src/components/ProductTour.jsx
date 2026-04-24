@@ -60,7 +60,7 @@ export default function ProductTour({ onDismiss }) {
   const [rect, setRect] = useState(null);
   const [visible, setVisible] = useState(false);
 
-  const steps = STEPS;
+  const steps = STEPS; // stable reference — defined at module scope to avoid array recreation on each render
 
   // "Got it, don't show again" — permanently dismisses the tour via localStorage
   const handleDismiss = () => {
