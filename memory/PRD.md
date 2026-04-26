@@ -3,6 +3,14 @@
 **Created**: 2026-04-15  
 **Last Updated**: 2026-04-24
 
+## Latest Changes (2026-04-26 v7) — Email Pipeline Fixes
+
+- **FIX 1** `process_and_save_email`: Spam/vendor/recruiter emails no longer saved to deals table — gated before `_build_deal_dict`. `get_deals` updated to remove `category` filter from user_deals (no longer needed) while keeping `is_relevant` filter on sample_deals.
+- **FIX 2** `sync_user_emails`: Gmail fetch now paginates up to 4 pages (200 emails) for full/initial scans, single page for incremental syncs. Uses `p=page_params` default arg to avoid closure capture bug.
+- **FIX 3** `DealRow.jsx`: Added missing CATEGORY_STYLES for `Co-investor / syndicate`, `Accelerator / program application`, `Event invitation`, `Press / media`, `Student / informational request`, `Unprocessed`.
+- **FIX 4** `send_deal_action`: Now updates `deal_stage` directly (`reject→Passed`, `request_info/forward_partner→In Conversation`). Calls `sync_contact` after rejection to delete the contact immediately.
+- **FIX 5** `_build_gmail_query_params`: Added `-category:forums` to base Gmail query — excludes mailing lists and Google Groups.
+
 ## Latest Changes (2026-04-25 v6) — Polish Pass: 4 Fixes + 3 Improvements
 
 ### Fixes

@@ -3,13 +3,19 @@ import { MemberAvatar } from '../MemberAvatar';
 
 // ── Local style helpers (mirror Dashboard-level constants) ───────────────────
 const CATEGORY_STYLES = {
-  'Founder pitch':              'bg-[#7c6dfa]/10 text-[#7c6dfa] border-[#7c6dfa]/30',
-  'Warm intro':                 'bg-[#4da6ff]/10 text-[#4da6ff] border-[#4da6ff]/30',
-  'LP / investor relations':    'bg-[#2dd4bf]/10 text-[#2dd4bf] border-[#2dd4bf]/30',
-  'Portfolio company update':   'bg-[#3dd68c]/10 text-[#3dd68c] border-[#3dd68c]/30',
-  'Service provider / vendor':  'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
-  'Recruiter / hiring':         'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
-  'Spam / irrelevant':          'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
+  'Founder pitch':                    'bg-[#7c6dfa]/10 text-[#7c6dfa] border-[#7c6dfa]/30',
+  'Warm intro':                       'bg-[#4da6ff]/10 text-[#4da6ff] border-[#4da6ff]/30',
+  'LP / investor relations':          'bg-[#2dd4bf]/10 text-[#2dd4bf] border-[#2dd4bf]/30',
+  'Portfolio company update':         'bg-[#3dd68c]/10 text-[#3dd68c] border-[#3dd68c]/30',
+  'Co-investor / syndicate':          'bg-[#a594ff]/10 text-[#a594ff] border-[#a594ff]/30',
+  'Accelerator / program application':'bg-[#2dd4bf]/10 text-[#2dd4bf] border-[#2dd4bf]/30',
+  'Event invitation':                 'bg-[#f5a623]/10 text-[#f5a623] border-[#f5a623]/30',
+  'Press / media':                    'bg-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.5)] border-[rgba(255,255,255,0.12)]',
+  'Student / informational request':  'bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.35)] border-[rgba(255,255,255,0.08)]',
+  'Unprocessed':                      'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
+  'Service provider / vendor':        'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
+  'Recruiter / hiring':               'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
+  'Spam / irrelevant':                'bg-[#f05252]/10 text-[#f05252] border-[#f05252]/30',
 };
 const getCatStyle = (cat) =>
   CATEGORY_STYLES[cat] || 'bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.35)] border-[rgba(255,255,255,0.08)]';

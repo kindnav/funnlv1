@@ -1054,9 +1054,23 @@ async def process_and_save_email(
         fund_ctx=fund_ctx,
     )
 
-    # NOTE: Spam is saved to DB — filtered from dashboard display only.
-    if ai.get('category') == 'Spam / irrelevant':
-        logger.info(f'[PROCESS] Classified as spam: "{subject}" from {sender_email} — saving to DB (filtered from dashboard)')
+    # Skip saving categories that are definitively not deal-relevant.
+    # Claude's classification is reliable enough — no need to pollute the deals table.
+    CATEGORIES_TO_SKIP_SAVING = {
+        'Spam / irrelevant',
+        'Service provider / vendor',
+        'Recruiter / hiring',
+    }
+    category = ai.get('category', '')
+    if category in CATEGORIES_TO_SKIP_SAVING:
+        logger.info(f'[PROCESS] Skipping save — category={category}: "{subject}"')
+        if user_id:
+            await save_gated_email(
+                user_id, sender_name, sender_email,
+                subject, body, received_date,
+                f'Category: {category} — filtered before save',
+            )
+        return 'gated'
 
     deal = _build_deal_dict(
         user_id=user_id, thread_id=thread_id, message_id=message_id,
@@ -1116,7 +1130,7 @@ def _build_gmail_query_params(
     user: dict, is_initial: bool, force_full_scan: bool, force_reprocess: bool,
 ) -> dict:
     """Build Gmail API list() params based on sync mode and last-sync timestamp."""
-    base_q = 'in:inbox -from:me -category:promotions -category:social -category:updates'
+    base_q = 'in:inbox -from:me -category:promotions -category:social -category:updates -category:forums'
     params: dict = {'userId': 'me', 'maxResults': 50, 'labelIds': ['INBOX']}
     if not force_full_scan and not is_initial and not force_reprocess and user.get('last_synced'):
         try:
@@ -1233,11 +1247,28 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         params = _build_gmail_query_params(user, is_initial, force_full_scan, force_reprocess)
 
         logger.info('[SYNC] Fetching messages from Gmail API...')
-        resp = await asyncio.to_thread(
-            lambda: gmail.users().messages().list(**params).execute()
-        )
-        messages = resp.get('messages', [])
-        logger.info(f'[SYNC] Gmail API returned {len(messages)} messages to check')
+
+        is_full_scan = (force_full_scan or is_initial or not user.get('last_synced'))
+        max_pages = 4 if is_full_scan else 1
+        messages = []
+        page_token = None
+
+        for page_num in range(max_pages):
+            page_params = {**params}
+            if page_token:
+                page_params['pageToken'] = page_token
+
+            resp = await asyncio.to_thread(
+                lambda p=page_params: gmail.users().messages().list(**p).execute()
+            )
+            batch = resp.get('messages', [])
+            messages.extend(batch)
+            page_token = resp.get('nextPageToken')
+
+            if not page_token:
+                break
+
+        logger.info(f'[SYNC] Gmail API returned {len(messages)} messages across {page_num + 1} page(s)')
         _set_sync_progress(user_id, 2, f'Found {len(messages)} emails — filtering noise...', len(messages), 0)
 
         if not messages:
@@ -1670,14 +1701,16 @@ async def disconnect_gmail(current_user: dict = Depends(get_current_user)):
 async def get_deals(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     user_deals, sample_deals = await asyncio.gather(
-        sb_select('deals', {'user_id': f'eq.{uid}', 'category': 'neq.Spam / irrelevant', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '200'}),
-        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'category': 'neq.Spam / irrelevant', 'status': 'neq.deleted', 'order': 'created_at.desc'}),
+        sb_select('deals', {'user_id': f'eq.{uid}', 'status': 'neq.deleted', 'order': 'created_at.desc', 'limit': '200'}),
+        sb_select('deals', {'user_id': f'eq.{SYSTEM_USER_ID}', 'status': 'neq.deleted', 'order': 'created_at.desc'}),
     )
     def is_relevant(d):
         cat = d.get('category', '')
         irrelevant = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
         return cat not in irrelevant
-    return [d for d in (user_deals or []) + (sample_deals or []) if is_relevant(d)]
+    # User deals no longer contain skipped categories (filtered at save time).
+    # Sample deals still need filtering since we cannot control the system user's data.
+    return [d for d in (user_deals or [])] + [d for d in (sample_deals or []) if is_relevant(d)]
 
 
 @api_router.get("/deals/fund")
@@ -1808,13 +1841,27 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
             )
         raise HTTPException(status_code=500, detail=f"Send failed: {result}")
     action_type = data.get('action_type', 'request_info')
-    status_map = {'reject': 'Archived', 'request_info': 'Reviewed', 'forward_partner': 'Reviewed'}
-    new_status = status_map.get(action_type, 'Reviewed')
-    await sb_update('deals', {'status': new_status}, {
+    stage_map = {
+        'reject': 'Passed',
+        'request_info': 'In Conversation',
+        'forward_partner': 'In Conversation',
+    }
+    new_stage = stage_map.get(action_type, 'In Conversation')
+
+    await sb_update('deals', {
+        'deal_stage': new_stage,
+        'status': 'Reviewed',
+    }, {
         'id': f'eq.{deal_id}',
         'user_id': f'in.({uid},{SYSTEM_USER_ID})',
     })
-    return {"message": "Email sent", "status": new_status}
+
+    if new_stage == 'Passed':
+        updated_deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+        if updated_deals:
+            await sync_contact(uid, updated_deals[0], is_new_deal=False)
+
+    return {"message": "Email sent", "stage": new_stage}
 
 # Sync
 async def _run_background_sync(user_id: str, force_reprocess: bool = False):
