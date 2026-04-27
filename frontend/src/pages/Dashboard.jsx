@@ -14,7 +14,8 @@ import { StatsBar } from '../components/dashboard/StatsBar';
 import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import { toast } from '../components/ui/sonner';
-import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal } from '../lib/api';
+import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession } from '../lib/api';
+import UpgradeModal from '../components/UpgradeModal';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -59,6 +60,8 @@ export default function Dashboard({ user, onLogout }) {
   const [watchlistBannerDismissed, setWatchlistBannerDismissed] = useState(false);
   const [followUpDue, setFollowUpDue] = useState([]);
   const [followUpBannerDismissed, setFollowUpBannerDismissed] = useState(false);
+  const [billingStatus, setBillingStatus] = useState(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef(null);
   const navigate = useNavigate();
@@ -103,10 +106,11 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, f, status, fi] = await Promise.all([
+      const [d, f, status, fi, billing] = await Promise.all([
         getDeals(), getFundSettings(),
         getSyncStatus().catch(() => null),
         getMyFund().catch(() => null),
+        getBillingStatus().catch(() => null),
       ]);
       if (d) {
         setDeals(d);
@@ -123,6 +127,7 @@ export default function Dashboard({ user, onLogout }) {
         );
         setFollowUpDue(fuDue);
       }
+      if (billing) setBillingStatus(billing);
       if (f) { setFundSettings(f); if (f.fund_name) setFundName(f.fund_name); }
       if (status?.last_synced) setLastSynced(status.last_synced);
       if (fi?.fund) {
@@ -182,8 +187,13 @@ export default function Dashboard({ user, onLogout }) {
     const dealsCountBefore = deals.length;
     try {
       await triggerSync();
-    } catch {
-      // Sync trigger failed silently — progress polling will surface the error
+    } catch (err) {
+      if (err?.message === 'subscription_required') {
+        setIsSyncing(false);
+        setShowUpgradeModal(true);
+        return;
+      }
+      // Other errors fail silently — progress polling will surface the error
     }
     let polls = 0;
     const maxPolls = 36; // 36 × 5s = 180s
@@ -386,6 +396,17 @@ export default function Dashboard({ user, onLogout }) {
           <span className="hidden sm:inline">Review Mode</span>
           <span className="sm:hidden">Review</span>
         </button>
+        {billingStatus?.status === 'trialing' && billingStatus?.days_remaining != null && billingStatus.days_remaining < 7 && (
+          <button
+            onClick={createCheckoutSession}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all shrink-0"
+            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b' }}
+            title="Your trial ends soon — click to subscribe"
+          >
+            Trial: {billingStatus.days_remaining}d left
+          </button>
+        )}
+
         {!user?.gmail_send_enabled && (
           <a
             data-testid="enable-sending-btn"
@@ -867,6 +888,9 @@ export default function Dashboard({ user, onLogout }) {
       {showSyncLog && (
         <SyncLogModal syncLog={syncLog} onClose={() => setShowSyncLog(false)} />
       )}
+
+      {/* Upgrade modal */}
+      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
     </div>
   );
 }

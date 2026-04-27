@@ -19,6 +19,7 @@ from typing import Optional
 import httpx
 import jwt as pyjwt
 import anthropic
+import stripe
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -46,6 +47,10 @@ GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
 GOOGLE_REDIRECT_URI = os.environ['GOOGLE_REDIRECT_URI']
 JWT_SECRET = os.environ['JWT_SECRET']
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://vc-pipeline-1.preview.emergentagent.com')
+STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_PRICE_ID = os.environ.get('STRIPE_PRICE_ID', '')
+stripe.api_key = STRIPE_SECRET_KEY
 
 SB_HEADERS = {
     'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -65,6 +70,24 @@ async def get_fund_settings(user_id: str) -> dict:
 
 async def save_fund_settings(user_id: str, data: dict):
     await sb_update('users', {'fund_settings': data}, {'id': f'eq.{user_id}'})
+
+async def check_subscription_access(user_id: str) -> bool:
+    """True if user has active subscription or valid trial.
+    Legacy users with no subscription_status are granted access."""
+    users = await sb_select('users', {'id': f'eq.{user_id}'})
+    if not users:
+        return False
+    u = users[0]
+    status = u.get('subscription_status')
+    trial_ends = u.get('trial_ends_at')
+    if not status and not trial_ends:
+        return True  # legacy user predating payment system
+    if status == 'active':
+        return True
+    if status == 'trialing' and trial_ends:
+        trial_dt = datetime.fromisoformat(trial_ends.replace('Z', '+00:00'))
+        return datetime.now(timezone.utc) < trial_dt
+    return False
 
 app = FastAPI(title="VC Deal Flow API")
 api_router = APIRouter(prefix="/api")
@@ -157,10 +180,18 @@ CREATE TABLE IF NOT EXISTS users (
   token_expiry TIMESTAMPTZ,
   last_synced TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  fund_settings JSONB DEFAULT '{}'::jsonb
+  fund_settings JSONB DEFAULT '{}'::jsonb,
+  trial_ends_at TIMESTAMPTZ,
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  subscription_status TEXT
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS fund_settings JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 
 CREATE TABLE IF NOT EXISTS deals (
@@ -1627,6 +1658,8 @@ async def auth_callback(
         else:
             user_data['id'] = str(uuid.uuid4())
             user_data['created_at'] = datetime.now(timezone.utc).isoformat()
+            user_data['trial_ends_at'] = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
+            user_data['subscription_status'] = 'trialing'
             new_user = await sb_insert('users', user_data)
             # Prefer the id Supabase actually stored over our locally-generated UUID.
             # If the insert response is missing (rare Supabase edge-case), re-fetch to confirm.
@@ -1741,6 +1774,8 @@ async def get_archived_deals(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/deals/process")
 async def process_email_manual(data: dict, current_user: dict = Depends(get_current_user)):
+    if not await check_subscription_access(current_user['user_id']):
+        raise HTTPException(status_code=402, detail="subscription_required")
     body = data.get('body', '').strip()
     if not body:
         raise HTTPException(status_code=400, detail="Email body is required")
@@ -1875,6 +1910,8 @@ async def trigger_sync(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user['user_id']
+    if not await check_subscription_access(user_id):
+        raise HTTPException(status_code=402, detail="subscription_required")
     if user_id in _syncing_users:
         return {"message": "Sync already running", "status": "already_syncing", "new_deals": 0}
     _syncing_users.add(user_id)
@@ -2888,6 +2925,159 @@ async def mark_notification_read(notif_id: str, current_user: dict = Depends(get
     await sb_update('notifications', {'read': True}, {'id': f'eq.{notif_id}', 'user_id': f'eq.{current_user["user_id"]}'})
     return {"ok": True}
 
+
+# ── Billing ─────────────────────────────────────────────────────────────────────
+
+@api_router.get("/billing/status")
+async def get_billing_status(current_user: dict = Depends(get_current_user)):
+    users = await sb_select('users', {'id': f'eq.{current_user["user_id"]}'})
+    if not users:
+        raise HTTPException(status_code=404, detail="User not found")
+    u = users[0]
+    status = u.get('subscription_status')
+    trial_ends = u.get('trial_ends_at')
+    days_remaining = None
+    if trial_ends and status == 'trialing':
+        trial_dt = datetime.fromisoformat(trial_ends.replace('Z', '+00:00'))
+        days_remaining = max(0, (trial_dt - datetime.now(timezone.utc)).days)
+    return {'status': status, 'trial_ends_at': trial_ends, 'days_remaining': days_remaining}
+
+@api_router.post("/billing/create-checkout")
+async def create_checkout(current_user: dict = Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+    uid = current_user['user_id']
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    u = users[0] if users else {}
+    customer_id = u.get('stripe_customer_id')
+    if not customer_id:
+        customer = stripe.Customer.create(email=current_user['email'])
+        customer_id = customer.id
+        await sb_update('users', {'stripe_customer_id': customer_id}, {'id': f'eq.{uid}'})
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        payment_method_types=['card'],
+        line_items=[{'price': STRIPE_PRICE_ID, 'quantity': 1}],
+        mode='subscription',
+        success_url=f'{FRONTEND_URL}/settings?subscription=success',
+        cancel_url=f'{FRONTEND_URL}/settings',
+    )
+    return {'url': session.url}
+
+@api_router.post("/billing/portal")
+async def billing_portal(current_user: dict = Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+    uid = current_user['user_id']
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    u = users[0] if users else {}
+    customer_id = u.get('stripe_customer_id')
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No billing account found. Subscribe first.")
+    session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=f'{FRONTEND_URL}/settings',
+    )
+    return {'url': session.url}
+
+@api_router.post("/billing/webhook")
+async def billing_webhook(request: Request):
+    # Webhook signature verification is skipped while running locally (no public URL yet).
+    # TODO: Once deployed, replace the raw JSON parse below with:
+    #   payload = await request.body()
+    #   event = stripe.Webhook.construct_event(payload, request.headers.get('stripe-signature'), STRIPE_WEBHOOK_SECRET)
+    payload = await request.json()
+    event_type = payload.get('type', '')
+    data_obj = payload.get('data', {}).get('object', {})
+    if event_type in ('customer.subscription.created', 'customer.subscription.updated'):
+        customer_id = data_obj.get('customer')
+        sub_status = data_obj.get('status')
+        sub_id = data_obj.get('id')
+        if customer_id:
+            await sb_update('users',
+                {'subscription_status': sub_status, 'stripe_subscription_id': sub_id},
+                {'stripe_customer_id': f'eq.{customer_id}'},
+            )
+    elif event_type == 'customer.subscription.deleted':
+        customer_id = data_obj.get('customer')
+        if customer_id:
+            await sb_update('users', {'subscription_status': 'canceled'}, {'stripe_customer_id': f'eq.{customer_id}'})
+    elif event_type == 'invoice.payment_failed':
+        customer_id = data_obj.get('customer')
+        if customer_id:
+            await sb_update('users', {'subscription_status': 'past_due'}, {'stripe_customer_id': f'eq.{customer_id}'})
+    return {'received': True}
+
+# ── Call prep ────────────────────────────────────────────────────────────────────
+
+@api_router.post("/deals/{deal_id}/call-prep")
+async def generate_call_prep(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    deal = deals[0]
+    if deal.get('deal_stage') not in ('First Look', 'In Conversation'):
+        raise HTTPException(status_code=400, detail="Call prep is only available for First Look or In Conversation deals")
+    fund_ctx = await get_fund_settings(uid)
+    company = deal.get('company_name') or deal.get('sender_name', 'Unknown')
+    founder = deal.get('founder_name', 'Unknown founder')
+    role = deal.get('founder_role', '')
+    sector = deal.get('sector', 'Unknown')
+    geography = deal.get('geography', 'Unknown')
+    stage = deal.get('stage', 'Unknown')
+    check_size = deal.get('check_size_requested', 'Not specified')
+    thesis_score = deal.get('thesis_match_score')
+    thesis_score_str = f'{thesis_score}/100' if thesis_score is not None else 'Not scored'
+    strengths = ', '.join(deal.get('fit_strengths') or []) or 'Not assessed'
+    weaknesses = ', '.join(deal.get('fit_weaknesses') or []) or 'Not assessed'
+    traction = 'Yes' if deal.get('traction_mentioned') else 'No'
+    deck = 'Yes' if deal.get('deck_attached') else 'No'
+    intro_source = deal.get('intro_source', 'Unknown')
+    body = (deal.get('body_preview') or 'Not available')[:1500]
+    fund_name = fund_ctx.get('fund_name', 'Our fund')
+    thesis = fund_ctx.get('thesis', 'Not specified')
+    sectors = fund_ctx.get('sectors', 'Not specified')
+    stages = ', '.join(fund_ctx.get('stages') or []) if isinstance(fund_ctx.get('stages'), list) else str(fund_ctx.get('stages', 'Not specified'))
+    check_size_fund = fund_ctx.get('check_size', 'Not specified')
+    prompt = f"""Prepare a call brief for this deal.
+
+Company: {company}
+Founder: {founder}{f' ({role})' if role else ''}
+Sector: {sector} | Geography: {geography}
+Stage claimed: {stage} | Check size requested: {check_size}
+Thesis match score: {thesis_score_str}
+What fits our thesis: {strengths}
+What doesn't fit: {weaknesses}
+Traction mentioned: {traction} | Deck attached: {deck}
+Intro source: {intro_source}
+
+Original email:
+{body}
+
+Our fund: {fund_name} — {thesis}
+We invest in: {sectors} at {stages} with check sizes of {check_size_fund}
+
+Return exactly this structure with no additional commentary:
+OBJECTIVE: [one sentence — what this call must determine]
+KEY QUESTIONS:
+1. [question]
+2. [question]
+3. [question]
+4. [question]
+5. [question]
+RED FLAGS TO PROBE:
+1. [red flag]
+2. [red flag]
+3. [red flag]
+THE DECIDING FACTOR: [the single thing that will decide whether to proceed after this call]"""
+    response = await claude_client.messages.create(
+        model='claude-sonnet-4-20250514',
+        max_tokens=800,
+        system='You are a VC analyst preparing a partner for a first call with a potential portfolio company. Be specific to what is known and what is missing about this deal. Do not use generic questions.',
+        messages=[{'role': 'user', 'content': prompt}],
+    )
+    return {'brief': response.content[0].text}
 
 # ── App setup ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)

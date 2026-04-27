@@ -10,6 +10,7 @@ import Pipeline from './pages/Pipeline';
 import ReviewMode from './pages/ReviewMode';
 import Onboarding from './pages/Onboarding';
 import Contacts from './pages/Contacts';
+import PrivacyPage from './pages/PrivacyPage';
 import { Toaster } from './components/ui/sonner';
 import { getMe, logout } from './lib/api';
 
@@ -85,6 +86,7 @@ function App() {
           path="/review"
           element={user ? <ReviewMode /> : <Navigate to="/" />}
         />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       <Toaster position="bottom-right" richColors />

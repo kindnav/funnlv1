@@ -121,3 +121,18 @@ export const rebuildContacts = () =>
 export const getGatedEmails = () => fetchJson(`${API}/gated-emails`);
 export const restoreGatedEmail = (id) => fetchJson(`${API}/gated-emails/${id}/restore`, { method: 'POST' });
 export const runGateTests = () => fetchJson(`${API}/test-gate`);
+
+// ── Billing ──────────────────────────────────────────────────────────────────────
+export const getBillingStatus = () => fetchJson(`${API}/billing/status`);
+export const createCheckoutSession = async () => {
+  const data = await fetchJson(`${API}/billing/create-checkout`, { method: 'POST' });
+  if (data?.url) window.location.href = data.url;
+};
+export const openBillingPortal = async () => {
+  const data = await fetchJson(`${API}/billing/portal`, { method: 'POST' });
+  if (data?.url) window.location.href = data.url;
+};
+
+// ── Call Prep ────────────────────────────────────────────────────────────────────
+export const generateCallPrep = (dealId) =>
+  fetchJson(`${API}/deals/${dealId}/call-prep`, { method: 'POST' });

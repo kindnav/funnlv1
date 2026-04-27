@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle,
+  ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, CreditCard,
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail } from '../lib/api';
+import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal } from '../lib/api';
 import { TeamSetup } from '../components/TeamSetup';
 import { AIGateSection } from '../components/settings/AIGateSection';
 import { toast } from '../components/ui/sonner';
@@ -18,6 +18,10 @@ export default function Settings({ user, onLogout }) {
   // Team
   const [fundInfo, setFundInfo] = useState(null);
   const [fundLoading, setFundLoading] = useState(true);
+
+  // Billing
+  const [billingStatus, setBillingStatus] = useState(null);
+  const [billingLoading, setBillingLoading] = useState(true);
 
   // Gated emails
   const [gatedEmails, setGatedEmails] = useState([]);
@@ -35,6 +39,8 @@ export default function Settings({ user, onLogout }) {
       if (fi && fi.fund) setFundInfo(fi);
       setFundLoading(false);
     }).finally(() => setLoading(false));
+
+    getBillingStatus().then((b) => { if (b) setBillingStatus(b); }).finally(() => setBillingLoading(false));
 
     // Load gated emails
     setGatedLoading(true);
@@ -111,6 +117,82 @@ export default function Settings({ user, onLogout }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
+
+          {/* ── Subscription ── */}
+          <div className={cardCls}>
+            <div className="flex items-center gap-2 mb-1">
+              <CreditCard size={15} className="text-[#f5a623]" />
+              <h2 className="text-white font-semibold text-sm">Subscription</h2>
+            </div>
+            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4">
+              Manage your Funnl Pro subscription and billing.
+            </p>
+            {billingLoading ? (
+              <div className="flex items-center gap-2 text-[rgba(255,255,255,0.3)] text-sm">
+                <RefreshCw size={13} className="animate-spin" /> Loading…
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {billingStatus?.status === 'trialing' && (
+                  <div className="flex items-center gap-3 rounded-lg p-3"
+                    style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                      <CreditCard size={14} className="text-[#f5a623]" />
+                    </div>
+                    <div>
+                      <p className="text-[#f5a623] text-sm font-medium">Free Trial</p>
+                      <p className="text-[rgba(255,255,255,0.4)] text-xs">
+                        {billingStatus.days_remaining != null
+                          ? `${billingStatus.days_remaining} day${billingStatus.days_remaining !== 1 ? 's' : ''} remaining`
+                          : 'Trial active'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {billingStatus?.status === 'active' && (
+                  <div className="flex items-center gap-3 rounded-lg p-3"
+                    style={{ background: 'rgba(61,214,140,0.06)', border: '1px solid rgba(61,214,140,0.2)' }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: 'rgba(61,214,140,0.1)', border: '1px solid rgba(61,214,140,0.2)' }}>
+                      <Check size={14} className="text-[#3dd68c]" />
+                    </div>
+                    <div>
+                      <p className="text-[#3dd68c] text-sm font-medium">Active — Funnl Pro</p>
+                      <p className="text-[rgba(255,255,255,0.4)] text-xs">$29 / month</p>
+                    </div>
+                  </div>
+                )}
+                {(billingStatus?.status === 'past_due' || billingStatus?.status === 'canceled') && (
+                  <div className="flex items-center gap-2 rounded-lg p-3"
+                    style={{ background: 'rgba(240,82,82,0.06)', border: '1px solid rgba(240,82,82,0.2)' }}>
+                    <AlertTriangle size={13} className="text-[#f05252]" />
+                    <p className="text-[rgba(255,255,255,0.5)] text-xs capitalize">
+                      Subscription {billingStatus.status.replace('_', ' ')}
+                    </p>
+                  </div>
+                )}
+                {billingStatus?.status === 'active' ? (
+                  <button
+                    onClick={openBillingPortal}
+                    className="flex items-center gap-2 text-[rgba(255,255,255,0.6)] hover:text-white text-sm border border-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.25)] rounded-lg px-4 py-2 transition-all"
+                  >
+                    <CreditCard size={13} />
+                    Manage subscription
+                  </button>
+                ) : (
+                  <button
+                    onClick={createCheckoutSession}
+                    className="flex items-center gap-2 text-white text-sm rounded-lg px-4 py-2.5 font-medium transition-all"
+                    style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)', boxShadow: '0 0 12px rgba(124,109,250,0.3)' }}
+                  >
+                    <CreditCard size={13} />
+                    Upgrade to Pro — $29/month
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* ── Team Collaboration ── */}
           <div className={cardCls} data-testid="team-section">

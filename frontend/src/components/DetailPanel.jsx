@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
-  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, RefreshCw, Calendar,
+  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, RefreshCw, Calendar, Phone,
 } from 'lucide-react';
-import { updateDeal, deleteDeal } from '../lib/api';
+import { updateDeal, deleteDeal, generateCallPrep } from '../lib/api';
+import CallPrepModal from './CallPrepModal';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 import { VotingSection } from './VotingSection';
@@ -72,6 +73,9 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
   const [notes, setNotes] = useState(deal.notes || '');
   const [notesSaved, setNotesSaved] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(deal.follow_up_date?.slice(0, 10) || '');
+  const [showCallPrep, setShowCallPrep] = useState(false);
+  const [callPrepBrief, setCallPrepBrief] = useState(null);
+  const [callPrepLoading, setCallPrepLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const members = fundInfo?.members || [];
@@ -82,6 +86,18 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
     setNotes(deal.notes || '');
     setFollowUpDate(deal.follow_up_date?.slice(0, 10) || '');
   }, [deal.id]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: reset only on deal change
+
+  const handleCallPrep = async () => {
+    setCallPrepBrief(null);
+    setCallPrepLoading(true);
+    setShowCallPrep(true);
+    try {
+      const res = await generateCallPrep(deal.id);
+      setCallPrepBrief(res?.brief || '');
+    } finally {
+      setCallPrepLoading(false);
+    }
+  };
 
   const handleSaveFollowUpDate = async (value) => {
     const date = value || null;
@@ -354,6 +370,24 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
             </div>
           )}
 
+          {/* ── Call Prep ── */}
+          {(deal.deal_stage === 'First Look' || deal.deal_stage === 'In Conversation') && (
+            <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+              <button
+                onClick={handleCallPrep}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                style={{
+                  background: 'rgba(77,166,255,0.08)',
+                  border: '1px solid rgba(77,166,255,0.25)',
+                  color: '#4da6ff',
+                }}
+              >
+                <Phone size={13} />
+                Prep for call
+              </button>
+            </div>
+          )}
+
           {/* ── One-click Actions ── */}
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
             <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold mb-3">
@@ -486,6 +520,16 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
           actionType={actionModal}
           onClose={() => setActionModal(null)}
           onSent={handleSent}
+        />
+      )}
+
+      {/* Call Prep Modal */}
+      {showCallPrep && (
+        <CallPrepModal
+          deal={deal}
+          brief={callPrepBrief}
+          loading={callPrepLoading}
+          onClose={() => { setShowCallPrep(false); setCallPrepBrief(null); }}
         />
       )}
     </>
