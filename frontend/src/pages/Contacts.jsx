@@ -400,7 +400,7 @@ export default function Contacts({ user, onLogout }) {
                 const ownerInitials = contactView === 'fund-contacts' && c.owner_name
                   ? c.owner_name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
                   : null;
-                const [ownerBg, ownerFg] = avatarColor(c.owner_user_id || '');
+                const [ownerBg, ownerFg] = ownerInitials ? avatarColor(c.owner_user_id || 'x') : ['transparent', 'transparent'];
                 return (
                   <div
                     key={`${c.id}-${c.owner_user_id || ''}`}
