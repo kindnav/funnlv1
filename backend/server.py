@@ -647,6 +647,15 @@ def is_newsletter(headers: list) -> bool:
         for h in headers
     )
 
+def _html_to_text(raw_html: str) -> str:
+    """Strip HTML to clean readable text, removing style/script content entirely."""
+    # Remove style and script blocks including their content
+    text = re.sub(r'<(style|script)[^>]*>.*?</(style|script)>', ' ', raw_html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove all remaining HTML tags
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # Collapse whitespace
+    return re.sub(r'\s+', ' ', text).strip()
+
 def extract_body(payload: dict, max_chars: int = 4000) -> str:
     mime = payload.get('mimeType', '')
     if mime == 'text/plain':
@@ -656,9 +665,8 @@ def extract_body(payload: dict, max_chars: int = 4000) -> str:
     if mime == 'text/html':
         data = payload.get('body', {}).get('data', '')
         if data:
-            html = base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='ignore')
-            text = re.sub(r'<[^>]+>', ' ', html)
-            return re.sub(r'\s+', ' ', text).strip()[:max_chars]
+            raw = base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='ignore')
+            return _html_to_text(raw)[:max_chars]
     parts = payload.get('parts', [])
     plain = html_fallback = None
     for part in parts:
@@ -670,8 +678,8 @@ def extract_body(payload: dict, max_chars: int = 4000) -> str:
         elif pt == 'text/html':
             d = part.get('body', {}).get('data', '')
             if d:
-                h = base64.urlsafe_b64decode(d + '==').decode('utf-8', errors='ignore')
-                html_fallback = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', h)).strip()[:max_chars]
+                raw = base64.urlsafe_b64decode(d + '==').decode('utf-8', errors='ignore')
+                html_fallback = _html_to_text(raw)[:max_chars]
         elif 'multipart' in pt:
             result = extract_body(part, max_chars)
             if result:
@@ -704,13 +712,17 @@ AUTOMATED_SENDERS_EXACT = frozenset([
     'no-reply@accounts.google.com', 'noreply@accounts.google.com',
     'no-reply@google.com', 'noreply@google.com', 'no-reply@notifications.google.com',
     'no-reply@mail.google.com', 'no-reply@security.google.com',
+    'calendar-notification@google.com',
     'no-reply@linkedin.com', 'notifications-noreply@linkedin.com',
     'messages-noreply@linkedin.com', 'jobs-noreply@linkedin.com',
     'notification@linkedin.com', 'noreply@twitter.com', 'noreply@facebook.com',
     'noreply@instagram.com', 'noreply@github.com', 'noreply@notion.so',
     'noreply@slack.com', 'noreply@zoom.us', 'noreply@calendly.com',
+    'invites@calendly.com',
     'noreply@eventbrite.com', 'noreply@dropbox.com', 'noreply@docusign.com',
     'noreply@stripe.com', 'noreply@docsend.com',
+    'noreply@hubspot.com', 'noreply@mailchimp.com', 'noreply@constantcontact.com',
+    'noreply@loom.com', 'noreply@typeform.com', 'noreply@airtable.com',
 ])
 
 # Email address prefixes that always indicate automated senders
@@ -734,6 +746,21 @@ NOISY_SUBJECT_KEYWORDS = (
     'verify your email', 'confirm your email', 'password reset',
     'security alert', 'sign-in attempt', '[automated]', 'auto-reply',
     'out of office', 'on vacation', 'automatic reply',
+    # Calendar and scheduling noise
+    'invitation:', 'accepted:', 'declined:', 'tentative:',
+    'you have been invited', "you've been invited",
+    'has been rescheduled', 'has been cancelled', 'has been canceled',
+    'updated invitation', 'canceled event', 'new event',
+    # Registration and confirmation noise
+    "you're registered", 'you are registered', 'registration confirmed',
+    'registration confirmation', 'thank you for registering',
+    'webinar confirmation', 'your booking', 'booking confirmation',
+    # Social / notification noise
+    'viewed your profile', 'new connection request',
+    'accepted your connection', 'sent you a message',
+    'commented on', 'liked your',
+    # Test / internal noise
+    '[test]', 'test message', 'test email',
 )
 
 def is_automated_sender(from_email: str, from_name: str) -> bool:
@@ -766,53 +793,61 @@ Your output will be used to automatically triage and score deal flow for investm
 Return ONLY valid JSON. No markdown. No explanation. No preamble. Just the raw JSON object."""
 
 # ── AI Gate ─────────────────────────────────────────────────────────────────
-GATE_SYSTEM_PROMPT = """You are a filter for a venture capital deal flow intelligence tool used by student-run venture funds, angel investors, solo GPs, small VC firms, and startup accelerators.
+GATE_SYSTEM_PROMPT = """You are a precision filter for a venture capital deal flow tool. Your job is to decide whether this specific email contains a genuine investment signal that a VC, angel investor, or fund manager should see.
 
-Your job is to decide whether an email belongs in this tool or not.
+THE CORE TEST: Does this email contain new information about a specific investment opportunity, a deal relationship, or the active business of running a fund?
 
-The bar for inclusion is LOW not high. When in doubt always return true. It is better to include a borderline email than to miss a real deal.
+SET belongs_in_dealflow TRUE for:
+- Founder pitching their startup for investment — cold, warm, polished, unpolished, any language, any country
+- Third party introducing a founder or company (warm intro written by the introducer)
+- LP, potential LP, or investor relations communication with substantive content
+- Co-investor or syndicate outreach about a specific named deal
+- Portfolio company sending a business update, asking for help, or sharing a milestone
+- Accelerator or program application from a startup
+- Another investor asking you to evaluate or co-invest in a specific company
+- Email with a pitch deck, term sheet, cap table, or financial model attached or linked
+- Student asking for VC career advice or mentorship (low priority but legitimate)
 
-You are filtering OUT only emails that are clearly and obviously not related to investing, deal flow, or the business of running a fund or accelerator.
+SET belongs_in_dealflow FALSE for:
+- Calendar invitations, meeting acceptances, scheduling confirmations — even if related to an investment meeting
+- Automated system notifications: document signed, payment received, account activity, delivery receipts
+- Vendor or agency pitching services TO the fund (software, legal, PR, back-office, recruiting)
+- Recruiter cold outreach placing candidates (unless explicitly and specifically for a named portfolio company)
+- Conference announcements, event invitations, and webinar promotions without a named deal attached
+- Newsletter, digest, or broadcast email sent to a list
+- Internal colleague messages about logistics with no new external deal content
+- Social network notifications (LinkedIn connections, Twitter mentions, etc.)
+- Out-of-office replies, vacation messages, and bounce notifications
 
-ALWAYS set belongs_in_dealflow to TRUE for:
-- Any founder pitching a startup (polished or not, student founders, first-timers, international)
-- Warm introductions in a professional or investment context
-- LP / investor relations communications
-- Portfolio company updates or requests
-- Co-investor or syndicate outreach
-- Accelerator or program related emails
-- Any email from an unknown sender (unknown = likely external = likely deal flow)
-- Any email mentioning fundraising, investment, capital, equity, valuation, term sheet, accelerator, or startup in any way
-- Any email with a deck, document, or link that might be investment related
-- Any email where a new external party has joined a thread
-- Student or young person asking about VC or investing
-- Recruiters relevant to portfolio companies or VC-backed startups
-- Press, speaking invitations, award nominations related to investing
-- Anything investment adjacent — when in doubt INCLUDE
+TIEBREAKER: If genuinely uncertain whether this is a founder pitch vs. vendor spam, include it. If genuinely uncertain whether this is deal content vs. calendar/scheduling noise, exclude it.
 
-ONLY set belongs_in_dealflow to FALSE when ALL of these are true:
-1. The email is clearly between people who already know each other (internal/colleague)
-2. The subject and content is purely logistical with zero investment content
-3. There is no external party bringing a new deal, relationship, or opportunity
+Return ONLY valid JSON: {"belongs_in_dealflow": true or false, "reason": "one short sentence"}"""
 
-SPECIFIC TYPES TO EXCLUDE (only when clearly and obviously true):
-- Pure automated calendar notifications with no human-written deal content
-- Meeting cancellations or rescheduling with zero investment content
-- Purely personal messages with absolutely no connection to investing or startups
-
-CRITICAL: Any email where a reasonable person running a student fund, angel investing, or accelerator might find it useful = belongs_in_dealflow: true
-
-Return ONLY valid JSON:
-{"belongs_in_dealflow": true or false, "reason": "one short sentence"}"""
+# Domains strongly associated with B2B SaaS vendors and service providers selling to VCs.
+# Used to add a soft hint to the gate prompt — not a hard block.
+_VENDOR_DOMAIN_HINTS = frozenset([
+    'hubspot.com', 'salesforce.com', 'affinity.co', 'pipedrive.com',
+    'apollo.io', 'zoominfo.com', 'clearbit.com', 'lusha.com',
+    'seamless.ai', 'hunter.io', 'reply.io', 'outreach.io', 'salesloft.com',
+    'mailshake.com', 'lemlist.com', 'instantly.ai', 'smartlead.ai',
+    'clay.com', 'lavender.ai', 'wiza.co', 'uplead.com',
+])
 
 async def gate_email(sender_name: str, sender_email: str, subject: str, body: str) -> dict:
     """Lightweight AI gate — decides if email belongs in deal flow before full extraction."""
-    body_preview = body[:400].strip()
+    body_preview = body[:600].strip()
+    sender_domain = sender_email.lower().split('@')[-1] if '@' in sender_email else ''
+    vendor_hint = (
+        '\n[NOTE: This sender domain is commonly associated with B2B sales and marketing tools. '
+        'Be skeptical — include only if there is clear deal content, not just vendor outreach.]'
+        if sender_domain in _VENDOR_DOMAIN_HINTS else ''
+    )
     user_prompt = (
         f"Should this email appear in a venture capital deal flow tool?\n\n"
         f"FROM: {sender_name} <{sender_email}>\n"
         f"SUBJECT: {subject}\n"
         f"BODY PREVIEW: {body_preview}"
+        f"{vendor_hint}"
     )
     try:
         msg = await claude_client.messages.create(
@@ -1121,10 +1156,14 @@ async def process_and_save_email(
 
     # Skip saving categories that are definitively not deal-relevant.
     # Claude's classification is reliable enough — no need to pollute the deals table.
+    # Press/media and event invitations are filtered here: they clutter the dashboard
+    # and are never actionable deal flow. They remain accessible via gated_emails.
     CATEGORIES_TO_SKIP_SAVING = {
         'Spam / irrelevant',
         'Service provider / vendor',
         'Recruiter / hiring',
+        'Press / media',
+        'Event invitation',
     }
     category = ai.get('category', '')
     if category in CATEGORIES_TO_SKIP_SAVING:
@@ -1316,7 +1355,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         logger.info('[SYNC] Fetching messages from Gmail API...')
 
         is_full_scan = (force_full_scan or is_initial or not user.get('last_synced'))
-        max_pages = 4 if is_full_scan else 1
+        max_pages = 10 if is_initial else (6 if is_full_scan else 1)
         messages = []
         page_token = None
 
