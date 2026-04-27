@@ -151,3 +151,7 @@ export const getActivityFeed = (scope = 'personal') =>
 // ── Fund contacts ─────────────────────────────────────────────────────────────────
 export const getFundContacts = () =>
   fetchJson(`${API}/contacts/fund`);
+
+// ── Admin / data management ───────────────────────────────────────────────────────
+export const reprocessExisting = () =>
+  fetchJson(`${API}/admin/reprocess-existing`, { method: 'POST' });

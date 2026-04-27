@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, CreditCard, Bell,
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal, toggleWeeklyDigest } from '../lib/api';
+import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal, toggleWeeklyDigest, reprocessExisting } from '../lib/api';
 import { TeamSetup } from '../components/TeamSetup';
 import { AIGateSection } from '../components/settings/AIGateSection';
 import { toast } from '../components/ui/sonner';
@@ -32,6 +32,10 @@ export default function Settings({ user, onLogout }) {
   const [gatedLoading, setGatedLoading] = useState(false);
   const [gatedTableMissing, setGatedTableMissing] = useState(false);
   const [restoringId, setRestoringId] = useState(null);
+
+  // Cleanup tool
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
 
   const navigate = useNavigate();
 
@@ -84,6 +88,26 @@ export default function Settings({ user, onLogout }) {
   const handleLogout = async () => {
     await logout().catch(() => {});
     onLogout();
+  };
+
+  const handleCleanup = async () => {
+    setCleanupRunning(true);
+    setCleanupResult(null);
+    try {
+      const result = await reprocessExisting();
+      setCleanupResult(result);
+      const n = result?.removed ?? 0;
+      toast.success(`Cleaned up ${n} email${n !== 1 ? 's' : ''} from your inbox`);
+      // Refresh the filtered emails list so newly gated emails appear immediately
+      if (n > 0) {
+        const updated = await getGatedEmails().catch(() => null);
+        if (updated?.emails) setGatedEmails(updated.emails);
+      }
+    } catch {
+      toast.error('Cleanup failed — please try again');
+    } finally {
+      setCleanupRunning(false);
+    }
   };
 
   const cardCls = 'border border-[rgba(255,255,255,0.07)] rounded-2xl p-6';
@@ -398,6 +422,53 @@ export default function Settings({ user, onLogout }) {
             restoringId={restoringId}
             onRestore={handleRestore}
           />
+
+          {/* ── Data Management ── */}
+          <div className={cardCls} style={cardStyle}>
+            <div className="flex items-center gap-2 mb-1">
+              <RefreshCw size={15} style={{ color: 'rgba(255,255,255,0.4)' }} />
+              <h2 className="text-white font-semibold text-sm">Data Management</h2>
+            </div>
+            <p className="text-xs mb-5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Re-run AI filtering on your existing Inbound emails to remove ones that are not
+              deal-relevant. Filtered emails move to the Filtered Emails section above where
+              you can restore any caught by mistake.
+            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                data-testid="cleanup-irrelevant-btn"
+                onClick={handleCleanup}
+                disabled={cleanupRunning}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.7)',
+                }}
+                onMouseEnter={e => !cleanupRunning && (e.currentTarget.style.background = 'rgba(255,255,255,0.09)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              >
+                <RefreshCw size={13} className={cleanupRunning ? 'animate-spin' : ''} />
+                {cleanupRunning ? 'Scanning inbox…' : 'Clean up irrelevant emails'}
+              </button>
+
+              {cleanupResult && !cleanupRunning && (
+                <span
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+                  style={cleanupResult.removed > 0
+                    ? { background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.25)' }
+                    : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)' }
+                  }
+                >
+                  <Check size={11} />
+                  {cleanupResult.removed > 0
+                    ? `Removed ${cleanupResult.removed} of ${cleanupResult.scanned} emails`
+                    : `Inbox already clean · ${cleanupResult.scanned} scanned`
+                  }
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* ── Account ── */}
           <div className={cardCls} style={cardStyle}>

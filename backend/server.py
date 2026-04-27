@@ -3155,6 +3155,60 @@ async def get_activity_feed(
     return items[:20]
 
 
+# ── Admin / data management ─────────────────────────────────────────────────────
+
+@api_router.post("/admin/reprocess-existing")
+async def reprocess_existing(current_user: dict = Depends(get_current_user)):
+    """
+    Re-run the AI gate on all Inbound (non-deleted) deals for the current user.
+    Deals that fail the gate are soft-deleted and saved to gated_emails for audit.
+    Returns {scanned, removed}.
+    """
+    uid = current_user['user_id']
+
+    rows = await sb_select('deals', {
+        'user_id':    f'eq.{uid}',
+        'deal_stage': 'eq.Inbound',
+        'status':     'neq.deleted',
+        'select':     'id,sender_name,sender_email,subject,body_preview,received_date',
+    })
+    deals = rows or []
+    total   = len(deals)
+    removed = 0
+
+    for deal in deals:
+        sender_name  = deal.get('sender_name') or ''
+        sender_email = deal.get('sender_email') or ''
+        subject      = deal.get('subject') or ''
+        body         = deal.get('body_preview') or ''
+
+        gate = await gate_email(sender_name, sender_email, subject, body)
+
+        if not gate['belongs']:
+            now = datetime.now(timezone.utc).isoformat()
+            await sb_update('deals', {
+                'status':     'deleted',
+                'updated_at': now,
+            }, {'id': f'eq.{deal["id"]}'})
+
+            await save_gated_email(
+                user_id=uid,
+                sender_name=sender_name,
+                sender_email=sender_email,
+                subject=subject,
+                body=body,
+                received_date=deal.get('received_date'),
+                reason=f'[Reprocess] {gate["reason"]}',
+            )
+            removed += 1
+
+        # Small delay between Claude calls to avoid burst rate-limit spikes
+        await asyncio.sleep(0.3)
+
+    logger.info(f'[Reprocess] user={uid[:8]} scanned={total} removed={removed}')
+    return {'scanned': total, 'removed': removed}
+
+
 # ── App setup ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)
 _cors_origins = [FRONTEND_URL, 'http://localhost:3000']
