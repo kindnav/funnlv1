@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import re
 import json
 import uuid
@@ -54,29 +56,15 @@ SB_HEADERS = {
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ── Fund settings (per-user, file-backed) ──────────────────────────────────────
-SETTINGS_FILE = ROOT_DIR / 'fund_settings.json'
-_fund_settings: dict = {}
+# ── Fund settings (per-user, Supabase-backed) ──────────────────────────────────
+async def get_fund_settings(user_id: str) -> dict:
+    rows = await sb_select('users', {'id': f'eq.{user_id}', 'select': 'fund_settings'})
+    if rows and rows[0].get('fund_settings'):
+        return rows[0]['fund_settings']
+    return {}
 
-def _load_fund_settings():
-    global _fund_settings
-    if SETTINGS_FILE.exists():
-        try:
-            _fund_settings = json.loads(SETTINGS_FILE.read_text())
-        except Exception:
-            _fund_settings = {}
-
-def get_fund_settings(user_id: str) -> dict:
-    return _fund_settings.get(user_id, {})
-
-def save_fund_settings(user_id: str, data: dict):
-    _fund_settings[user_id] = data
-    try:
-        SETTINGS_FILE.write_text(json.dumps(_fund_settings, indent=2))
-    except Exception as e:
-        logger.error(f'Failed to save fund settings: {e}')
-
-_load_fund_settings()
+async def save_fund_settings(user_id: str, data: dict):
+    await sb_update('users', {'fund_settings': data}, {'id': f'eq.{user_id}'})
 
 app = FastAPI(title="VC Deal Flow API")
 api_router = APIRouter(prefix="/api")
@@ -168,8 +156,11 @@ CREATE TABLE IF NOT EXISTS users (
   refresh_token TEXT,
   token_expiry TIMESTAMPTZ,
   last_synced TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  fund_settings JSONB DEFAULT '{}'::jsonb
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS fund_settings JSONB DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS deals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1237,7 +1228,7 @@ async def sync_user_emails(user_id: str, is_initial: bool = False, force_full_sc
         logger.warning(f'[SYNC] No refresh token for {user.get("email")} — cannot sync. User must re-authenticate.')
         return 0
 
-    fund_ctx = get_fund_settings(user_id)
+    fund_ctx = await get_fund_settings(user_id)
     try:
         gmail, creds = await asyncio.to_thread(build_gmail_service, user)
 
@@ -1751,7 +1742,7 @@ async def process_email_manual(data: dict, current_user: dict = Depends(get_curr
     body = data.get('body', '').strip()
     if not body:
         raise HTTPException(status_code=400, detail="Email body is required")
-    fund_ctx = get_fund_settings(current_user['user_id'])
+    fund_ctx = await get_fund_settings(current_user['user_id'])
     result = await process_and_save_email(
         user_id=current_user['user_id'],
         sender_name=data.get('sender_name', 'Unknown'),
@@ -1811,7 +1802,7 @@ async def generate_deal_action(deal_id: str, data: dict, current_user: dict = De
     deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not deals:
         raise HTTPException(status_code=404, detail="Deal not found")
-    fund_ctx = get_fund_settings(current_user['user_id'])
+    fund_ctx = await get_fund_settings(current_user['user_id'])
     return await generate_action_draft(deals[0], action_type, fund_ctx)
 
 @api_router.post("/deals/{deal_id}/send-action")
@@ -2050,30 +2041,30 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         'picture': u.get('picture'), 'last_synced': u.get('last_synced'),
         'anthropic_key_set': bool(ANTHROPIC_API_KEY),
         'google_client_id_set': bool(GOOGLE_CLIENT_ID),
-        'fund_settings': get_fund_settings(current_user['user_id']),
+        'fund_settings': u.get('fund_settings') or {},
     }
 
 # Fund settings
 @api_router.get("/fund-settings")
 async def get_fund_settings_route(current_user: dict = Depends(get_current_user)):
-    return get_fund_settings(current_user['user_id'])
+    return await get_fund_settings(current_user['user_id'])
 
 @api_router.post("/fund-settings")
 async def save_fund_settings_route(data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     # Merge into existing settings so onboarding_complete survives fund-settings saves
-    existing = get_fund_settings(uid)
+    existing = await get_fund_settings(uid)
     allowed = {'fund_name', 'fund_type', 'thesis', 'stages', 'sectors', 'check_size'}
     clean = {**existing, **{k: v for k, v in data.items() if k in allowed}}
-    save_fund_settings(uid, clean)
+    await save_fund_settings(uid, clean)
     return {"message": "Fund settings saved", "settings": clean}
 
 @api_router.post("/onboarding-complete")
 async def mark_onboarding_complete(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    settings = get_fund_settings(uid)
+    settings = await get_fund_settings(uid)
     settings['onboarding_complete'] = True
-    save_fund_settings(uid, settings)
+    await save_fund_settings(uid, settings)
     return {"ok": True}
 
 # DB status for frontend
