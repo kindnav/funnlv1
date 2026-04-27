@@ -4,10 +4,10 @@ import {
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', icon: Inbox,  label: 'Dashboard', path: '/' },
-  { id: 'pipeline',  icon: Layers, label: 'Pipeline',  path: '/pipeline' },
-  { id: 'review',    icon: Zap,    label: 'Review Mode', path: '/review' },
-  { id: 'contacts',  icon: Users,  label: 'Contacts',  path: '/contacts' },
+  { id: 'dashboard', icon: Inbox,  label: 'Dashboard',   path: '/',         testId: 'dashboard-btn' },
+  { id: 'pipeline',  icon: Layers, label: 'Pipeline',    path: '/pipeline', testId: 'pipeline-btn' },
+  { id: 'review',    icon: Zap,    label: 'Review Mode', path: '/review',   testId: 'review-mode-btn' },
+  { id: 'contacts',  icon: Users,  label: 'Contacts',    path: '/contacts', testId: 'contacts-btn' },
 ];
 
 function getInitials(email) {
@@ -52,11 +52,12 @@ export default function Sidebar({ user, onLogout, activePage }) {
 
       {/* Spacer */}
       <div className="flex-1 flex flex-col items-center justify-center gap-1 w-full py-4">
-        {NAV_ITEMS.map(({ id, icon: Icon, label, path }) => {
+        {NAV_ITEMS.map(({ id, icon: Icon, label, path, testId }) => {
           const isActive = activePage === id;
           return (
             <button
               key={id}
+              data-testid={testId}
               onClick={() => navigate(path)}
               title={label}
               className="flex items-center justify-center transition-all"
@@ -92,6 +93,7 @@ export default function Sidebar({ user, onLogout, activePage }) {
       <div className="flex flex-col items-center gap-1 pb-4 shrink-0">
         {/* Settings */}
         <button
+          data-testid="settings-btn"
           onClick={() => navigate('/settings')}
           title="Settings"
           className="flex items-center justify-center transition-all"
