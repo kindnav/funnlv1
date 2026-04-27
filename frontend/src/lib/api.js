@@ -120,7 +120,6 @@ export const rebuildContacts = () =>
 // ── AI Gate ─────────────────────────────────────────────────────────────────────
 export const getGatedEmails = () => fetchJson(`${API}/gated-emails`);
 export const restoreGatedEmail = (id) => fetchJson(`${API}/gated-emails/${id}/restore`, { method: 'POST' });
-export const runGateTests = () => fetchJson(`${API}/test-gate`);
 
 // ── Billing ──────────────────────────────────────────────────────────────────────
 export const getBillingStatus = () => fetchJson(`${API}/billing/status`);
@@ -136,3 +135,11 @@ export const openBillingPortal = async () => {
 // ── Call Prep ────────────────────────────────────────────────────────────────────
 export const generateCallPrep = (dealId) =>
   fetchJson(`${API}/deals/${dealId}/call-prep`, { method: 'POST' });
+
+// ── Weekly digest ────────────────────────────────────────────────────────────────
+export const toggleWeeklyDigest = (enabled) =>
+  fetchJson(`${API}/digest/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) });
+
+// ── Contact activities ────────────────────────────────────────────────────────────
+export const getContactActivities = (contactId) =>
+  fetchJson(`${API}/contacts/${contactId}/activities`);

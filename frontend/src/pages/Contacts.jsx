@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, RefreshCw, Users, Mail, Building2, MapPin, Briefcase,
   Calendar, Star, ChevronRight, X, Plus, Tag, ExternalLink, Globe,
-  LayoutGrid, LogOut, BookOpen
+  LayoutGrid, LogOut, BookOpen, Inbox, ArrowRight, FileText, Send,
 } from 'lucide-react';
-import { getContacts, getContactDeals, updateContact, rebuildContacts } from '../lib/api';
+import { getContacts, getContactDeals, updateContact, rebuildContacts, getContactActivities } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -115,6 +115,10 @@ export default function Contacts({ user, onLogout }) {
   const [savingNotes, setSavingNotes] = useState(false);
   const notesRef = useRef(null);
 
+  // Activity timeline
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
   /* ── Data loading ─────────────────────────────────────────────────────── */
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,7 +135,7 @@ export default function Contacts({ user, onLogout }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load linked deals when contact changes
+  // Load linked deals + activities when contact changes
   useEffect(() => {
     if (!selected?.id) return;
     setNotes(selected.notes || '');
@@ -140,6 +144,11 @@ export default function Contacts({ user, onLogout }) {
       .then(d => setLinkedDeals(d || []))
       .catch(() => setLinkedDeals([]))
       .finally(() => setDealsLoading(false));
+    setActivitiesLoading(true);
+    getContactActivities(selected.id)
+      .then(a => setActivities(a || []))
+      .catch(() => setActivities([]))
+      .finally(() => setActivitiesLoading(false));
   }, [selected?.id]); // eslint-disable-line
 
   /* ── Actions ──────────────────────────────────────────────────────────── */
@@ -443,6 +452,8 @@ export default function Contacts({ user, onLogout }) {
             onRemoveTag={removeTag}
             onClose={() => setSelected(null)}
             onNavigateDeals={(dealId) => navigate(`/deals?deal=${dealId}`)}
+            activities={activities}
+            activitiesLoading={activitiesLoading}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center" style={{ background: '#0d0d14' }}>
@@ -458,11 +469,29 @@ export default function Contacts({ user, onLogout }) {
 }
 
 /* ── Detail Panel ─────────────────────────────────────────────────────────── */
+const ACTIVITY_ICONS = {
+  deal_received: { Icon: Inbox,     color: '#7c6dfa' },
+  stage_change:  { Icon: ArrowRight, color: '#4da6ff' },
+  note_saved:    { Icon: FileText,   color: 'rgba(255,255,255,0.4)' },
+  email_sent:    { Icon: Send,       color: '#3dd68c' },
+  follow_up_set: { Icon: Calendar,   color: '#f59e0b' },
+};
+
+function fmtRelative(ts) {
+  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return `${Math.floor(diff / 604800)}w ago`;
+}
+
 function DetailPanel({
   contact, linkedDeals, dealsLoading,
   notes, setNotes, savingNotes, onNotesBlur,
   tagInput, setTagInput, onAddTag, onRemoveTag,
   onClose, onNavigateDeals,
+  activities, activitiesLoading,
 }) {
   const [bgA, fgA] = avatarColor(contact.email || contact.name);
   const ss = stageStyle(contact.contact_status);
@@ -637,6 +666,41 @@ function DetailPanel({
             onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.4)')}
             onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.07)'; onNotesBlur(); }}
           />
+        </div>
+
+        {/* ── Activity timeline ─────────────────────────────────────── */}
+        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Activity</p>
+          {activitiesLoading ? (
+            <div className="flex items-center gap-2 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              <RefreshCw size={11} className="animate-spin" /> Loading…
+            </div>
+          ) : activities && activities.length > 0 ? (
+            <div className="space-y-3">
+              {activities.map((act) => {
+                const def = ACTIVITY_ICONS[act.type] || { Icon: Star, color: 'rgba(255,255,255,0.4)' };
+                const { Icon, color } = def;
+                return (
+                  <div key={act.id} className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                      style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
+                      <Icon size={10} style={{ color }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs leading-snug" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                        {act.description}
+                      </p>
+                    </div>
+                    <span className="text-[10px] shrink-0" style={{ color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
+                      {fmtRelative(act.created_at)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>No activity recorded yet</p>
+          )}
         </div>
 
         {/* ── Tags ──────────────────────────────────────────────────── */}

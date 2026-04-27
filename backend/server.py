@@ -1,4 +1,4 @@
-import os
+﻿import os
 from dotenv import load_dotenv
 load_dotenv()
 import re
@@ -31,8 +31,9 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google_auth_oauthlib.flow import Flow
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Allow HTTP redirect URIs (needed for internal k8s routing)
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+# Allow HTTP redirect URIs for local dev — remove or guard behind ENV check before production
+if os.environ.get('ENVIRONMENT') != 'production':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -88,6 +89,31 @@ async def check_subscription_access(user_id: str) -> bool:
         trial_dt = datetime.fromisoformat(trial_ends.replace('Z', '+00:00'))
         return datetime.now(timezone.utc) < trial_dt
     return False
+
+async def create_contact_activity(contact_id: str, user_id: str, act_type: str, description: str, deal_id: str = None):
+    """Insert one row into contact_activities. Silently skips on error."""
+    try:
+        await sb_insert('contact_activities', {
+            'contact_id': contact_id,
+            'user_id': user_id,
+            'type': act_type,
+            'description': description,
+            'deal_id': deal_id,
+        })
+    except Exception as e:
+        logger.debug(f'[Activity] Could not log activity type={act_type}: {e}')
+
+async def _log_deal_activity(user_id: str, deal: dict, act_type: str, description: str):
+    """Look up contact by deal sender_email and log an activity. Fire-and-forget."""
+    email = (deal.get('sender_email') or '').strip().lower()
+    if not email:
+        return
+    try:
+        rows = await sb_select('contacts', {'user_id': f'eq.{user_id}', 'email': f'eq.{email}'})
+        if rows:
+            await create_contact_activity(rows[0]['id'], user_id, act_type, description, deal.get('id'))
+    except Exception as e:
+        logger.debug(f'[Activity] _log_deal_activity failed: {e}')
 
 app = FastAPI(title="VC Deal Flow API")
 api_router = APIRouter(prefix="/api")
@@ -184,7 +210,8 @@ CREATE TABLE IF NOT EXISTS users (
   trial_ends_at TIMESTAMPTZ,
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
-  subscription_status TEXT
+  subscription_status TEXT,
+  weekly_digest_enabled BOOLEAN DEFAULT TRUE
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS fund_settings JSONB DEFAULT '{}'::jsonb;
@@ -192,6 +219,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_digest_enabled BOOLEAN DEFAULT TRUE;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 
 CREATE TABLE IF NOT EXISTS deals (
@@ -258,6 +286,19 @@ CREATE TABLE IF NOT EXISTS contacts (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, email)
 );
+
+CREATE TABLE IF NOT EXISTS contact_activities (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id  UUID REFERENCES contacts(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES users(id),
+  type        TEXT NOT NULL,
+  description TEXT,
+  deal_id     UUID REFERENCES deals(id),
+  metadata    JSONB DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ca_contact_id ON contact_activities(contact_id);
+CREATE INDEX IF NOT EXISTS idx_ca_created_at ON contact_activities(created_at DESC);
 """
 
 SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -1114,6 +1155,8 @@ async def process_and_save_email(
         # Auto-create / update contact for every saved deal (not stage-gated)
         if user_id:
             await sync_contact(user_id, saved, is_new_deal=True)
+            await _log_deal_activity(user_id, saved, 'deal_received',
+                f"New deal received: {saved.get('company_name') or saved.get('sender_name', 'Unknown')}")
         return saved
     else:
         logger.error(f'[PROCESS] FAILED to save: "{subject}" from {sender_email}')
@@ -1514,74 +1557,6 @@ async def send_gmail_message(
 async def root():
     return {"message": "VC Deal Flow API", "status": "healthy"}
 
-# ── Diagnostic test endpoints ──────────────────────────────────────────────────
-@api_router.get("/test-gmail")
-async def test_gmail(current_user: dict = Depends(get_current_user)):
-    """Diagnostic: make a raw Gmail API call and return the 5 most recent messages."""
-    uid = current_user['user_id']
-    users = await sb_select('users', {'id': f'eq.{uid}'})
-    if not users:
-        raise HTTPException(status_code=404, detail="User not found")
-    user = users[0]
-    if not user.get('refresh_token'):
-        return {"error": "No refresh token stored — user must re-authenticate", "has_access_token": bool(user.get('access_token')), "has_refresh_token": False}
-    try:
-        gmail, creds = await asyncio.to_thread(build_gmail_service, user)
-        # Force refresh
-        if creds.refresh_token:
-            await asyncio.to_thread(creds.refresh, GoogleRequest())
-        resp = await asyncio.to_thread(
-            lambda: gmail.users().messages().list(userId='me', maxResults=5, labelIds=['INBOX']).execute()
-        )
-        messages = resp.get('messages', [])
-        details = []
-        for ref in messages:
-            msg = await asyncio.to_thread(
-                lambda mid=ref['id']: gmail.users().messages().get(userId='me', id=mid, format='metadata', metadataHeaders=['Subject', 'From', 'Date']).execute()
-            )
-            h = {hdr['name']: hdr['value'] for hdr in msg.get('payload', {}).get('headers', [])}
-            details.append({'id': ref['id'], 'threadId': msg.get('threadId'), 'subject': h.get('Subject', ''), 'from': h.get('From', ''), 'date': h.get('Date', '')})
-        return {"ok": True, "message_count": len(messages), "messages": details, "user_email": user.get('email'), "token_expiry": user.get('token_expiry')}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "user_email": user.get('email')}
-
-@api_router.post("/test-insert")
-async def test_insert(current_user: dict = Depends(get_current_user)):
-    """Diagnostic: insert a hardcoded test deal row and return success/error."""
-    uid = current_user['user_id']
-    now = datetime.now(timezone.utc).isoformat()
-    test_deal = {
-        'id': str(uuid.uuid4()),
-        'user_id': uid,
-        'thread_id': f'test-thread-{now}',
-        'message_id': f'test-msg-{now}',
-        'received_date': now,
-        'sender_name': 'Test Sender',
-        'sender_email': 'test@example.com',
-        'subject': f'[TEST INSERT] Diagnostic deal {now[:19]}',
-        'body_preview': 'This is a test deal inserted by the /api/test-insert endpoint.',
-        'gmail_thread_link': '#',
-        'category': 'Founder pitch',
-        'warm_or_cold': 'Cold',
-        'summary': 'Test deal inserted for diagnostic purposes.',
-        'relevance_score': 7,
-        'urgency_score': 5,
-        'next_action': 'Review now',
-        'confidence': 'High',
-        'tags': ['test'],
-        'status': 'New',
-        'deal_stage': 'Inbound',
-        'deck_attached': False,
-        'traction_mentioned': False,
-        'processed_at': now,
-        'created_at': now,
-    }
-    saved = await sb_insert('deals', test_deal)
-    if saved:
-        return {"ok": True, "deal_id": saved.get('id', test_deal['id']), "subject": test_deal['subject'], "message": "Test row inserted successfully — it should now appear in /api/deals"}
-    else:
-        return {"ok": False, "message": "Supabase insert failed — check backend logs for error details"}
-
 # Auth
 @api_router.get("/auth/google")
 async def auth_google():
@@ -1826,6 +1801,8 @@ async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get
         deal = rows[0]
         contact_result = await sync_contact(uid, deal)
         logger.info(f'[Contact Trigger] PATCH /deals/{deal_id[:8]} result={contact_result}')
+        if 'follow_up_date' in update and update.get('follow_up_date'):
+            await _log_deal_activity(uid, deal, 'follow_up_set', f"Follow-up set for {update['follow_up_date']}")
     else:
         logger.warning(f'[Contact Trigger] Could not re-fetch deal {deal_id} after update')
 
@@ -1889,6 +1866,7 @@ async def send_deal_action(deal_id: str, data: dict, current_user: dict = Depend
         if updated_deals:
             await sync_contact(uid, updated_deals[0], is_new_deal=False)
 
+    await _log_deal_activity(uid, deal, 'email_sent', f"Email sent ({action_type.replace('_', ' ')})")
     return {"message": "Email sent", "stage": new_stage}
 
 # Sync
@@ -2005,29 +1983,16 @@ async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_u
     return {'synced': synced, 'created': created, 'updated': updated, 'skipped': skipped, 'failed': failed, 'user_id': uid}
 
 
-@api_router.get("/debug/contacts-raw")
-async def debug_contacts_raw(current_user: dict = Depends(get_current_user)):
-    """Debug endpoint: show all contacts and pipeline deals for current user."""
-    uid = current_user['user_id']
-    all_contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
-    all_pipeline = await sb_select('deals', {
-        'user_id': f'eq.{uid}',
-        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
-    })
-    pipeline_with_email = [d for d in (all_pipeline or []) if d.get('sender_email')]
-    return {
-        'contacts_count': len(all_contacts) if all_contacts else 0,
-        'contacts': all_contacts or [],
-        'pipeline_deals_count': len(all_pipeline) if all_pipeline else 0,
-        'pipeline_deals_with_email': pipeline_with_email,
-    }
-
-
 @api_router.patch("/contacts/{contact_id}")
 async def update_contact(contact_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
-    data['updated_at'] = datetime.now(timezone.utc).isoformat()
-    await sb_update('contacts', data, {'id': f'eq.{contact_id}', 'user_id': f'eq.{uid}'})
+    _allowed = {'notes', 'tags', 'contact_status', 'name', 'email', 'company', 'role',
+                'sector', 'stage', 'geography', 'intro_source', 'warm_or_cold', 'relevance_score'}
+    update = {k: v for k, v in data.items() if k in _allowed}
+    update['updated_at'] = datetime.now(timezone.utc).isoformat()
+    await sb_update('contacts', update, {'id': f'eq.{contact_id}', 'user_id': f'eq.{uid}'})
+    if 'notes' in update and update['notes'] is not None:
+        await create_contact_activity(contact_id, uid, 'note_saved', 'Note updated')
     return {'status': 'updated'}
 
 
@@ -2081,6 +2046,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         'anthropic_key_set': bool(ANTHROPIC_API_KEY),
         'google_client_id_set': bool(GOOGLE_CLIENT_ID),
         'fund_settings': u.get('fund_settings') or {},
+        'weekly_digest_enabled': u.get('weekly_digest_enabled', True),
     }
 
 # Fund settings
@@ -2111,133 +2077,6 @@ async def mark_onboarding_complete(current_user: dict = Depends(get_current_user
 async def db_status():
     exists = await sb_table_exists('users')
     return {"tables_ready": exists}
-
-TEST_EMAILS = [
-    {"id": 1, "name": "Strong warm intro", "from": "sarah@topfund.vc", "name_str": "Sarah Partner",
-     "subject": "Intro: Marcus Chen / VaultAI",
-     "body": "Hi, wanted to connect you with Marcus who is building VaultAI. Former Google PM, 2nd time founder, prior exit to Salesforce. $45k MRR growing 40% MoM. Raising $3M seed. I've known Marcus for 5 years and think very highly of him.",
-     "expected": {"category": "Warm intro", "relevance_score_min": 9, "warm_or_cold": "Warm", "traction_mentioned": True}},
-    {"id": 2, "name": "Cold pitch with traction", "from": "anika@greenloop.io", "name_str": "Anika Patel",
-     "subject": "GreenLoop — B2B climate infrastructure, raising seed",
-     "body": "Hi, I'm building GreenLoop, a B2B marketplace connecting industrial waste producers with circular economy processors. Former Google PM and Stanford Climate Fellow. 15 paying customers, $20k MRR, growing 3x quarter over quarter. Raising $1.5M pre-seed. Happy to send our deck.",
-     "expected": {"category": "Founder pitch", "relevance_score_min": 7, "warm_or_cold": "Cold", "traction_mentioned": True}},
-    {"id": 3, "name": "Weak cold pitch no traction", "from": "idea@gmail.com", "name_str": "Idea Guy",
-     "subject": "Revolutionary app idea looking for funding",
-     "body": "Hi I have an amazing idea for an app that will completely disrupt the food delivery space. I need $500k to build it. Please let me know if you are interested in being my investor.",
-     "expected": {"category": "Founder pitch", "relevance_score_max": 3, "warm_or_cold": "Cold", "traction_mentioned": False}},
-    {"id": 4, "name": "Service vendor", "from": "sales@accountingfirm.com", "name_str": "Sales Team",
-     "subject": "Accounting services for your portfolio companies",
-     "body": "Hi, we provide accounting and tax services specifically for VC-backed startups. We work with over 200 portfolio companies across top tier funds. Book a free 15 minute consultation today.",
-     "expected": {"category": "Service provider / vendor", "relevance_score_max": 2}},
-    {"id": 5, "name": "LP communication", "from": "david@familyoffice.com", "name_str": "David Kim",
-     "subject": "Re: Fund III Q2 update questions",
-     "body": "Hi, following up on the Q2 update you sent last month. Had a few questions about the portfolio performance metrics and wanted to discuss a potential commitment to Fund IV.",
-     "expected": {"category": "LP / investor relations", "relevance_score_min": 6, "warm_or_cold": "Warm"}},
-    {"id": 6, "name": "Portfolio update", "from": "ceo@portfolioco.com", "name_str": "CEO Portfolioco",
-     "subject": "Acme Co Monthly Update March",
-     "body": "Hi team, sharing our March update. ARR hit $1.2M, up 22% MoM. Hired 3 engineers this month. Closing our Series A in June, 2 term sheets already in hand. Would love introductions to healthcare focused growth funds.",
-     "expected": {"category": "Portfolio company update", "traction_mentioned": True}},
-    {"id": 7, "name": "Recruiter", "from": "jordan@talentfirm.com", "name_str": "Jordan Recruiter",
-     "subject": "Top ML engineers available for your portfolio companies",
-     "body": "Hi, I have 12 senior ML engineers available for immediate placement at Series A to C companies. All ex-FAANG. No placement fee for your first hire this quarter.",
-     "expected": {"category": "Recruiter / hiring", "relevance_score_max": 2}},
-    {"id": 8, "name": "Event invitation", "from": "events@techsummit.com", "name_str": "TechSummit Events",
-     "subject": "Speaking invitation TechSummit 2026",
-     "body": "We would love to invite you to speak on an early stage investing panel at TechSummit 2026 in San Francisco on June 15th. 500 attendees expected including founders and investors from across the ecosystem.",
-     "expected": {"category": "Event invitation", "relevance_score_max": 4}},
-    {"id": 9, "name": "Student request", "from": "student@stanford.edu", "name_str": "Stanford Student",
-     "subject": "Coffee chat request learning about venture capital",
-     "body": "Hi, I am a junior at Stanford studying computer science and I am very interested in breaking into venture capital after graduation. Would you be open to a 20 minute Zoom call to share your experience and any advice you might have?",
-     "expected": {"category": "Student / informational request", "relevance_score_max": 3}},
-    {"id": 10, "name": "Co-investor", "from": "partner@angelnetwork.com", "name_str": "Angel Partner",
-     "subject": "Co-invest opportunity climate tech seed round",
-     "body": "Hi, we have a deal we think you would be a great fit to co-invest on. Climate infrastructure company, $8M seed round, we are leading with $3M and looking for $1M to $2M from strategic co-investors. Strong team with 2 prior climate exits. Happy to send the deck and set up a call this week.",
-     "expected": {"category": "Co-investor / syndicate", "relevance_score_min": 7, "deck_attached": True}},
-]
-
-@api_router.get("/test-extraction")
-async def test_extraction(current_user: dict = Depends(get_current_user)):
-    """Run all 10 benchmark emails through Claude and return pass/fail results."""
-    results = []
-    for t in TEST_EMAILS:
-        try:
-            ai = await analyze_email(
-                sender_name=t["name_str"], sender_email=t["from"],
-                subject=t["subject"], body=t["body"],
-            )
-            expected = t["expected"]
-            checks = {}
-            if "category" in expected:
-                checks["category"] = {"pass": ai.get("category") == expected["category"],
-                                       "expected": expected["category"], "actual": ai.get("category")}
-            if "relevance_score_min" in expected:
-                checks["relevance_score_min"] = {"pass": (ai.get("relevance_score") or 0) >= expected["relevance_score_min"],
-                                                   "expected": f">= {expected['relevance_score_min']}", "actual": ai.get("relevance_score")}
-            if "relevance_score_max" in expected:
-                checks["relevance_score_max"] = {"pass": (ai.get("relevance_score") or 99) <= expected["relevance_score_max"],
-                                                   "expected": f"<= {expected['relevance_score_max']}", "actual": ai.get("relevance_score")}
-            if "warm_or_cold" in expected:
-                checks["warm_or_cold"] = {"pass": ai.get("warm_or_cold") == expected["warm_or_cold"],
-                                           "expected": expected["warm_or_cold"], "actual": ai.get("warm_or_cold")}
-            if "traction_mentioned" in expected:
-                checks["traction_mentioned"] = {"pass": ai.get("traction_mentioned") == expected["traction_mentioned"],
-                                                  "expected": expected["traction_mentioned"], "actual": ai.get("traction_mentioned")}
-            if "deck_attached" in expected:
-                checks["deck_attached"] = {"pass": ai.get("deck_attached") == expected["deck_attached"],
-                                             "expected": expected["deck_attached"], "actual": ai.get("deck_attached")}
-            all_pass = all(c["pass"] for c in checks.values())
-            results.append({
-                "test_id": t["id"], "name": t["name"], "overall_pass": all_pass,
-                "checks": checks, "ai_output": ai,
-            })
-        except Exception as e:
-            results.append({"test_id": t["id"], "name": t["name"], "overall_pass": False,
-                             "error": str(e), "checks": {}, "ai_output": {}})
-    passed = sum(1 for r in results if r["overall_pass"])
-    return {"passed": passed, "total": len(results), "pass_rate": f"{passed}/{len(results)}", "results": results}
-
-
-# ── Gate Test Cases ─────────────────────────────────────────────────────────────
-GATE_TESTS = [
-    {"id":1,"name":"Calendar invite (filter)","subject":"Invitation: Naveen-Nirav @ 9:30am","from_name":"Colleague","from_email":"colleague@samefund.vc","body":"This is an automated calendar invitation for your 9:30am meeting.","expected":False},
-    {"id":2,"name":"Meeting cancellation (filter)","subject":"Canceled: Naveen & Matt","from_name":"Matt","from_email":"matt@colleague.com","body":"The meeting has been canceled. You can ignore this invitation.","expected":False},
-    {"id":3,"name":"Internal check-in (filter)","subject":"Re: Check in","from_name":"Kavisha","from_email":"kavisha@colleague.com","body":"Hey can we sync tomorrow at 3pm? Just want to catch up on the week.","expected":False},
-    {"id":4,"name":"Warm intro to founder (pass)","subject":"Intro: Marcus Chen / VaultAI","from_name":"Priya","from_email":"priya@topfund.vc","body":"Hi, I wanted to introduce you to Marcus who is building VaultAI. He is raising a $3M seed round.","expected":True},
-    {"id":5,"name":"Founder pitch (pass)","subject":"Raising $1.5M pre-seed — GreenLoop","from_name":"Anika","from_email":"anika@greenloop.io","body":"Hi I am building GreenLoop and would love to connect about our pre-seed round.","expected":True},
-    {"id":6,"name":"LP investor relations (pass)","subject":"Q2 LP Update questions","from_name":"David","from_email":"david@familyoffice.com","body":"Following up on the Q2 update. Had questions about portfolio performance and potential commitment to Fund IV.","expected":True},
-    {"id":7,"name":"Unpolished student founder (pass)","subject":"hey I heard you do VC stuff","from_name":"Random Student","from_email":"randomstudent@university.edu","body":"hey I heard you invest in startups, I'm building something with my friend and we need like $50k to get started, is that something you do?","expected":True},
-    {"id":8,"name":"Demo day invite (pass)","subject":"Demo Day invitations — Spring Cohort","from_name":"Programs","from_email":"programs@accelerator.org","body":"You are invited to our spring demo day featuring 12 startups from our latest cohort.","expected":True},
-    {"id":9,"name":"Co-invest opportunity (pass)","subject":"Co-invest opportunity — climate tech","from_name":"Partner","from_email":"partner@angelgroup.com","body":"We have a deal we think you'd want to co-invest on. Climate infrastructure, $8M seed, strong team.","expected":True},
-    {"id":10,"name":"Fund application (pass)","subject":"Application: TechStartup for YourFund","from_name":"Founder","from_email":"founder@techstartup.io","body":"Hi, applying to your fund. We are building an AI tool for healthcare, currently pre-seed, looking for $500k.","expected":True},
-    {"id":11,"name":"Internal with deal reference (pass)","subject":"Re: Deep Tech Category Taxonomy","from_name":"Nirav","from_email":"nirav@futurefrontier.vc","body":"I think we should add quantum computing as a category. Also wanted to flag that a founder in that space reached out yesterday — should we add them to the pipeline?","expected":True},
-    {"id":12,"name":"Portfolio recruiter (pass)","subject":"Recruiting for portfolio company","from_name":"Recruiter","from_email":"recruiter@talentfirm.com","body":"Hi, I specialize in placing engineers at VC-backed startups. I work with several funds to help their portfolio companies hire.","expected":True},
-]
-
-@api_router.get("/test-gate")
-async def test_gate_endpoint(current_user: dict = Depends(get_current_user)):
-    """Run all 12 gate tests and return pass/fail results."""
-    results = []
-    for t in GATE_TESTS:
-        try:
-            gate = await gate_email(t['from_name'], t['from_email'], t['subject'], t['body'])
-            actual = gate['belongs']
-            passed = actual == t['expected']
-            results.append({
-                'id': t['id'], 'name': t['name'],
-                'expected': t['expected'], 'actual': actual,
-                'pass': passed, 'reason': gate['reason'],
-                'subject': t['subject'],
-            })
-        except Exception as e:
-            results.append({
-                'id': t['id'], 'name': t['name'],
-                'expected': t['expected'], 'actual': None,
-                'pass': False, 'reason': f'error: {e}',
-                'subject': t['subject'],
-            })
-    passed_count = sum(1 for r in results if r['pass'])
-    return {'passed': passed_count, 'total': len(results), 'results': results}
-
 
 @api_router.get("/gated-emails")
 async def get_gated_emails(current_user: dict = Depends(get_current_user)):
@@ -2646,92 +2485,11 @@ async def update_deal_stage(deal_id: str, data: dict, current_user: dict = Depen
     if deal_rows:
         contact_result = await sync_contact(uid, deal_rows[0])
         logger.info(f'[STAGE] Contact result: {contact_result}')
+        await _log_deal_activity(uid, deal_rows[0], 'stage_change', f"Stage moved to {new_stage}")
     else:
         logger.error(f'[STAGE] Deal {deal_id} not found after update')
 
     return {"ok": True, "stage": new_stage, "contact": contact_result}
-
-
-@api_router.post("/debug/test-contact")
-async def test_contact_creation(current_user: dict = Depends(get_current_user)):
-    """Debug endpoint: create a synthetic test contact for the current user."""
-    uid = current_user['user_id']
-    test_deal = {
-        'id': f'test-{uid[:8]}',
-        'user_id': uid,
-        'sender_email': f'testfounder+{uid[:6]}@testcompany.com',
-        'sender_name': 'Test Founder',
-        'company_name': 'Test Company',
-        'founder_role': 'CEO',
-        'sector': 'SaaS',
-        'relevance_score': 8,
-        'tags': ['test'],
-        'received_date': datetime.now(timezone.utc).isoformat(),
-    }
-    logger.info(f'[DEBUG] Testing contact creation for user {uid[:8]}')
-    result = await sync_contact(uid, test_deal)
-    logger.info(f'[DEBUG] Result: {result}')
-    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
-    return {
-        'result': result,
-        'total_contacts_for_user': len(contacts) if contacts else 0,
-        'contacts_sample': (contacts or [])[:3],
-    }
-
-
-
-
-@api_router.get("/debug/user-check")
-async def debug_user_check(current_user: dict = Depends(get_current_user)):
-    """Diagnose user_id mismatch: compare JWT uid vs DB uid, show contact counts per uid."""
-    uid = current_user['user_id']
-
-    # Verify user exists in DB
-    db_users = await sb_select('users', {'id': f'eq.{uid}'})
-    db_user = db_users[0] if db_users else None
-
-    # Contacts for this JWT user_id
-    contacts = await sb_select('contacts', {'user_id': f'eq.{uid}'})
-
-    # ALL contacts in the table (to reveal mismatch)
-    all_contacts = await sb_select('contacts', {})
-
-    # Deals in contact-stages for this user
-    pipeline_deals = await sb_select('deals', {
-        'user_id': f'eq.{uid}',
-        'deal_stage': 'in.(First Look,In Conversation,Due Diligence,Closed,Watch List)',
-    })
-
-    db_user_id = db_user.get('id') if db_user else None
-    ids_match = uid == db_user_id
-
-    unique_contact_uids = list(set(c.get('user_id') for c in (all_contacts or [])))
-
-    logger.info(
-        f'[debug/user-check] jwt_uid={uid[:8]} db_uid={str(db_user_id)[:8] if db_user_id else "NONE"} '
-        f'ids_match={ids_match} own_contacts={len(contacts) if contacts else 0} '
-        f'total_contacts={len(all_contacts) if all_contacts else 0}'
-    )
-
-    return {
-        'jwt_user_id': uid,
-        'db_user_found': db_user is not None,
-        'db_user_id': db_user_id,
-        'ids_match': ids_match,
-        'contacts_for_this_user': len(contacts) if contacts else 0,
-        'total_contacts_in_table': len(all_contacts) if all_contacts else 0,
-        'all_contact_user_ids': unique_contact_uids,
-        'pipeline_deals_count': len(pipeline_deals) if pipeline_deals else 0,
-        'pipeline_deals_sample': [
-            {
-                'id': d['id'][:8],
-                'stage': d.get('deal_stage'),
-                'email': d.get('sender_email'),
-                'user_id': (d.get('user_id') or '')[:8],
-            }
-            for d in (pipeline_deals or [])[:5]
-        ],
-    }
 
 
 @api_router.post("/deals/{deal_id}/assign")
@@ -2926,6 +2684,118 @@ async def mark_notification_read(notif_id: str, current_user: dict = Depends(get
     return {"ok": True}
 
 
+# ── Weekly digest ───────────────────────────────────────────────────────────────
+
+async def generate_weekly_digest(user_id: str, user: dict) -> str:
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    today_str = now.date().isoformat()
+
+    new_deals = await sb_select('deals', {
+        'user_id': f'eq.{user_id}',
+        'created_at': f'gte.{week_ago.isoformat()}',
+        'status': 'neq.deleted',
+    }) or []
+
+    fund_ctx = await get_fund_settings(user_id)
+    fund_name = fund_ctx.get('fund_name', 'your fund')
+    name = user.get('name', 'there')
+
+    if not new_deals:
+        return (f"Hi {name},\n\nNo new deals came in this week for {fund_name}. "
+                f"Your pipeline is quiet — a good time to follow up on existing conversations.\n\nHave a great week!\n\n— funnl")
+
+    scores = [d.get('relevance_score') or 0 for d in new_deals]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+    high_count = sum(1 for s in scores if s >= 7)
+    top3 = sorted(new_deals, key=lambda d: d.get('relevance_score') or 0, reverse=True)[:3]
+    top3_lines = '\n'.join(
+        f"{i+1}. {d.get('company_name') or d.get('sender_name', 'Unknown')} — "
+        f"{d.get('relevance_score') or 0}/10 — {(d.get('summary') or 'No summary')[:100]}"
+        for i, d in enumerate(top3)
+    )
+
+    all_deals = await sb_select('deals', {'user_id': f'eq.{user_id}', 'status': 'neq.deleted'}) or []
+    overdue = [d for d in all_deals if d.get('follow_up_date') and str(d['follow_up_date'])[:10] <= today_str]
+    overdue_names = ', '.join(d.get('company_name') or d.get('sender_name', 'Unknown') for d in overdue[:5]) or 'None'
+    watchlist_overdue = [d for d in all_deals if d.get('deal_stage') == 'Watch List' and d.get('watchlist_revisit_date') and str(d['watchlist_revisit_date'])[:10] <= today_str]
+    watchlist_names = ', '.join(d.get('company_name') or d.get('sender_name', 'Unknown') for d in watchlist_overdue[:5]) or 'None'
+    two_weeks_ago = (now - timedelta(days=14)).isoformat()
+    stuck = [d for d in all_deals if d.get('deal_stage') == 'First Look' and (d.get('created_at') or '') <= two_weeks_ago]
+    stuck_names = ', '.join(d.get('company_name') or d.get('sender_name', 'Unknown') for d in stuck[:5]) or 'None'
+
+    date_range = f"{week_ago.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"
+    prompt = f"""Write a weekly deal flow digest for {fund_name}.
+
+This week ({date_range}):
+- New deals received: {len(new_deals)}
+- Average relevance score: {avg_score}/10
+- High-quality deals (score ≥ 7): {high_count}
+
+Top deals to review:
+{top3_lines}
+
+Items needing attention:
+- Overdue follow-ups: {overdue_names}
+- Watch List past revisit date: {watchlist_names}
+- Stuck in First Look >14 days: {stuck_names}
+
+Write a warm, brief Monday morning digest. Mention top deals by company name. Call out any overdue items directly. End with one sentence on what to focus on this week. Friendly but professional. Under 200 words. No bullet lists — use short paragraphs."""
+
+    response = await claude_client.messages.create(
+        model='claude-sonnet-4-20250514',
+        max_tokens=400,
+        system='You are writing a friendly weekly deal flow digest for a VC fund manager. Be concise, specific, and actionable.',
+        messages=[{'role': 'user', 'content': prompt}],
+    )
+    return f"Hi {name},\n\n{response.content[0].text}\n\n— funnl"
+
+
+async def send_weekly_digest():
+    """Scheduled job: send weekly digest email to all eligible users."""
+    logger.info('[DIGEST] Starting weekly digest send')
+    users = await sb_select('users', {'refresh_token': 'not.is.null', 'weekly_digest_enabled': 'neq.false'}) or []
+    sent = 0
+    for user in users:
+        try:
+            body = await generate_weekly_digest(user['id'], user)
+            success, _ = await send_gmail_message(
+                user_id=user['id'],
+                to_email=user['email'],
+                to_name=user.get('name', ''),
+                subject='Your weekly deal flow digest',
+                body=body,
+            )
+            if success:
+                sent += 1
+        except Exception as e:
+            logger.error(f'[DIGEST] Failed for user {user["id"][:8]}: {e}')
+    logger.info(f'[DIGEST] Sent {sent}/{len(users)} digests')
+
+
+@api_router.post("/digest/toggle")
+async def toggle_digest(data: dict, current_user: dict = Depends(get_current_user)):
+    enabled = bool(data.get('enabled', True))
+    await sb_update('users', {'weekly_digest_enabled': enabled}, {'id': f'eq.{current_user["user_id"]}'})
+    return {'weekly_digest_enabled': enabled}
+
+
+# ── Contact activities ────────────────────────────────────────────────────────────
+
+@api_router.get("/contacts/{contact_id}/activities")
+async def get_contact_activities(contact_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    contacts = await sb_select('contacts', {'id': f'eq.{contact_id}', 'user_id': f'eq.{uid}'})
+    if not contacts:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    activities = await sb_select('contact_activities', {
+        'contact_id': f'eq.{contact_id}',
+        'order': 'created_at.desc',
+        'limit': '10',
+    })
+    return activities or []
+
+
 # ── Billing ─────────────────────────────────────────────────────────────────────
 
 @api_router.get("/billing/status")
@@ -3094,6 +2964,8 @@ app.add_middleware(
 async def on_startup():
     await init_database()
     scheduler.add_job(sync_all_users, 'interval', minutes=15, id='bg_sync', replace_existing=True)
+    scheduler.add_job(send_weekly_digest, 'cron', day_of_week='mon', hour=9, minute=0,
+                      timezone='UTC', id='weekly_digest', replace_existing=True)
     scheduler.start()
     logger.info("VC Deal Flow API started")
 

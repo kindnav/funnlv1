@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, CreditCard,
+  ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, CreditCard, Bell,
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal } from '../lib/api';
+import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal, toggleWeeklyDigest } from '../lib/api';
 import { TeamSetup } from '../components/TeamSetup';
 import { AIGateSection } from '../components/settings/AIGateSection';
 import { toast } from '../components/ui/sonner';
@@ -23,6 +23,10 @@ export default function Settings({ user, onLogout }) {
   const [billingStatus, setBillingStatus] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);
 
+  // Weekly digest
+  const [digestEnabled, setDigestEnabled] = useState(true);
+  const [digestSaving, setDigestSaving] = useState(false);
+
   // Gated emails
   const [gatedEmails, setGatedEmails] = useState([]);
   const [gatedLoading, setGatedLoading] = useState(false);
@@ -35,7 +39,10 @@ export default function Settings({ user, onLogout }) {
   // Initial data load — runs once on mount. All called functions are stable API imports.
   useEffect(() => {
     Promise.all([getSettings(), getMyFund()]).then(([s, fi]) => {
-      if (s) setSettings(s);
+      if (s) {
+        setSettings(s);
+        setDigestEnabled(s.weekly_digest_enabled !== false);
+      }
       if (fi && fi.fund) setFundInfo(fi);
       setFundLoading(false);
     }).finally(() => setLoading(false));
@@ -286,6 +293,47 @@ export default function Settings({ user, onLogout }) {
                 </a>
               </div>
             )}
+          </div>
+
+          {/* ── Weekly Digest ── */}
+          <div className={cardCls}>
+            <div className="flex items-center gap-2 mb-1">
+              <Bell size={15} className="text-[#7c6dfa]" />
+              <h2 className="text-white font-semibold text-sm">Weekly Digest</h2>
+            </div>
+            <p className="text-[rgba(255,255,255,0.35)] text-xs mb-4">
+              Receive a Monday morning summary of your deal flow activity sent to your connected Gmail inbox.
+            </p>
+            <div className="flex items-center justify-between rounded-lg px-4 py-3"
+              style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div>
+                <p className="text-[rgba(255,255,255,0.7)] text-sm">Monday digest email</p>
+                <p className="text-[rgba(255,255,255,0.3)] text-xs mt-0.5">Sent every Monday at 9am UTC</p>
+              </div>
+              <button
+                disabled={digestSaving}
+                onClick={async () => {
+                  const next = !digestEnabled;
+                  setDigestSaving(true);
+                  try {
+                    await toggleWeeklyDigest(next);
+                    setDigestEnabled(next);
+                  } catch {
+                    toast.error('Could not save preference');
+                  } finally {
+                    setDigestSaving(false);
+                  }
+                }}
+                className="relative w-10 h-5 rounded-full transition-all duration-200 focus:outline-none disabled:opacity-50"
+                style={{ background: digestEnabled ? '#7c6dfa' : 'rgba(255,255,255,0.12)' }}
+                title={digestEnabled ? 'Disable digest' : 'Enable digest'}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200"
+                  style={{ transform: digestEnabled ? 'translateX(20px)' : 'translateX(0)' }}
+                />
+              </button>
+            </div>
           </div>
 
           {/* ── AI Configuration ── */}
