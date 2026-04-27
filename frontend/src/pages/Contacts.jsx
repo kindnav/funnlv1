@@ -4,7 +4,7 @@ import {
   Calendar, Star, ChevronRight, X, Plus, Tag, Globe,
   Inbox, ArrowRight, FileText, Send,
 } from 'lucide-react';
-import { getContacts, getContactDeals, updateContact, rebuildContacts, getContactActivities } from '../lib/api';
+import { getContacts, getFundContacts, getContactDeals, updateContact, rebuildContacts, getContactActivities, getMyFund } from '../lib/api';
 import { toast } from '../components/ui/sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -106,6 +106,12 @@ export default function Contacts({ user, onLogout }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
 
+  // Fund contacts view
+  const [fundInfo, setFundInfo] = useState(null);
+  const [contactView, setContactView] = useState('my-contacts'); // 'my-contacts' | 'fund-contacts'
+  const [fundContacts, setFundContacts] = useState([]);
+  const [fundContactsLoading, setFundContactsLoading] = useState(false);
+
   const [linkedDeals, setLinkedDeals] = useState([]);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [notes, setNotes] = useState('');
@@ -120,9 +126,13 @@ export default function Contacts({ user, onLogout }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getContacts();
+      const [data, fi] = await Promise.all([
+        getContacts(),
+        getMyFund().catch(() => null),
+      ]);
       if (data === null) return;
       setContacts(data || []);
+      if (fi?.fund) setFundInfo(fi);
     } catch {
       toast.error('Failed to load contacts');
     } finally {
@@ -131,6 +141,21 @@ export default function Contacts({ user, onLogout }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleSwitchToFundContacts = useCallback(async () => {
+    setContactView('fund-contacts');
+    setSelected(null);
+    if (fundContacts.length > 0) return; // already loaded
+    setFundContactsLoading(true);
+    try {
+      const data = await getFundContacts();
+      setFundContacts(data || []);
+    } catch {
+      toast.error('Failed to load fund contacts');
+    } finally {
+      setFundContactsLoading(false);
+    }
+  }, [fundContacts.length]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -196,7 +221,10 @@ export default function Contacts({ user, onLogout }) {
   };
 
   /* ── Derived data ─────────────────────────────────────────────────────── */
-  const filtered = contacts.filter(c => {
+  const activeContacts = contactView === 'fund-contacts' ? fundContacts : contacts;
+  const activeLoading  = contactView === 'fund-contacts' ? fundContactsLoading : loading;
+
+  const filtered = activeContacts.filter(c => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       (c.name || '').toLowerCase().includes(q) ||
@@ -206,12 +234,12 @@ export default function Contacts({ user, onLogout }) {
     return matchSearch && matchFilter;
   });
 
-  const pipelineCount = contacts.filter(c =>
+  const pipelineCount = activeContacts.filter(c =>
     ['First Look', 'In Conversation', 'Due Diligence'].includes(c.contact_status)
   ).length;
 
-  const avgScore = contacts.length
-    ? Math.round(contacts.reduce((s, c) => s + (normScore(c.relevance_score) || 0), 0) / contacts.length)
+  const avgScore = activeContacts.length
+    ? Math.round(activeContacts.reduce((s, c) => s + (normScore(c.relevance_score) || 0), 0) / activeContacts.length)
     : 0;
 
   /* ── Render ───────────────────────────────────────────────────────────── */
@@ -228,10 +256,39 @@ export default function Contacts({ user, onLogout }) {
       >
         <span className="font-semibold text-white" style={{ fontSize: 16 }}>Contacts</span>
 
+        {/* My Contacts / Fund Contacts toggle — only shown when user is in a fund */}
+        {fundInfo?.fund && (
+          <div
+            className="flex items-center rounded-lg p-0.5"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            {[
+              { id: 'my-contacts',   label: 'My Contacts' },
+              { id: 'fund-contacts', label: 'Fund Contacts' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                data-testid={`contact-view-${tab.id}`}
+                onClick={() => {
+                  if (tab.id === 'fund-contacts') handleSwitchToFundContacts();
+                  else { setContactView('my-contacts'); setSelected(null); }
+                }}
+                className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                style={contactView === tab.id
+                  ? { background: '#7c6dfa', color: 'white', boxShadow: '0 0 8px rgba(124,109,250,0.3)' }
+                  : { color: 'rgba(255,255,255,0.4)', background: 'transparent' }
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Metric chips */}
         <div className="hidden sm:flex items-center gap-3 ml-2">
           {[
-            { label: 'Total', value: contacts.length, color: 'rgba(255,255,255,0.7)' },
+            { label: 'Total', value: activeContacts.length, color: 'rgba(255,255,255,0.7)' },
             { label: 'In Pipeline', value: pipelineCount, color: '#7c6dfa' },
             { label: 'Avg Score', value: avgScore || '—', color: scoreColor(avgScore) },
           ].map(({ label, value, color }) => (
@@ -248,18 +305,22 @@ export default function Contacts({ user, onLogout }) {
           ))}
         </div>
 
-        <button
-          data-testid="rebuild-contacts-button"
-          onClick={() => handleRebuild(false)}
-          disabled={rebuilding}
-          className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
-          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
-          onMouseEnter={e => !rebuilding && (e.currentTarget.style.background = 'rgba(255,255,255,0.09)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-        >
-          <RefreshCw size={12} className={rebuilding ? 'animate-spin' : ''} />
-          {rebuilding ? 'Rebuilding…' : 'Rebuild'}
-        </button>
+        {/* Rebuild button — hidden in fund-contacts view (only own contacts can be rebuilt) */}
+        {contactView !== 'fund-contacts' && (
+          <button
+            data-testid="rebuild-contacts-button"
+            onClick={() => handleRebuild(false)}
+            disabled={rebuilding}
+            className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+            onMouseEnter={e => !rebuilding && (e.currentTarget.style.background = 'rgba(255,255,255,0.09)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+          >
+            <RefreshCw size={12} className={rebuilding ? 'animate-spin' : ''} />
+            {rebuilding ? 'Rebuilding…' : 'Rebuild'}
+          </button>
+        )}
+        {contactView === 'fund-contacts' && <div className="ml-auto" />}
       </div>
 
       {/* ── Split body ─────────────────────────────────────────────────── */}
@@ -315,7 +376,7 @@ export default function Contacts({ user, onLogout }) {
 
           {/* Contact list */}
           <div className="flex-1 overflow-y-auto">
-            {loading ? (
+            {activeLoading ? (
               <div className="flex items-center justify-center h-32">
                 <RefreshCw size={16} className="animate-spin" style={{ color: '#7c6dfa' }} />
               </div>
@@ -323,9 +384,9 @@ export default function Contacts({ user, onLogout }) {
               <div className="flex flex-col items-center justify-center h-48 px-6 text-center">
                 <Users size={28} style={{ color: 'rgba(255,255,255,0.12)' }} className="mb-3" />
                 <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                  {contacts.length === 0 ? 'No contacts yet' : 'No matches found'}
+                  {activeContacts.length === 0 ? 'No contacts yet' : 'No matches found'}
                 </p>
-                {contacts.length === 0 && (
+                {activeContacts.length === 0 && contactView === 'my-contacts' && (
                   <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>
                     Rebuild to sync from your deals
                   </p>
@@ -335,9 +396,14 @@ export default function Contacts({ user, onLogout }) {
               filtered.map(c => {
                 const [bgA, fgA] = avatarColor(c.email || c.name);
                 const isActive = selected?.id === c.id;
+                // Owner initials shown in fund-contacts view for contacts from other members
+                const ownerInitials = contactView === 'fund-contacts' && c.owner_name
+                  ? c.owner_name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
+                  : null;
+                const [ownerBg, ownerFg] = avatarColor(c.owner_user_id || '');
                 return (
                   <div
-                    key={c.id}
+                    key={`${c.id}-${c.owner_user_id || ''}`}
                     data-testid={`contact-list-row-${c.id}`}
                     onClick={() => setSelected(c)}
                     className="flex items-start gap-3 px-3 py-3.5 cursor-pointer transition-all"
@@ -375,6 +441,20 @@ export default function Contacts({ user, onLogout }) {
                         {(c.deal_count || 0) > 1 && (
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa' }}>
                             {c.deal_count}x
+                          </span>
+                        )}
+                        {/* Owner badge — visible in fund-contacts mode */}
+                        {ownerInitials && (
+                          <span
+                            title={c.owner_name}
+                            className="ml-auto text-[9px] font-bold flex items-center justify-center rounded-full shrink-0"
+                            style={{
+                              width: 18, height: 18,
+                              background: ownerBg,
+                              color: ownerFg,
+                            }}
+                          >
+                            {ownerInitials}
                           </span>
                         )}
                       </div>

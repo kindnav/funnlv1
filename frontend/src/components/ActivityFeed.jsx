@@ -38,16 +38,16 @@ function SkeletonRow() {
 }
 
 // ── Main Component ───────────────────────────────────────────────────────────
-export default function ActivityFeed({ userId, refreshTrigger }) {
+export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal' }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const intervalRef = useRef(null);
 
-  const load = useCallback(async (manual = false) => {
+  const load = useCallback(async (manual = false, currentScope = scope) => {
     if (manual) setSpinning(true);
     try {
-      const data = await getActivityFeed();
+      const data = await getActivityFeed(currentScope);
       if (data) setItems(data);
     } catch {
       // silently swallow — activity feed is non-critical
@@ -55,10 +55,13 @@ export default function ActivityFeed({ userId, refreshTrigger }) {
       setLoading(false);
       if (manual) setTimeout(() => setSpinning(false), 600);
     }
-  }, []);
+  }, [scope]);
 
-  // Initial load
-  useEffect(() => { load(); }, [load]);
+  // Initial load + reload when scope changes
+  useEffect(() => {
+    setLoading(true);
+    load(false, scope);
+  }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh every 60 seconds
   useEffect(() => {

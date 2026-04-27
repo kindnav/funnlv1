@@ -145,5 +145,9 @@ export const getContactActivities = (contactId) =>
   fetchJson(`${API}/contacts/${contactId}/activities`);
 
 // ── Activity feed ─────────────────────────────────────────────────────────────────
-export const getActivityFeed = () =>
-  fetchJson(`${API}/activity-feed`);
+export const getActivityFeed = (scope = 'personal') =>
+  fetchJson(`${API}/activity-feed?scope=${scope}`);
+
+// ── Fund contacts ─────────────────────────────────────────────────────────────────
+export const getFundContacts = () =>
+  fetchJson(`${API}/contacts/fund`);

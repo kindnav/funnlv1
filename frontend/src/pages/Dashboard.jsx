@@ -915,7 +915,11 @@ export default function Dashboard({ user, onLogout }) {
           className="hidden xl:flex flex-col shrink-0"
           style={{ width: 320, minWidth: 280, maxWidth: 340, padding: '12px 16px 12px 0' }}
         >
-          <ActivityFeed userId={user?.id} refreshTrigger={syncCount} />
+          <ActivityFeed
+            userId={user?.id}
+            refreshTrigger={syncCount}
+            scope={viewMode === 'fund-dashboard' ? 'fund' : 'personal'}
+          />
         </div>
       </div>
 

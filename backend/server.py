@@ -20,7 +20,7 @@ import httpx
 import jwt as pyjwt
 import anthropic
 import stripe
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks, Request, Query
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
@@ -1993,6 +1993,27 @@ async def get_contacts(current_user: dict = Depends(get_current_user)):
     return contacts or []
 
 
+@api_router.get("/contacts/fund")
+async def get_fund_contacts(current_user: dict = Depends(get_current_user)):
+    """Return contacts for all fund members, each stamped with owner_name/owner_user_id."""
+    uid = current_user['user_id']
+    fund_info = await get_user_fund_info(uid)
+    if not fund_info:
+        return []
+    all_contacts = []
+    for member in fund_info['members']:
+        rows = await sb_select('contacts', {
+            'user_id': f'eq.{member["user_id"]}',
+            'order': 'last_contacted.desc',
+        })
+        for c in (rows or []):
+            c['owner_name'] = member['display_name']
+            c['owner_user_id'] = member['user_id']
+            all_contacts.append(c)
+    all_contacts.sort(key=lambda c: c.get('last_contacted') or c.get('created_at') or '', reverse=True)
+    return all_contacts
+
+
 @api_router.post("/contacts/sync-pipeline")
 async def sync_contacts_from_pipeline(current_user: dict = Depends(get_current_user)):
     """Retroactively sync contacts from all visible deals (own + sample)."""
@@ -3000,108 +3021,136 @@ STAGE_COLORS_FEED = {
     'Watch List':     '#2dd4bf',
 }
 
+def _build_activity_item(r: dict, owner_name: str = None) -> dict:
+    """Convert a contact_activities row (with joined contacts/deals) into a feed item dict."""
+    act_type     = r.get('type', '')
+    contact      = (r.get('contacts') or {})
+    deal         = (r.get('deals') or {})
+    contact_name = contact.get('name') or contact.get('company') or ''
+    company_name = deal.get('company_name') or contact_name or 'Unknown'
+    stage        = deal.get('deal_stage')
+    score        = deal.get('relevance_score')
+
+    if act_type == 'deal_received':
+        title    = 'New pitch received'
+        subtitle = company_name
+        color    = '#7c6dfa'
+    elif act_type == 'stage_change':
+        title    = f'Moved to {stage}' if stage else 'Stage changed'
+        subtitle = company_name
+        color    = STAGE_COLORS_FEED.get(stage, '#9090a8')
+    elif act_type == 'note_saved':
+        title    = 'Note added'
+        subtitle = company_name or contact_name
+        color    = 'rgba(255,255,255,0.3)'
+    elif act_type == 'email_sent':
+        title    = 'Reply sent'
+        subtitle = contact_name or company_name
+        color    = '#3dd68c'
+    elif act_type == 'follow_up_set':
+        meta     = r.get('metadata') or {}
+        date_str = meta.get('date', '')
+        title    = 'Follow-up set'
+        subtitle = f'{company_name}{", " + date_str if date_str else ""}'
+        color    = '#f5a623'
+    else:
+        title    = act_type.replace('_', ' ').title()
+        subtitle = company_name or contact_name
+        color    = 'rgba(255,255,255,0.3)'
+
+    if owner_name:
+        subtitle = f'{subtitle} · {owner_name}'
+
+    return {
+        'id':        r['id'],
+        'type':      act_type,
+        'title':     title,
+        'subtitle':  subtitle,
+        'timestamp': r['created_at'],
+        'deal_stage': stage,
+        'score':     score,
+        'color':     color,
+        'owner_name': owner_name,
+    }
+
+
 @api_router.get("/activity-feed")
-async def get_activity_feed(current_user: dict = Depends(get_current_user)):
+async def get_activity_feed(
+    current_user: dict = Depends(get_current_user),
+    scope: str = Query('personal', pattern='^(personal|fund)$'),
+):
     uid = current_user['user_id']
     items = []
 
-    # Source 1 — contact_activities with joined contact + deal info
+    # Determine which user IDs to query
+    user_ids = [uid]
+    member_names: dict[str, str] = {}  # user_id -> display_name
+    if scope == 'fund':
+        fund_info = await get_user_fund_info(uid)
+        if fund_info:
+            for m in fund_info['members']:
+                mid = m['user_id']
+                user_ids.append(mid)
+                member_names[mid] = m['display_name']
+    user_ids = list(dict.fromkeys(user_ids))  # deduplicate, preserve order
+
+    # Source 1 — contact_activities
     try:
+        if len(user_ids) == 1:
+            filter_param = f'eq.{user_ids[0]}'
+        else:
+            filter_param = f'in.({",".join(user_ids)})'
+
         rows = await sb_select('contact_activities', {
-            'user_id': f'eq.{uid}',
-            'select': 'id,type,description,created_at,deal_id,contact_id,metadata,'
+            'user_id': filter_param,
+            'select': 'id,type,description,created_at,deal_id,contact_id,metadata,user_id,'
                       'contacts(name,company),'
                       'deals(company_name,deal_stage,relevance_score)',
             'order': 'created_at.desc',
             'limit': '30',
         })
         for r in (rows or []):
-            act_type = r.get('type', '')
-            contact   = (r.get('contacts') or {})
-            deal      = (r.get('deals') or {})
-            contact_name  = contact.get('name') or contact.get('company') or ''
-            company_name  = deal.get('company_name') or contact_name or 'Unknown'
-            stage         = deal.get('deal_stage')
-            score         = deal.get('relevance_score')
-
-            if act_type == 'deal_received':
-                title    = 'New pitch received'
-                subtitle = company_name
-                color    = '#7c6dfa'
-            elif act_type == 'stage_change':
-                title    = f'Moved to {stage}' if stage else 'Stage changed'
-                subtitle = company_name
-                color    = STAGE_COLORS_FEED.get(stage, '#9090a8')
-            elif act_type == 'note_saved':
-                title    = 'Note added'
-                subtitle = company_name or contact_name
-                color    = 'rgba(255,255,255,0.3)'
-            elif act_type == 'email_sent':
-                title    = 'Reply sent'
-                subtitle = contact_name or company_name
-                color    = '#3dd68c'
-            elif act_type == 'follow_up_set':
-                meta     = r.get('metadata') or {}
-                date_str = meta.get('date', '')
-                title    = 'Follow-up set'
-                subtitle = f'{company_name}{", " + date_str if date_str else ""}'
-                color    = '#f5a623'
-            else:
-                title    = act_type.replace('_', ' ').title()
-                subtitle = company_name or contact_name
-                color    = 'rgba(255,255,255,0.3)'
-
-            items.append({
-                'id':        r['id'],
-                'type':      act_type,
-                'title':     title,
-                'subtitle':  subtitle,
-                'timestamp': r['created_at'],
-                'deal_stage': stage,
-                'score':     score,
-                'color':     color,
-            })
+            owner = member_names.get(r.get('user_id'), '') if scope == 'fund' and r.get('user_id') != uid else None
+            items.append(_build_activity_item(r, owner_name=owner))
     except Exception as e:
         logger.warning(f'[ActivityFeed] contact_activities query failed: {e}')
 
-    # Source 2 — recent high-score deals from last 7 days
+    # Source 2 — recent deals from last 7 days
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        recent_deals = await sb_select('deals', {
-            'user_id':    f'eq.{uid}',
-            'is_deleted': 'eq.false',
-            'created_at': f'gte.{cutoff}',
-            'select':     'id,company_name,sender_name,relevance_score,created_at,deal_stage',
-            'order':      'relevance_score.desc',
-            'limit':      '10',
-        })
         existing_deal_ids = {r.get('deal_id') for r in (rows or [])}
-        today = datetime.now(timezone.utc).date().isoformat()
-        for d in (recent_deals or []):
-            if d['id'] in existing_deal_ids:
-                continue  # already represented by a deal_received activity
-            score    = d.get('relevance_score') or 0
-            company  = d.get('company_name') or d.get('sender_name') or 'Unknown'
-            if score >= 7:
-                title = 'High-score pitch'
-                color = '#3dd68c'
-            else:
-                title = 'New pitch received'
-                color = '#7c6dfa'
-            items.append({
-                'id':        f'deal-{d["id"]}',
-                'type':      'new_deal_high_score' if score >= 7 else 'deal_received',
-                'title':     title,
-                'subtitle':  f'{company} · {score}/10' if score else company,
-                'timestamp': d['created_at'],
-                'deal_stage': d.get('deal_stage'),
-                'score':     score,
-                'color':     color,
+        for quid in user_ids:
+            recent_deals = await sb_select('deals', {
+                'user_id':    f'eq.{quid}',
+                'status':     'neq.deleted',
+                'created_at': f'gte.{cutoff}',
+                'select':     'id,company_name,sender_name,relevance_score,created_at,deal_stage',
+                'order':      'relevance_score.desc',
+                'limit':      '10',
             })
+            owner = member_names.get(quid) if scope == 'fund' and quid != uid else None
+            for d in (recent_deals or []):
+                if d['id'] in existing_deal_ids:
+                    continue
+                score   = d.get('relevance_score') or 0
+                company = d.get('company_name') or d.get('sender_name') or 'Unknown'
+                subtitle = f'{company} · {score}/10' if score else company
+                if owner:
+                    subtitle = f'{subtitle} · {owner}'
+                items.append({
+                    'id':        f'deal-{d["id"]}',
+                    'type':      'new_deal_high_score' if score >= 7 else 'deal_received',
+                    'title':     'High-score pitch' if score >= 7 else 'New pitch received',
+                    'subtitle':  subtitle,
+                    'timestamp': d['created_at'],
+                    'deal_stage': d.get('deal_stage'),
+                    'score':     score,
+                    'color':     '#3dd68c' if score >= 7 else '#7c6dfa',
+                    'owner_name': owner,
+                })
     except Exception as e:
         logger.warning(f'[ActivityFeed] recent deals query failed: {e}')
 
-    # Merge, sort by timestamp descending, cap at 20
     items.sort(key=lambda x: x['timestamp'], reverse=True)
     return items[:20]
 
