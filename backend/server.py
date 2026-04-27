@@ -1748,9 +1748,8 @@ async def get_deals(current_user: dict = Depends(get_current_user)):
         cat = d.get('category', '')
         irrelevant = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
         return cat not in irrelevant
-    # User deals no longer contain skipped categories (filtered at save time).
-    # Sample deals still need filtering since we cannot control the system user's data.
-    return [d for d in (user_deals or [])] + [d for d in (sample_deals or []) if is_relevant(d)]
+    return [d for d in (user_deals or []) if is_relevant(d)] + \
+           [d for d in (sample_deals or []) if is_relevant(d)]
 
 
 @api_router.get("/deals/fund")
@@ -3160,17 +3159,25 @@ async def get_activity_feed(
 @api_router.post("/admin/reprocess-existing")
 async def reprocess_existing(current_user: dict = Depends(get_current_user)):
     """
-    Re-run the AI gate on all Inbound (non-deleted) deals for the current user.
-    Deals that fail the gate are soft-deleted and saved to gated_emails for audit.
+    Scan ALL non-deleted deals for the current user.
+    1. If category is already in the skip list — soft-delete immediately (no Claude call).
+    2. Otherwise run gate_email() — soft-delete if gate fails.
     Returns {scanned, removed}.
     """
     uid = current_user['user_id']
 
+    CATEGORIES_TO_SKIP = {
+        'Spam / irrelevant',
+        'Service provider / vendor',
+        'Recruiter / hiring',
+        'Press / media',
+        'Event invitation',
+    }
+
     rows = await sb_select('deals', {
-        'user_id':    f'eq.{uid}',
-        'deal_stage': 'eq.Inbound',
-        'status':     'neq.deleted',
-        'select':     'id,sender_name,sender_email,subject,body_preview,received_date',
+        'user_id': f'eq.{uid}',
+        'status':  'neq.deleted',
+        'select':  'id,sender_name,sender_email,subject,body_preview,received_date,category',
     })
     deals = rows or []
     total   = len(deals)
@@ -3181,16 +3188,29 @@ async def reprocess_existing(current_user: dict = Depends(get_current_user)):
         sender_email = deal.get('sender_email') or ''
         subject      = deal.get('subject') or ''
         body         = deal.get('body_preview') or ''
+        category     = deal.get('category') or ''
 
-        gate = await gate_email(sender_name, sender_email, subject, body)
+        should_remove = False
+        reason        = ''
 
-        if not gate['belongs']:
+        if category in CATEGORIES_TO_SKIP:
+            # Already classified as irrelevant — no Claude call needed
+            should_remove = True
+            reason        = f'[Reprocess] Category: {category}'
+        else:
+            gate = await gate_email(sender_name, sender_email, subject, body)
+            if not gate['belongs']:
+                should_remove = True
+                reason        = f'[Reprocess] {gate["reason"]}'
+            # Only sleep when we actually called Claude
+            await asyncio.sleep(0.3)
+
+        if should_remove:
             now = datetime.now(timezone.utc).isoformat()
             await sb_update('deals', {
                 'status':     'deleted',
                 'updated_at': now,
             }, {'id': f'eq.{deal["id"]}'})
-
             await save_gated_email(
                 user_id=uid,
                 sender_name=sender_name,
@@ -3198,12 +3218,9 @@ async def reprocess_existing(current_user: dict = Depends(get_current_user)):
                 subject=subject,
                 body=body,
                 received_date=deal.get('received_date'),
-                reason=f'[Reprocess] {gate["reason"]}',
+                reason=reason,
             )
             removed += 1
-
-        # Small delay between Claude calls to avoid burst rate-limit spikes
-        await asyncio.sleep(0.3)
 
     logger.info(f'[Reprocess] user={uid[:8]} scanned={total} removed={removed}')
     return {'scanned': total, 'removed': removed}
