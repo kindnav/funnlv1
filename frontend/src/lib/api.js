@@ -143,3 +143,7 @@ export const toggleWeeklyDigest = (enabled) =>
 // ── Contact activities ────────────────────────────────────────────────────────────
 export const getContactActivities = (contactId) =>
   fetchJson(`${API}/contacts/${contactId}/activities`);
+
+// ── Activity feed ─────────────────────────────────────────────────────────────────
+export const getActivityFeed = () =>
+  fetchJson(`${API}/activity-feed`);

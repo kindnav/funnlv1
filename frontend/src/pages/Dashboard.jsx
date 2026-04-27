@@ -11,6 +11,7 @@ import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
 import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
+import ActivityFeed from '../components/ActivityFeed';
 import { toast } from '../components/ui/sonner';
 import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession } from '../lib/api';
 import UpgradeModal from '../components/UpgradeModal';
@@ -93,6 +94,7 @@ export default function Dashboard({ user, onLogout }) {
   const [billingStatus, setBillingStatus] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [syncCount, setSyncCount] = useState(0);
   const moreMenuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -240,6 +242,7 @@ export default function Dashboard({ user, onLogout }) {
           clearInterval(poll);
           setIsSyncing(false);
           setSyncResult({ status: 'done', new_deals: newDeals });
+          setSyncCount((c) => c + 1);
           setSyncMessage(newDeals > 0 ? `${newDeals} new deal${newDeals !== 1 ? 's' : ''} added` : 'All caught up');
           if (status?.fetched != null) {
             setSyncLog({
@@ -658,7 +661,7 @@ export default function Dashboard({ user, onLogout }) {
       <div className="flex-1 flex overflow-hidden">
 
         {/* Deals table / states */}
-        <div className="flex-1 overflow-auto flex flex-col">
+        <div className="flex-1 overflow-auto flex flex-col" style={{ minWidth: 0 }}>
           {loading ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4">
               <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
@@ -906,6 +909,14 @@ export default function Dashboard({ user, onLogout }) {
             userId={user?.id}
           />
         )}
+
+        {/* Activity feed — right column, hidden below xl (1280px) */}
+        <div
+          className="hidden xl:flex flex-col shrink-0"
+          style={{ width: 320, minWidth: 280, maxWidth: 340, padding: '12px 16px 12px 0' }}
+        >
+          <ActivityFeed userId={user?.id} refreshTrigger={syncCount} />
+        </div>
       </div>
 
       {/* Modals */}

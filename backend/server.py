@@ -2988,6 +2988,124 @@ THE DECIDING FACTOR: [the single thing that will decide whether to proceed after
     )
     return {'brief': response.content[0].text}
 
+# ── Activity Feed ───────────────────────────────────────────────────────────────
+
+STAGE_COLORS_FEED = {
+    'Inbound':        '#9090a8',
+    'First Look':     '#4da6ff',
+    'In Conversation':'#f5a623',
+    'Due Diligence':  '#a594ff',
+    'Closed':         '#3dd68c',
+    'Passed':         '#52527a',
+    'Watch List':     '#2dd4bf',
+}
+
+@api_router.get("/activity-feed")
+async def get_activity_feed(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    items = []
+
+    # Source 1 — contact_activities with joined contact + deal info
+    try:
+        rows = await sb_select('contact_activities', {
+            'user_id': f'eq.{uid}',
+            'select': 'id,type,description,created_at,deal_id,contact_id,metadata,'
+                      'contacts(name,company),'
+                      'deals(company_name,deal_stage,relevance_score)',
+            'order': 'created_at.desc',
+            'limit': '30',
+        })
+        for r in (rows or []):
+            act_type = r.get('type', '')
+            contact   = (r.get('contacts') or {})
+            deal      = (r.get('deals') or {})
+            contact_name  = contact.get('name') or contact.get('company') or ''
+            company_name  = deal.get('company_name') or contact_name or 'Unknown'
+            stage         = deal.get('deal_stage')
+            score         = deal.get('relevance_score')
+
+            if act_type == 'deal_received':
+                title    = 'New pitch received'
+                subtitle = company_name
+                color    = '#7c6dfa'
+            elif act_type == 'stage_change':
+                title    = f'Moved to {stage}' if stage else 'Stage changed'
+                subtitle = company_name
+                color    = STAGE_COLORS_FEED.get(stage, '#9090a8')
+            elif act_type == 'note_saved':
+                title    = 'Note added'
+                subtitle = company_name or contact_name
+                color    = 'rgba(255,255,255,0.3)'
+            elif act_type == 'email_sent':
+                title    = 'Reply sent'
+                subtitle = contact_name or company_name
+                color    = '#3dd68c'
+            elif act_type == 'follow_up_set':
+                meta     = r.get('metadata') or {}
+                date_str = meta.get('date', '')
+                title    = 'Follow-up set'
+                subtitle = f'{company_name}{", " + date_str if date_str else ""}'
+                color    = '#f5a623'
+            else:
+                title    = act_type.replace('_', ' ').title()
+                subtitle = company_name or contact_name
+                color    = 'rgba(255,255,255,0.3)'
+
+            items.append({
+                'id':        r['id'],
+                'type':      act_type,
+                'title':     title,
+                'subtitle':  subtitle,
+                'timestamp': r['created_at'],
+                'deal_stage': stage,
+                'score':     score,
+                'color':     color,
+            })
+    except Exception as e:
+        logger.warning(f'[ActivityFeed] contact_activities query failed: {e}')
+
+    # Source 2 — recent high-score deals from last 7 days
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        recent_deals = await sb_select('deals', {
+            'user_id':    f'eq.{uid}',
+            'is_deleted': 'eq.false',
+            'created_at': f'gte.{cutoff}',
+            'select':     'id,company_name,sender_name,relevance_score,created_at,deal_stage',
+            'order':      'relevance_score.desc',
+            'limit':      '10',
+        })
+        existing_deal_ids = {r.get('deal_id') for r in (rows or [])}
+        today = datetime.now(timezone.utc).date().isoformat()
+        for d in (recent_deals or []):
+            if d['id'] in existing_deal_ids:
+                continue  # already represented by a deal_received activity
+            score    = d.get('relevance_score') or 0
+            company  = d.get('company_name') or d.get('sender_name') or 'Unknown'
+            if score >= 7:
+                title = 'High-score pitch'
+                color = '#3dd68c'
+            else:
+                title = 'New pitch received'
+                color = '#7c6dfa'
+            items.append({
+                'id':        f'deal-{d["id"]}',
+                'type':      'new_deal_high_score' if score >= 7 else 'deal_received',
+                'title':     title,
+                'subtitle':  f'{company} · {score}/10' if score else company,
+                'timestamp': d['created_at'],
+                'deal_stage': d.get('deal_stage'),
+                'score':     score,
+                'color':     color,
+            })
+    except Exception as e:
+        logger.warning(f'[ActivityFeed] recent deals query failed: {e}')
+
+    # Merge, sort by timestamp descending, cap at 20
+    items.sort(key=lambda x: x['timestamp'], reverse=True)
+    return items[:20]
+
+
 # ── App setup ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)
 _cors_origins = [FRONTEND_URL, 'http://localhost:3000']
