@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
-  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, RefreshCw,
+  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, RefreshCw, Calendar,
 } from 'lucide-react';
 import { updateDeal, deleteDeal } from '../lib/api';
 import { toast } from '../components/ui/sonner';
@@ -71,15 +71,23 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
   const [actionModal, setActionModal] = useState(null);
   const [notes, setNotes] = useState(deal.notes || '');
   const [notesSaved, setNotesSaved] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState(deal.follow_up_date?.slice(0, 10) || '');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const members = fundInfo?.members || [];
   const inFund = !!fundInfo?.fund;
 
-  // Reset notes when the selected deal changes
+  // Reset notes and follow-up date when the selected deal changes
   useEffect(() => {
     setNotes(deal.notes || '');
+    setFollowUpDate(deal.follow_up_date?.slice(0, 10) || '');
   }, [deal.id]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: reset only on deal change
+
+  const handleSaveFollowUpDate = async (value) => {
+    const date = value || null;
+    await updateDeal(deal.id, { follow_up_date: date });
+    onDealUpdated({ ...deal, follow_up_date: date });
+  };
 
   const handleSaveNotes = async () => {
     if (notes === (deal.notes || '')) return;
@@ -308,6 +316,31 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
             />
           </div>
           )}
+
+          {/* Follow-up date */}
+          <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar size={13} className="text-[rgba(255,255,255,0.3)]" />
+              <p className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider font-semibold flex-1">
+                Follow-up date
+              </p>
+              {followUpDate && (
+                <button
+                  onClick={() => { setFollowUpDate(''); handleSaveFollowUpDate(''); }}
+                  className="text-xs text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <input
+              type="date"
+              value={followUpDate}
+              onChange={(e) => { setFollowUpDate(e.target.value); handleSaveFollowUpDate(e.target.value); }}
+              className="w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.07)] rounded-lg px-3 py-2 text-xs text-[rgba(255,255,255,0.75)] focus:outline-none focus:border-[#f59e0b] transition-colors"
+              style={{ colorScheme: 'dark' }}
+            />
+          </div>
 
           {deal.next_action && (
             <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">

@@ -44,7 +44,7 @@ ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
 GOOGLE_CLIENT_ID = os.environ['GOOGLE_CLIENT_ID']
 GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
 GOOGLE_REDIRECT_URI = os.environ['GOOGLE_REDIRECT_URI']
-JWT_SECRET = os.environ.get('JWT_SECRET', 'vc-dealflow-jwt-2026')
+JWT_SECRET = os.environ['JWT_SECRET']
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://vc-pipeline-1.preview.emergentagent.com')
 
 SB_HEADERS = {
@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS fund_settings JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 
 CREATE TABLE IF NOT EXISTS deals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -199,6 +200,7 @@ CREATE TABLE IF NOT EXISTS deals (
   match_reasoning TEXT,
   processed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  follow_up_date DATE,
   UNIQUE(user_id, thread_id)
 );
 
@@ -1757,7 +1759,7 @@ async def process_email_manual(data: dict, current_user: dict = Depends(get_curr
 
 @api_router.patch("/deals/{deal_id}")
 async def update_deal(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
-    allowed = {'status', 'notes', 'next_action', 'deal_stage'}
+    allowed = {'status', 'notes', 'next_action', 'deal_stage', 'follow_up_date'}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         raise HTTPException(status_code=400, detail="No valid fields to update")

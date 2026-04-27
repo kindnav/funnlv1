@@ -28,7 +28,7 @@ const fmtLastSynced = (ts) => {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const BASE_FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros'];
+const BASE_FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros', 'Follow-ups due'];
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard({ user, onLogout }) {
@@ -57,6 +57,8 @@ export default function Dashboard({ user, onLogout }) {
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [watchlistDue, setWatchlistDue] = useState([]);
   const [watchlistBannerDismissed, setWatchlistBannerDismissed] = useState(false);
+  const [followUpDue, setFollowUpDue] = useState([]);
+  const [followUpBannerDismissed, setFollowUpBannerDismissed] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef(null);
   const navigate = useNavigate();
@@ -115,6 +117,11 @@ export default function Dashboard({ user, onLogout }) {
           deal.watchlist_revisit_date.slice(0, 10) <= today
         );
         setWatchlistDue(due);
+        const fuDue = d.filter(deal =>
+          deal.follow_up_date &&
+          deal.follow_up_date.slice(0, 10) <= today
+        );
+        setFollowUpDue(fuDue);
       }
       if (f) { setFundSettings(f); if (f.fund_name) setFundName(f.fund_name); }
       if (status?.last_synced) setLastSynced(status.last_synced);
@@ -159,6 +166,10 @@ export default function Dashboard({ user, onLogout }) {
       case 'Pitches': return list.filter((d) => d.category === 'Founder pitch');
       case 'Warm Intros': return list.filter((d) => d.category === 'Warm intro');
       case 'Assigned to me': return list.filter((d) => d.assigned_to === user?.id);
+      case 'Follow-ups due': {
+        const today = new Date().toISOString().slice(0, 10);
+        return list.filter((d) => d.follow_up_date && d.follow_up_date.slice(0, 10) <= today);
+      }
       default: return list;
     }
   }, [activeDeals, filter, search, user]);
@@ -493,6 +504,37 @@ export default function Dashboard({ user, onLogout }) {
               onClick={() => setWatchlistBannerDismissed(true)}
               className="text-xs"
               style={{ color: 'rgba(45,212,191,0.5)' }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up due banner */}
+      {followUpDue.length > 0 && !followUpBannerDismissed && (
+        <div
+          className="shrink-0 flex items-center justify-between px-5 py-2.5"
+          style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.2)' }}
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#f59e0b' }} />
+            <span className="text-sm" style={{ color: '#f59e0b' }}>
+              {followUpDue.length} follow-up {followUpDue.length === 1 ? 'reminder' : 'reminders'} due today
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setFilter('Follow-ups due')}
+              className="text-xs font-medium underline underline-offset-2"
+              style={{ color: '#f59e0b' }}
+            >
+              Review now
+            </button>
+            <button
+              onClick={() => setFollowUpBannerDismissed(true)}
+              className="text-xs"
+              style={{ color: 'rgba(245,158,11,0.5)' }}
             >
               Dismiss
             </button>
