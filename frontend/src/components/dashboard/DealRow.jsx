@@ -62,80 +62,92 @@ export function DealRow({ deal, isSelected, viewMode, fundMembers, onSelect, onD
   const stageStyle = STAGE_STYLES[deal.deal_stage] || STAGE_STYLES['Inbound'];
   const assignedMember = fundMembers?.find((m) => m.user_id === deal.assigned_to);
 
+  const scoreVal = deal.thesis_match_score ?? deal.relevance_score;
+  const scoreColor = getThresholdColor(scoreVal || 0);
+
   return (
     <tr
       data-testid={`deal-row-${deal.id}`}
       onClick={() => onSelect(deal)}
-      className={`border-b border-[rgba(255,255,255,0.03)] cursor-pointer transition-colors group ${
-        isSelected ? 'bg-[rgba(124,109,250,0.07)]' : 'hover:bg-[rgba(255,255,255,0.02)]'
-      }`}
+      className="cursor-pointer transition-colors group"
+      style={{
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        height: 60,
+        background: isSelected ? 'rgba(124,109,250,0.07)' : 'transparent',
+      }}
+      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
     >
-      <td className="px-3 py-2.5 w-8">
+      <td className="px-4 py-3 w-8">
         <StatusDot status={deal.status} />
       </td>
-      <td className="px-3 py-2.5 w-14">
-        {deal.thesis_match_score != null ? (
-          <span
-            className="inline-flex items-center justify-center h-6 px-1.5 rounded border font-mono text-xs font-bold"
-            style={{
-              minWidth: 36,
-              background: `${getThresholdColor(deal.thesis_match_score)}1a`,
-              borderColor: `${getThresholdColor(deal.thesis_match_score)}4d`,
-              color: getThresholdColor(deal.thesis_match_score),
-            }}
-          >
-            {deal.thesis_match_score}
-          </span>
-        ) : (
-          <span className={`inline-flex items-center justify-center w-8 h-6 rounded border font-mono text-xs font-bold ${getScoreStyle(deal.relevance_score || 0)}`}>
-            {deal.relevance_score || '—'}
-          </span>
-        )}
+
+      {/* Score — colored circle */}
+      <td className="px-4 py-3 w-14">
+        <div
+          className="inline-flex items-center justify-center font-mono font-bold"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            background: `${scoreColor}18`,
+            border: `1px solid ${scoreColor}4d`,
+            color: scoreColor,
+            fontSize: 11,
+          }}
+        >
+          {scoreVal || '—'}
+        </div>
       </td>
-      <td className="px-3 py-2.5 min-w-[140px] max-w-[160px]">
+
+      <td className="px-4 py-3 min-w-[140px] max-w-[160px]">
         <p className="text-white text-sm font-medium truncate">{deal.sender_name || '—'}</p>
-        <p className="text-[rgba(255,255,255,0.3)] text-xs truncate font-mono">{deal.sender_email}</p>
+        <p className="text-xs truncate font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>{deal.sender_email}</p>
       </td>
-      <td className="px-3 py-2.5 min-w-[130px] max-w-[150px]">
-        <p className="text-[rgba(255,255,255,0.8)] text-sm truncate">{deal.company_name || '—'}</p>
+      <td className="px-4 py-3 min-w-[130px] max-w-[150px]">
+        <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.8)' }}>{deal.company_name || '—'}</p>
         {deal.sector && (
-          <p className="text-[rgba(255,255,255,0.3)] text-xs truncate">{deal.sector}</p>
+          <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{deal.sector}</p>
         )}
       </td>
-      <td className="px-3 py-2.5">
-        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs border whitespace-nowrap ${getCatStyle(deal.category)}`}>
+      <td className="px-4 py-3">
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border whitespace-nowrap ${getCatStyle(deal.category)}`}
+          style={{ borderRadius: 999 }}
+        >
           {deal.category || 'Other'}
         </span>
       </td>
-      <td className="px-3 py-2.5 max-w-[180px]">
-        <p className="text-[rgba(255,255,255,0.6)] text-xs truncate">{deal.subject}</p>
+      <td className="px-4 py-3 max-w-[180px]">
+        <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>{deal.subject}</p>
       </td>
-      <td className="px-3 py-2.5 max-w-[240px]">
-        <p className="text-[rgba(255,255,255,0.45)] text-xs line-clamp-2 leading-relaxed">
-          {deal.summary || '—'}
+      <td className="px-4 py-3 max-w-[240px]">
+        <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          {deal.summary ? `${deal.summary} →` : '—'}
         </p>
       </td>
-      <td className="px-3 py-2.5 max-w-[140px]">
-        <p className="text-[rgba(255,255,255,0.45)] text-xs truncate">{deal.next_action || '—'}</p>
+      <td className="px-4 py-3 max-w-[140px]">
+        <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.45)' }}>{deal.next_action || '—'}</p>
       </td>
 
       {/* Fund-only columns */}
       {viewMode === 'fund-dashboard' && (
         <>
-          <td className="px-3 py-2.5">
+          <td className="px-4 py-3">
             {deal.inbox_owner_name ? (
               <MemberAvatar name={deal.inbox_owner_name} size={24} title={deal.inbox_owner_name} />
-            ) : <span className="text-[rgba(255,255,255,0.2)] text-xs">—</span>}
+            ) : <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
           </td>
-          <td className="px-3 py-2.5">
+          <td className="px-4 py-3">
             {assignedMember ? (
               <MemberAvatar name={assignedMember.display_name} size={24} title={assignedMember.display_name} />
-            ) : <span className="text-[rgba(255,255,255,0.2)] text-xs">—</span>}
+            ) : <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
           </td>
-          <td className="px-3 py-2.5">
+          <td className="px-4 py-3">
             <span
-              className="px-1.5 py-0.5 rounded text-xs whitespace-nowrap"
+              className="px-2 py-0.5 text-xs whitespace-nowrap"
               style={{
+                borderRadius: 999,
                 background: stageStyle.bg,
                 color: stageStyle.color,
                 border: `1px solid ${stageStyle.border}`,
@@ -144,24 +156,24 @@ export function DealRow({ deal, isSelected, viewMode, fundMembers, onSelect, onD
               {deal.deal_stage || 'New'}
             </span>
           </td>
-          <td className="px-3 py-2.5">
-            <span className="text-xs font-mono text-[rgba(255,255,255,0.35)]">
+          <td className="px-4 py-3">
+            <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {deal._vote_tally || '—'}
             </span>
           </td>
         </>
       )}
 
-      <td className="px-3 py-2.5 whitespace-nowrap">
-        <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono">
+      <td className="px-4 py-3 whitespace-nowrap">
+        <p className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
           {fmtDate(deal.received_date || deal.created_at)}
         </p>
       </td>
-      <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
         <button
           data-testid={`delete-deal-${deal.id}`}
           onClick={() => onDelete(deal.id)}
-          className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-[rgba(240,82,82,0.18)] hover:text-[#f05252]"
+          className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:bg-[rgba(240,82,82,0.18)] hover:text-[#f05252]"
           title="Remove from dashboard"
           style={{ color: 'rgba(255,255,255,0.3)' }}
         >

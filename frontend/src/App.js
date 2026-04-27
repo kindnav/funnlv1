@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
@@ -11,8 +11,28 @@ import ReviewMode from './pages/ReviewMode';
 import Onboarding from './pages/Onboarding';
 import Contacts from './pages/Contacts';
 import PrivacyPage from './pages/PrivacyPage';
+import AppLayout from './components/AppLayout';
 import { Toaster } from './components/ui/sonner';
 import { getMe, logout } from './lib/api';
+
+function getActivePage(pathname) {
+  if (pathname === '/') return 'dashboard';
+  if (pathname.startsWith('/pipeline')) return 'pipeline';
+  if (pathname.startsWith('/review')) return 'review';
+  if (pathname.startsWith('/contacts')) return 'contacts';
+  if (pathname.startsWith('/settings')) return 'settings';
+  return 'dashboard';
+}
+
+function AuthenticatedLayout({ user, onLogout, children }) {
+  const location = useLocation();
+  const activePage = getActivePage(location.pathname);
+  return (
+    <AppLayout user={user} onLogout={onLogout} activePage={activePage}>
+      {children}
+    </AppLayout>
+  );
+}
 
 function App() {
   const [user, setUser] = useState(null);
@@ -40,7 +60,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-[#0c0c12] flex items-center justify-center">
+      <div className="h-screen w-screen flex items-center justify-center" style={{ background: '#080810' }}>
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-[#7c6dfa] border-t-transparent animate-spin" />
           <span className="text-[rgba(255,255,255,0.4)] text-sm font-mono">Loading...</span>
@@ -52,41 +72,75 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* OAuth callback — no token in URL; cookie is set by backend */}
+        {/* OAuth callback — no sidebar needed */}
         <Route path="/oauth-callback" element={<OAuthCallback onAuthComplete={refreshUser} />} />
+
+        {/* Onboarding — no sidebar */}
         <Route
           path="/onboarding"
           element={user ? <Onboarding /> : <Navigate to="/" />}
         />
+
+        {/* ReviewMode — fullscreen swipe, no sidebar */}
         <Route
-          path="/contacts"
-          element={user ? <Contacts user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
+          path="/review"
+          element={user ? <ReviewMode /> : <Navigate to="/" />}
         />
+
+        {/* Privacy — no sidebar */}
+        <Route path="/privacy" element={<PrivacyPage />} />
+
+        {/* Authenticated routes — all wrapped in sidebar layout */}
         <Route
           path="/"
-          element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <ConnectPage />}
+          element={
+            user
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <Dashboard user={user} onLogout={handleLogout} />
+                </AuthenticatedLayout>
+              : <ConnectPage />
+          }
+        />
+        <Route
+          path="/contacts"
+          element={
+            user
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <Contacts user={user} onLogout={handleLogout} />
+                </AuthenticatedLayout>
+              : <Navigate to="/" />
+          }
         />
         <Route
           path="/settings"
           element={
             user
-              ? <Settings user={user} onLogout={handleLogout} onUserUpdate={setUser} />
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <Settings user={user} onLogout={handleLogout} onUserUpdate={setUser} />
+                </AuthenticatedLayout>
               : <Navigate to="/" />
           }
         />
         <Route
           path="/fund-focus"
-          element={user ? <FundFocus /> : <Navigate to="/" />}
+          element={
+            user
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <FundFocus />
+                </AuthenticatedLayout>
+              : <Navigate to="/" />
+          }
         />
         <Route
           path="/pipeline"
-          element={user ? <Pipeline user={user} onLogout={handleLogout} /> : <Navigate to="/" />}
+          element={
+            user
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <Pipeline user={user} onLogout={handleLogout} />
+                </AuthenticatedLayout>
+              : <Navigate to="/" />
+          }
         />
-        <Route
-          path="/review"
-          element={user ? <ReviewMode /> : <Navigate to="/" />}
-        />
-        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       <Toaster position="bottom-right" richColors />

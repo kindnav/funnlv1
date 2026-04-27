@@ -86,47 +86,55 @@ export default function Settings({ user, onLogout }) {
     onLogout();
   };
 
-  const cardCls = 'bg-[#13131c] border border-[rgba(255,255,255,0.07)] rounded-xl p-6';
+  const cardCls = 'border border-[rgba(255,255,255,0.07)] rounded-2xl p-6';
+  const cardStyle = { background: '#131320' };
   const inputCls =
-    'w-full bg-[#0c0c12] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[#7c6dfa] transition-colors';
+    'w-full border border-[rgba(255,255,255,0.08)] rounded-xl px-3 py-2.5 text-sm text-white placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[#7c6dfa] transition-colors';
+  const inputStyle = { background: '#080810' };
+
+  const sectionLabelStyle = {
+    fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)',
+    letterSpacing: '0.07em', textTransform: 'uppercase',
+  };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0c0c12] overflow-hidden">
-      {/* Nav */}
-      <nav className="h-14 shrink-0 border-b border-[rgba(255,255,255,0.07)] flex items-center px-5 gap-3 bg-[#0c0c12]">
+    <div className="flex flex-col overflow-hidden" style={{ height: '100vh', background: '#080810' }}>
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 flex items-center px-5 gap-3"
+        style={{ height: 48, borderBottom: '1px solid rgba(255,255,255,0.07)', background: '#080810' }}
+      >
         <button
           onClick={() => navigate('/')}
-          className="text-[rgba(255,255,255,0.4)] hover:text-white transition-colors flex items-center gap-1.5 text-sm"
+          className="flex items-center gap-1.5 text-sm transition-all"
           data-testid="back-to-dashboard"
+          style={{ color: 'rgba(255,255,255,0.4)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
         >
-          <ArrowLeft size={15} />
+          <ArrowLeft size={14} />
           Dashboard
         </button>
-        <div className="flex items-center gap-2 ml-4">
-          <div
-            className="w-6 h-6 rounded flex items-center justify-center text-white font-bold text-xs"
-            style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}
-          >
-            VC
-          </div>
-          <span className="text-white font-semibold text-sm">Settings</span>
-        </div>
+        <span className="font-semibold text-white ml-2" style={{ fontSize: 16 }}>Settings</span>
         <button
           data-testid="settings-logout-btn"
           onClick={handleLogout}
-          className="ml-auto text-[rgba(255,255,255,0.3)] hover:text-white transition-colors flex items-center gap-1.5 text-sm"
+          className="ml-auto flex items-center gap-1.5 text-sm transition-all"
+          style={{ color: 'rgba(255,255,255,0.3)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
         >
           <LogOut size={14} />
           <span className="hidden sm:inline">Logout</span>
         </button>
-      </nav>
+      </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
 
           {/* ── Subscription ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <div className="flex items-center gap-2 mb-1">
               <CreditCard size={15} className="text-[#f5a623]" />
               <h2 className="text-white font-semibold text-sm">Subscription</h2>
@@ -202,7 +210,7 @@ export default function Settings({ user, onLogout }) {
           </div>
 
           {/* ── Team Collaboration ── */}
-          <div className={cardCls} data-testid="team-section">
+          <div className={cardCls} style={cardStyle} data-testid="team-section">
             {fundLoading ? (
               <div className="flex items-center gap-2 text-[rgba(255,255,255,0.3)] text-sm">
                 <RefreshCw size={13} className="animate-spin" />Loading team…
@@ -221,7 +229,7 @@ export default function Settings({ user, onLogout }) {
           </div>
 
           {/* ── Gmail Integration ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <div className="flex items-center gap-2 mb-1">
               <Mail size={15} className="text-[#4da6ff]" />
               <h2 className="text-white font-semibold text-sm">Gmail Integration</h2>
@@ -296,7 +304,7 @@ export default function Settings({ user, onLogout }) {
           </div>
 
           {/* ── Weekly Digest ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <div className="flex items-center gap-2 mb-1">
               <Bell size={15} className="text-[#7c6dfa]" />
               <h2 className="text-white font-semibold text-sm">Weekly Digest</h2>
@@ -305,7 +313,7 @@ export default function Settings({ user, onLogout }) {
               Receive a Monday morning summary of your deal flow activity sent to your connected Gmail inbox.
             </p>
             <div className="flex items-center justify-between rounded-lg px-4 py-3"
-              style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ background: '#080810', border: '1px solid rgba(255,255,255,0.06)' }}>
               <div>
                 <p className="text-[rgba(255,255,255,0.7)] text-sm">Monday digest email</p>
                 <p className="text-[rgba(255,255,255,0.3)] text-xs mt-0.5">Sent every Monday at 9am UTC</p>
@@ -337,7 +345,7 @@ export default function Settings({ user, onLogout }) {
           </div>
 
           {/* ── AI Configuration ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <div className="flex items-center gap-2 mb-1">
               <Key size={15} className="text-[#7c6dfa]" />
               <h2 className="text-white font-semibold text-sm">AI Configuration</h2>
@@ -352,7 +360,7 @@ export default function Settings({ user, onLogout }) {
                 { label: 'Spam filter', value: 'Enabled — auto-removes irrelevant emails', active: true, color: '#3dd68c' },
               ].map(({ label, value, active, color }) => (
                 <div key={label} className="flex items-center justify-between rounded-lg px-4 py-3"
-                  style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  style={{ background: '#080810', border: '1px solid rgba(255,255,255,0.06)' }}>
                   <div>
                     <p className="text-[rgba(255,255,255,0.7)] text-sm">{label}</p>
                     <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono mt-0.5">{value}</p>
@@ -371,9 +379,9 @@ export default function Settings({ user, onLogout }) {
           </div>
 
           {/* ── Google OAuth App ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <h2 className="text-white font-semibold text-sm mb-3">Google OAuth Redirect URI</h2>
-            <div className="rounded-lg px-4 py-3" style={{ background: '#0c0c12', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-lg px-4 py-3" style={{ background: '#080810', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-[rgba(255,255,255,0.4)] text-xs mb-1">Add this in Google Cloud Console</p>
               <code className="text-[#4da6ff] text-xs font-mono break-all">
                 {BACKEND_URL}/api/auth/callback
@@ -392,7 +400,7 @@ export default function Settings({ user, onLogout }) {
           />
 
           {/* ── Account ── */}
-          <div className={cardCls}>
+          <div className={cardCls} style={cardStyle}>
             <h2 className="text-white font-semibold text-sm mb-4">Account</h2>
             {user && (
               <div className="flex items-center gap-3 mb-4">

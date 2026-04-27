@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, RefreshCw, Users, Mail, Building2, MapPin, Briefcase,
-  Calendar, Star, ChevronRight, X, Plus, Tag, ExternalLink, Globe,
-  LayoutGrid, LogOut, BookOpen, Inbox, ArrowRight, FileText, Send,
+  Calendar, Star, ChevronRight, X, Plus, Tag, Globe,
+  Inbox, ArrowRight, FileText, Send,
 } from 'lucide-react';
 import { getContacts, getContactDeals, updateContact, rebuildContacts, getContactActivities } from '../lib/api';
 import { toast } from '../components/ui/sonner';
@@ -29,7 +29,6 @@ const scoreColor = (s) => {
   return '#f05252';
 };
 
-// Normalize score to 0-100: old contacts stored 0-10, new ones 0-100
 const normScore = (s) => (s == null ? null : s <= 10 ? s * 10 : s);
 
 const fmtDate = (d) => {
@@ -76,8 +75,8 @@ function StageBadge({ stage }) {
   const s = stageStyle(stage);
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
-      style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}` }}
+      className="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 999 }}
     >
       {stage || 'Inbound'}
     </span>
@@ -107,7 +106,6 @@ export default function Contacts({ user, onLogout }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
 
-  // Detail panel state
   const [linkedDeals, setLinkedDeals] = useState([]);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [notes, setNotes] = useState('');
@@ -115,7 +113,6 @@ export default function Contacts({ user, onLogout }) {
   const [savingNotes, setSavingNotes] = useState(false);
   const notesRef = useRef(null);
 
-  // Activity timeline
   const [activities, setActivities] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
 
@@ -124,7 +121,7 @@ export default function Contacts({ user, onLogout }) {
     setLoading(true);
     try {
       const data = await getContacts();
-      if (data === null) return; // 401 handled in api.js
+      if (data === null) return;
       setContacts(data || []);
     } catch {
       toast.error('Failed to load contacts');
@@ -135,7 +132,6 @@ export default function Contacts({ user, onLogout }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load linked deals + activities when contact changes
   useEffect(() => {
     if (!selected?.id) return;
     setNotes(selected.notes || '');
@@ -223,81 +219,40 @@ export default function Contacts({ user, onLogout }) {
     <div
       data-testid="contacts-page"
       className="flex flex-col overflow-hidden"
-      style={{ height: '100vh', background: '#0d0d14', fontFamily: "'DM Sans', system-ui, sans-serif" }}
+      style={{ height: '100vh', background: '#080810' }}
     >
-      {/* ── Top Nav ──────────────────────────────────────────────────────── */}
-      <nav className="h-14 shrink-0 border-b border-[rgba(255,255,255,0.07)] flex items-center px-5 gap-4">
-        <div className="flex items-center gap-2.5 mr-auto">
-          <div className="w-7 h-7 rounded flex items-center justify-center text-white font-bold text-xs shrink-0"
-            style={{ background: 'linear-gradient(135deg,#7c6dfa,#5b4de8)' }}>
-            FF
-          </div>
-          <div className="hidden sm:flex items-center gap-3">
-            <button
-              onClick={() => navigate('/')}
-              className="text-[rgba(255,255,255,0.45)] hover:text-white text-sm font-medium transition-colors"
-            >
-              Dashboard
-            </button>
-            <span className="text-[rgba(255,255,255,0.15)]">/</span>
-            <span className="text-white text-sm font-semibold">Contacts</span>
-          </div>
-        </div>
-
-        <button onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}>
-          <LayoutGrid size={12} />
-          <span className="hidden sm:inline">Deal Inbox</span>
-        </button>
-        <button onClick={() => navigate('/pipeline')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}>
-          <Users size={12} />
-          <span className="hidden sm:inline">Pipeline</span>
-        </button>
-        <button onClick={() => navigate('/fund-focus')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{ background: 'rgba(124,109,250,0.08)', border: '1px solid rgba(124,109,250,0.25)', color: '#7c6dfa' }}>
-          <BookOpen size={13} />
-          <span className="hidden sm:inline">Fund Focus</span>
-        </button>
-        <button onClick={onLogout} className="text-[rgba(255,255,255,0.35)] hover:text-white transition-colors p-1">
-          <LogOut size={15} />
-        </button>
-      </nav>
-
-      {/* ── Page header ─────────────────────────────────────────────────── */}
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div
-        className="shrink-0 px-6 py-3 border-b flex items-center justify-between gap-4"
-        style={{ background: 'rgba(13,13,20,0.9)', borderColor: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(12px)' }}
+        className="shrink-0 flex items-center px-5 gap-4"
+        style={{ height: 48, borderBottom: '1px solid rgba(255,255,255,0.07)', background: '#080810' }}
       >
-        <div className="flex items-center gap-6">
-          <h1 className="text-base font-semibold text-white tracking-tight">Contacts</h1>
-          {/* Stats */}
-          <div className="hidden sm:flex items-center gap-5">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Total</span>
-              <span className="text-sm font-bold text-white">{contacts.length}</span>
+        <span className="font-semibold text-white" style={{ fontSize: 16 }}>Contacts</span>
+
+        {/* Metric chips */}
+        <div className="hidden sm:flex items-center gap-3 ml-2">
+          {[
+            { label: 'Total', value: contacts.length, color: 'rgba(255,255,255,0.7)' },
+            { label: 'In Pipeline', value: pipelineCount, color: '#7c6dfa' },
+            { label: 'Avg Score', value: avgScore || '—', color: scoreColor(avgScore) },
+          ].map(({ label, value, color }) => (
+            <div
+              key={label}
+              className="flex items-center gap-2 px-3 py-1 rounded-lg"
+              style={{ background: '#131320', border: '1px solid rgba(255,255,255,0.07)' }}
+            >
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+                {label}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
             </div>
-            <div className="w-px h-6" style={{ background: 'rgba(255,255,255,0.07)' }} />
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>In Pipeline</span>
-              <span className="text-sm font-bold" style={{ color: '#7c6dfa' }}>{pipelineCount}</span>
-            </div>
-            <div className="w-px h-6" style={{ background: 'rgba(255,255,255,0.07)' }} />
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Avg Score</span>
-              <span className="text-sm font-bold" style={{ color: scoreColor(avgScore) }}>{avgScore || '—'}</span>
-            </div>
-          </div>
+          ))}
         </div>
 
         <button
           data-testid="rebuild-contacts-button"
           onClick={() => handleRebuild(false)}
           disabled={rebuilding}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+          className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
           style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
           onMouseEnter={e => !rebuilding && (e.currentTarget.style.background = 'rgba(255,255,255,0.09)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
@@ -312,8 +267,8 @@ export default function Contacts({ user, onLogout }) {
 
         {/* ── Left: Contact list ──────────────────────────────────────── */}
         <div
-          className="flex flex-col border-r shrink-0"
-          style={{ width: 340, background: '#11111a', borderColor: 'rgba(255,255,255,0.07)' }}
+          className="flex flex-col shrink-0"
+          style={{ width: 340, background: '#0d0d1a', borderRight: '1px solid rgba(255,255,255,0.07)' }}
         >
           {/* Search */}
           <div className="px-3 pt-3 pb-2 shrink-0">
@@ -324,23 +279,30 @@ export default function Contacts({ user, onLogout }) {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search name, email, company…"
-                className="w-full pl-7 pr-3 py-2 rounded-lg text-xs outline-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff' }}
+                className="w-full pl-7 pr-3 py-2 text-xs outline-none"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 10,
+                  color: '#fff',
+                }}
                 onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.5)')}
                 onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
               />
             </div>
           </div>
 
-          {/* Filter tabs */}
+          {/* Filter tabs — capsule pills */}
           <div className="px-3 pb-2 shrink-0 flex gap-1 flex-wrap">
             {FILTER_TABS.map(tab => (
               <button
                 key={tab}
                 data-testid={`contact-filter-tab-${tab.toLowerCase().replace(/\s+/g, '-')}`}
                 onClick={() => setFilter(tab)}
-                className="px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all"
+                className="text-[10px] font-semibold transition-all"
                 style={{
+                  borderRadius: 999,
+                  padding: '4px 10px',
                   background: filter === tab ? 'rgba(124,109,250,0.15)' : 'transparent',
                   color: filter === tab ? '#7c6dfa' : 'rgba(255,255,255,0.35)',
                   border: `1px solid ${filter === tab ? 'rgba(124,109,250,0.35)' : 'transparent'}`,
@@ -351,7 +313,7 @@ export default function Contacts({ user, onLogout }) {
             ))}
           </div>
 
-          {/* List */}
+          {/* Contact list */}
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center h-32">
@@ -378,23 +340,21 @@ export default function Contacts({ user, onLogout }) {
                     key={c.id}
                     data-testid={`contact-list-row-${c.id}`}
                     onClick={() => setSelected(c)}
-                    className="flex items-start gap-3 px-3 py-3 cursor-pointer transition-all border-b"
+                    className="flex items-start gap-3 px-3 py-3.5 cursor-pointer transition-all"
                     style={{
                       background: isActive ? 'rgba(124,109,250,0.08)' : 'transparent',
-                      borderColor: 'rgba(255,255,255,0.04)',
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
                       borderLeft: isActive ? '2px solid #7c6dfa' : '2px solid transparent',
                     }}
                     onMouseEnter={e => !isActive && (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                     onMouseLeave={e => !isActive && (e.currentTarget.style.background = 'transparent')}
                   >
-                    {/* Avatar */}
                     <div
                       className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-bold"
                       style={{ background: bgA, color: fgA }}
                     >
                       {getInitials(c.name, c.email)}
                     </div>
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-1">
                         <p className="text-sm font-medium text-white truncate">{c.name || c.email || '—'}</p>
@@ -403,8 +363,8 @@ export default function Contacts({ user, onLogout }) {
                         </span>
                       </div>
                       {c.company && (
-                          <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</p>
-                        )}
+                        <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-1.5">
                         <StageBadge stage={c.contact_status} />
                         {c.relevance_score != null && (
@@ -413,7 +373,7 @@ export default function Contacts({ user, onLogout }) {
                           </span>
                         )}
                         {(c.deal_count || 0) > 1 && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa' }}>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa' }}>
                             {c.deal_count}x
                           </span>
                         )}
@@ -427,7 +387,7 @@ export default function Contacts({ user, onLogout }) {
 
           {/* Footer count */}
           {filtered.length > 0 && (
-            <div className="px-3 py-2 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="px-3 py-2 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
                 {filtered.length} contact{filtered.length !== 1 ? 's' : ''}{filter !== 'All' ? ` · ${filter}` : ''}
               </p>
@@ -437,7 +397,7 @@ export default function Contacts({ user, onLogout }) {
 
         {/* ── Right: Detail panel ─────────────────────────────────────── */}
         {selected ? (
-          <DetailPanel
+          <ContactDetailPanel
             key={selected.id}
             contact={selected}
             linkedDeals={linkedDeals}
@@ -456,7 +416,7 @@ export default function Contacts({ user, onLogout }) {
             activitiesLoading={activitiesLoading}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center" style={{ background: '#0d0d14' }}>
+          <div className="flex-1 flex flex-col items-center justify-center" style={{ background: '#080810' }}>
             <Users size={40} style={{ color: 'rgba(255,255,255,0.08)' }} className="mb-4" />
             <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.25)' }}>
               Select a contact to view details
@@ -468,7 +428,7 @@ export default function Contacts({ user, onLogout }) {
   );
 }
 
-/* ── Detail Panel ─────────────────────────────────────────────────────────── */
+/* ── Contact Detail Panel ─────────────────────────────────────────────────── */
 const ACTIVITY_ICONS = {
   deal_received: { Icon: Inbox,     color: '#7c6dfa' },
   stage_change:  { Icon: ArrowRight, color: '#4da6ff' },
@@ -486,7 +446,23 @@ function fmtRelative(ts) {
   return `${Math.floor(diff / 604800)}w ago`;
 }
 
-function DetailPanel({
+// Card section style — matches new card system
+const cardSection = {
+  background: '#131320',
+  border: '1px solid rgba(255,255,255,0.07)',
+  borderRadius: 16,
+};
+
+const sectionLabelStyle = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'rgba(255,255,255,0.35)',
+  letterSpacing: '0.07em',
+  textTransform: 'uppercase',
+  marginBottom: 12,
+};
+
+function ContactDetailPanel({
   contact, linkedDeals, dealsLoading,
   notes, setNotes, savingNotes, onNotesBlur,
   tagInput, setTagInput, onAddTag, onRemoveTag,
@@ -494,27 +470,23 @@ function DetailPanel({
   activities, activitiesLoading,
 }) {
   const [bgA, fgA] = avatarColor(contact.email || contact.name);
-  const ss = stageStyle(contact.contact_status);
 
   return (
     <div
       data-testid="contact-detail-panel"
       className="flex-1 overflow-y-auto"
-      style={{ background: '#0d0d14' }}
+      style={{ background: '#080810' }}
     >
-      <div className="max-w-2xl mx-auto px-6 py-6 flex flex-col gap-6">
+      <div className="max-w-2xl mx-auto px-6 py-6 flex flex-col gap-4">
 
-        {/* ── Hero ─────────────────────────────────────────────────── */}
-        <div className="flex items-start gap-5">
-          {/* Large avatar */}
+        {/* ── Hero card ────────────────────────────────────────────── */}
+        <div className="flex items-start gap-5 px-5 py-5 rounded-2xl" style={cardSection}>
           <div
             className="h-16 w-16 shrink-0 rounded-full flex items-center justify-center text-xl font-bold border"
             style={{ background: bgA, color: fgA, borderColor: fgA + '44' }}
           >
             {getInitials(contact.name, contact.email)}
           </div>
-
-          {/* Name / company / badges */}
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-white leading-tight">{contact.name || '—'}</h2>
             {contact.company && (
@@ -526,32 +498,38 @@ function DetailPanel({
               <StageBadge stage={contact.contact_status} />
               {contact.relevance_score != null && (
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-xs font-bold"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-mono text-xs font-bold"
                   style={{ background: 'transparent', borderColor: scoreColor(normScore(contact.relevance_score)) + '66', color: scoreColor(normScore(contact.relevance_score)) }}
                 >
                   <Star size={9} /> {normScore(contact.relevance_score)}
                 </span>
               )}
               {(contact.deal_count || 0) > 1 && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}>
                   Returning · {contact.deal_count}×
                 </span>
               )}
             </div>
           </div>
-
-          {/* Close */}
-          <button onClick={onClose} className="p-1.5 rounded-lg shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center shrink-0 transition-all"
+            style={{ width: 30, height: 30, borderRadius: '50%', color: 'rgba(255,255,255,0.3)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
+          >
             <X size={15} />
           </button>
         </div>
 
-        {/* ── Score bar ─────────────────────────────────────────────── */}
+        {/* ── Relevance score bar ───────────────────────────────────── */}
         {contact.relevance_score != null && (
-          <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="px-5 py-4 rounded-2xl" style={cardSection}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Relevance Score</span>
-              <span className="text-sm font-bold font-mono" style={{ color: scoreColor(normScore(contact.relevance_score)) }}>{normScore(contact.relevance_score)}/100</span>
+              <span style={sectionLabelStyle}>Relevance Score</span>
+              <span className="text-sm font-bold font-mono" style={{ color: scoreColor(normScore(contact.relevance_score)) }}>
+                {normScore(contact.relevance_score)}/100
+              </span>
             </div>
             <div className="flex gap-0.5">
               {Array.from({ length: 10 }, (_, i) => (
@@ -573,42 +551,49 @@ function DetailPanel({
             { label: 'Last Contact', value: fmtDate(contact.last_contacted) },
             { label: 'Sector', value: contact.sector || '—' },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-xl px-4 py-3" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <p className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.3)' }}>{label}</p>
+            <div key={label} className="rounded-2xl px-4 py-3" style={cardSection}>
+              <p style={{ ...sectionLabelStyle, marginBottom: 4 }}>{label}</p>
               <p className="text-sm font-semibold text-white">{String(value)}</p>
             </div>
           ))}
         </div>
 
         {/* ── Contact info ──────────────────────────────────────────── */}
-        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Contact Info</p>
-          <InfoRow icon={Mail}      label="Email"      value={fmtEmail(contact.email)}       href={fmtEmail(contact.email) ? `mailto:${contact.email}` : undefined} />
-          <InfoRow icon={Building2} label="Company"    value={contact.company} />
-          <InfoRow icon={Briefcase} label="Role"       value={contact.role} />
-          <InfoRow icon={Globe}     label="Geography"  value={contact.geography} />
-          <InfoRow icon={MapPin}    label="Stage"      value={contact.stage} />
-          <InfoRow icon={Star}      label="Intro"      value={contact.intro_source} />
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
+          <p style={sectionLabelStyle}>Contact Info</p>
+          <InfoRow icon={Mail}      label="Email"     value={fmtEmail(contact.email)}  href={fmtEmail(contact.email) ? `mailto:${contact.email}` : undefined} />
+          <InfoRow icon={Building2} label="Company"   value={contact.company} />
+          <InfoRow icon={Briefcase} label="Role"      value={contact.role} />
+          <InfoRow icon={Globe}     label="Geography" value={contact.geography} />
+          <InfoRow icon={MapPin}    label="Stage"     value={contact.stage} />
+          <InfoRow icon={Star}      label="Intro"     value={contact.intro_source} />
           {contact.warm_or_cold && (
             <div className="flex items-start gap-3 py-2">
               <Calendar size={13} className="mt-0.5 shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }} />
               <span className="text-xs w-20 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }}>Source</span>
               <span
-                className="text-xs px-2 py-0.5 rounded"
+                className="text-xs px-2 py-0.5 rounded-full"
                 style={{
                   background: contact.warm_or_cold.toLowerCase().includes('warm') ? 'rgba(61,214,140,0.1)' : 'rgba(255,255,255,0.04)',
                   color: contact.warm_or_cold.toLowerCase().includes('warm') ? '#3dd68c' : 'rgba(255,255,255,0.4)',
                   border: `1px solid ${contact.warm_or_cold.toLowerCase().includes('warm') ? 'rgba(61,214,140,0.2)' : 'rgba(255,255,255,0.08)'}`,
                 }}
-              >{contact.warm_or_cold}</span>
+              >
+                {contact.warm_or_cold}
+              </span>
             </div>
           )}
         </div>
 
         {/* ── Linked deals ──────────────────────────────────────────── */}
-        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            Linked Deals{linkedDeals.length > 0 && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa' }}>{linkedDeals.length}</span>}
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
+          <p style={sectionLabelStyle}>
+            Linked Deals
+            {linkedDeals.length > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa' }}>
+                {linkedDeals.length}
+              </span>
+            )}
           </p>
           {dealsLoading ? (
             <div className="flex items-center gap-2 py-2">
@@ -626,7 +611,7 @@ function DetailPanel({
                     key={deal.id}
                     data-testid={`linked-deal-card-${deal.id}`}
                     onClick={() => onNavigateDeals && onNavigateDeals(deal.id)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors"
                     style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
@@ -649,9 +634,9 @@ function DetailPanel({
         </div>
 
         {/* ── Notes ─────────────────────────────────────────────────── */}
-        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Notes</p>
+            <p style={sectionLabelStyle}>Notes</p>
             {savingNotes && <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>Saving…</span>}
           </div>
           <textarea
@@ -669,8 +654,8 @@ function DetailPanel({
         </div>
 
         {/* ── Activity timeline ─────────────────────────────────────── */}
-        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Activity</p>
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
+          <p style={sectionLabelStyle}>Activity</p>
           {activitiesLoading ? (
             <div className="flex items-center gap-2 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
               <RefreshCw size={11} className="animate-spin" /> Loading…
@@ -687,11 +672,9 @@ function DetailPanel({
                       <Icon size={10} style={{ color }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs leading-snug" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                        {act.description}
-                      </p>
+                      <p className="text-xs leading-snug" style={{ color: 'rgba(255,255,255,0.65)' }}>{act.description}</p>
                     </div>
-                    <span className="text-[10px] shrink-0" style={{ color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
+                    <span className="text-[10px] shrink-0 font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
                       {fmtRelative(act.created_at)}
                     </span>
                   </div>
@@ -704,15 +687,14 @@ function DetailPanel({
         </div>
 
         {/* ── Tags ──────────────────────────────────────────────────── */}
-        <div className="rounded-xl px-5 py-4" style={{ background: '#161622', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Tags</p>
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
+          <p style={sectionLabelStyle}>Tags</p>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {(contact.tags || []).map(t => (
-              <span key={t} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: 'rgba(124,109,250,0.1)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}>
+              <span key={t} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                style={{ background: 'rgba(124,109,250,0.1)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}>
                 <Tag size={9} />{t}
-                <button onClick={() => onRemoveTag(t)} className="hover:opacity-70">
-                  <X size={9} />
-                </button>
+                <button onClick={() => onRemoveTag(t)} className="hover:opacity-70"><X size={9} /></button>
               </span>
             ))}
             {(contact.tags || []).length === 0 && (
@@ -726,7 +708,7 @@ function DetailPanel({
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && onAddTag()}
               placeholder="Add tag…"
-              className="flex-1 px-3 py-1.5 rounded-lg text-xs outline-none"
+              className="flex-1 px-3 py-1.5 rounded-xl text-xs outline-none"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#fff' }}
               onFocus={e => (e.target.style.borderColor = 'rgba(124,109,250,0.4)')}
               onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.09)')}
@@ -734,7 +716,7 @@ function DetailPanel({
             <button
               data-testid="contact-add-tag-button"
               onClick={onAddTag}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
               style={{ background: 'rgba(124,109,250,0.12)', color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.25)' }}
             >
               <Plus size={12} />

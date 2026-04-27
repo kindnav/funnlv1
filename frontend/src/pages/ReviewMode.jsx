@@ -304,10 +304,10 @@ export default function ReviewMode() {
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-[#0c0c12] flex items-center justify-center">
+      <div className="h-screen w-screen flex items-center justify-center" style={{ background: '#080810' }}>
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-[#7c6dfa] border-t-transparent animate-spin" />
-          <span className="text-[rgba(255,255,255,0.4)] text-sm font-mono">Loading inbound deals...</span>
+          <span className="text-sm font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>Loading inbound deals...</span>
         </div>
       </div>
     );
@@ -318,7 +318,7 @@ export default function ReviewMode() {
     return (
       <div
         className="h-screen w-screen flex flex-col items-center justify-center gap-6 px-6 text-center"
-        style={{ background: '#0c0c12' }}
+        style={{ background: '#080810' }}
         data-testid="review-empty-state"
       >
         <style>{`
@@ -335,11 +335,11 @@ export default function ReviewMode() {
         </div>
         <div>
           <h2 className="text-white text-2xl font-bold mb-2">Inbox cleared</h2>
-          <p className="text-[rgba(255,255,255,0.4)] text-sm leading-relaxed max-w-xs mx-auto">
+          <p className="text-sm leading-relaxed max-w-xs mx-auto" style={{ color: 'rgba(255,255,255,0.4)' }}>
             No inbound deals to review. New emails will appear here automatically.
           </p>
           {cleared > 0 && (
-            <p className="text-[rgba(255,255,255,0.2)] text-xs mt-2 font-mono">
+            <p className="text-xs mt-2 font-mono" style={{ color: 'rgba(255,255,255,0.2)' }}>
               {cleared} deal{cleared !== 1 ? 's' : ''} triaged this session
             </p>
           )}
@@ -347,8 +347,8 @@ export default function ReviewMode() {
         <button
           data-testid="review-back-btn"
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all active:scale-95"
-          style={{ background: '#7c6dfa', boxShadow: '0 0 20px rgba(124,109,250,0.35)' }}
+          className="flex items-center gap-2 text-sm font-medium text-white transition-all active:scale-95"
+          style={{ background: '#7c6dfa', borderRadius: 999, padding: '10px 22px', boxShadow: '0 0 24px rgba(124,109,250,0.4)' }}
         >
           <ArrowLeft size={14} />
           Back to Dashboard
@@ -362,29 +362,41 @@ export default function ReviewMode() {
   return (
     <div
       className="h-screen w-screen flex flex-col overflow-hidden relative"
-      style={{ background: '#0c0c12' }}
+      style={{ background: '#080810' }}
       data-testid="review-mode"
     >
       {/* ── Progress bar ────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pt-safe pt-4 pb-2">
+      <div className="shrink-0 px-5 pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <button
             data-testid="review-nav-back"
             onClick={() => navigate('/')}
-            className="flex items-center gap-1.5 text-[rgba(255,255,255,0.4)] hover:text-white transition-colors"
+            className="flex items-center gap-1.5 transition-all"
+            style={{
+              color: 'rgba(255,255,255,0.4)',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 999,
+              padding: '5px 12px',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.09)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
           >
-            <ArrowLeft size={14} />
+            <ArrowLeft size={13} />
             <span className="font-mono text-xs">Dashboard</span>
           </button>
-          <span className="font-mono text-xs text-[rgba(255,255,255,0.35)]" data-testid="review-remaining">
+          <span className="font-mono text-xs" style={{ color: 'rgba(255,255,255,0.35)' }} data-testid="review-remaining">
             {remaining} inbound
           </span>
-          <span className="font-mono text-xs text-[rgba(255,255,255,0.22)]">{cleared}/{total}</span>
+          <span className="font-mono text-xs" style={{ color: 'rgba(255,255,255,0.22)' }}>{cleared}/{total}</span>
         </div>
-        <div className="w-full h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+        <div className="w-full overflow-hidden" style={{ height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.06)' }}>
           <div
-            className="h-full rounded-full"
             style={{
+              height: '100%',
+              borderRadius: 999,
               width: `${progress}%`,
               background: 'linear-gradient(to right, #7c6dfa, #5b4de8)',
               transition: 'width 0.5s ease',
@@ -399,12 +411,13 @@ export default function ReviewMode() {
           {nextDeal && (
             <div
               ref={nextCardRef}
-              className="absolute inset-x-0 inset-y-0 rounded-2xl"
+              className="absolute inset-x-0 inset-y-0"
               style={{
-                background: '#13131c',
-                border: '1px solid rgba(255,255,255,0.05)',
-                transform: 'scale(0.94) translateY(18px)',
-                opacity: 0.45,
+                background: '#131320',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 24,
+                transform: 'scale(0.93) translateY(20px)',
+                opacity: 0.4,
                 zIndex: 1,
               }}
             />
@@ -415,19 +428,20 @@ export default function ReviewMode() {
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
             onMouseDown={onMouseDown}
-            className="absolute inset-0 rounded-2xl cursor-grab active:cursor-grabbing"
+            className="absolute inset-0 cursor-grab active:cursor-grabbing"
             style={{
-              background: '#13131c',
+              background: '#131320',
               border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 24,
               zIndex: 2,
               willChange: 'transform',
-              boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)',
             }}
           >
             <div
               ref={overlayRef}
-              className="absolute inset-0 rounded-2xl z-20 pointer-events-none flex items-center justify-center"
-              style={{ opacity: 0 }}
+              className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
+              style={{ opacity: 0, borderRadius: 24 }}
             >
               <span
                 ref={labelRef}
@@ -441,7 +455,7 @@ export default function ReviewMode() {
       </div>
 
       {/* ── Swipe hints ──────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pb-1">
+      <div className="shrink-0 px-5 pb-1">
         <div className="flex justify-between pointer-events-none">
           <span className="text-xs font-mono" style={{ color: 'rgba(240,82,82,0.4)' }}>← Pass</span>
           <span className="text-xs font-mono" style={{ color: 'rgba(251,191,36,0.4)' }}>↑ Watch List</span>
@@ -451,50 +465,50 @@ export default function ReviewMode() {
       </div>
 
       {/* ── Button bar ───────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pb-6 pt-1">
+      <div className="shrink-0 px-5 pb-6 pt-2">
         <div className="grid grid-cols-4 gap-2">
           <button
             data-testid="review-btn-pass"
             onClick={() => commitAction('pass')}
             disabled={animating}
-            className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(240,82,82,0.1)', border: '1px solid rgba(240,82,82,0.22)' }}
+            className="flex flex-col items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-40"
+            style={{ height: 64, borderRadius: 14, background: 'rgba(240,82,82,0.1)', border: '1px solid rgba(240,82,82,0.22)' }}
           >
-            <X size={20} className="text-[#f05252]" />
-            <span className="text-[#f05252] text-xs font-medium">Pass</span>
+            <X size={20} style={{ color: '#f05252' }} />
+            <span className="text-xs font-medium" style={{ color: '#f05252' }}>Pass</span>
           </button>
 
           <button
             data-testid="review-btn-watchlist"
             onClick={() => commitAction('watchlist')}
             disabled={animating}
-            className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.22)' }}
+            className="flex flex-col items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-40"
+            style={{ height: 64, borderRadius: 14, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.22)' }}
           >
-            <Star size={20} className="text-[#fbbf24]" />
-            <span className="text-[#fbbf24] text-xs font-medium">Watch List</span>
+            <Star size={20} style={{ color: '#fbbf24' }} />
+            <span className="text-xs font-medium" style={{ color: '#fbbf24' }}>Watch List</span>
           </button>
 
           <button
             data-testid="review-btn-draft"
             onClick={() => commitAction('draft')}
             disabled={animating}
-            className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(77,166,255,0.1)', border: '1px solid rgba(77,166,255,0.22)' }}
+            className="flex flex-col items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-40"
+            style={{ height: 64, borderRadius: 14, background: 'rgba(77,166,255,0.1)', border: '1px solid rgba(77,166,255,0.22)' }}
           >
-            <ArrowDown size={20} className="text-[#4da6ff]" />
-            <span className="text-[#4da6ff] text-xs font-medium">Draft Reply</span>
+            <ArrowDown size={20} style={{ color: '#4da6ff' }} />
+            <span className="text-xs font-medium" style={{ color: '#4da6ff' }}>Draft Reply</span>
           </button>
 
           <button
             data-testid="review-btn-first-look"
             onClick={() => commitAction('first-look')}
             disabled={animating}
-            className="h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: 'rgba(61,214,140,0.1)', border: '1px solid rgba(61,214,140,0.22)' }}
+            className="flex flex-col items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-40"
+            style={{ height: 64, borderRadius: 14, background: 'rgba(61,214,140,0.1)', border: '1px solid rgba(61,214,140,0.22)' }}
           >
-            <Check size={20} className="text-[#3dd68c]" />
-            <span className="text-[#3dd68c] text-xs font-medium">First Look</span>
+            <Check size={20} style={{ color: '#3dd68c' }} />
+            <span className="text-xs font-medium" style={{ color: '#3dd68c' }}>First Look</span>
           </button>
         </div>
 
@@ -509,8 +523,8 @@ export default function ReviewMode() {
           ].map(({ key, label, color }) => (
             <span key={key} className="flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.22)' }}>
               <kbd
-                className="px-1.5 py-0.5 rounded text-xs font-mono"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color }}
+                className="px-1.5 py-0.5 text-xs font-mono"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color }}
               >
                 {key}
               </kbd>

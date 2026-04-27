@@ -1,16 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Search, RefreshCw, Plus, Mail, Settings as SettingsIcon,
-  ChevronDown, LogOut, Inbox, BookOpen, LayoutGrid, Send, Layers, Filter, Users, Trash2, MoreHorizontal,
+  Search, RefreshCw, Plus, Send, Filter, Trash2, MoreHorizontal,
+  BookOpen, Inbox,
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
 import OnboardingChecklist from '../components/OnboardingChecklist';
 import ProductTour from '../components/ProductTour';
 import { NotificationBell } from '../components/NotificationBell';
-import { MemberAvatar, getInitials } from '../components/MemberAvatar';
-import { StatsBar } from '../components/dashboard/StatsBar';
 import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import { toast } from '../components/ui/sonner';
@@ -30,6 +28,38 @@ const fmtLastSynced = (ts) => {
 };
 
 const BASE_FILTERS = ['All', 'New', 'Score ≥ 7', 'Pitches', 'Warm Intros', 'Follow-ups due'];
+
+// ── Metric card (Image 2 pattern) ─────────────────────────────────────────────
+function MetricCard({ label, value, color, accentColor }) {
+  return (
+    <div
+      className="flex-1 flex flex-col justify-center"
+      style={{
+        background: '#131320',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 12,
+        padding: '14px 16px',
+        borderLeft: `3px solid ${accentColor}`,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+        minWidth: 0,
+      }}
+    >
+      <span
+        className="uppercase font-semibold"
+        style={{ fontSize: 10, letterSpacing: '0.07em', color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}
+      >
+        {label}
+      </span>
+      <span
+        className="font-bold font-mono leading-none"
+        style={{ fontSize: 28, color }}
+        data-testid={`stat-${label.toLowerCase().replace(/\s/g, '-')}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard({ user, onLogout }) {
@@ -74,7 +104,6 @@ export default function Dashboard({ user, onLogout }) {
     const deal = deals.find(d => d.id === location.state.openDealId);
     if (deal) {
       setSelectedDeal(deal);
-      // Clear the state so refreshing doesn't reopen the panel
       window.history.replaceState({}, '');
     }
   }, [location.state?.openDealId, deals]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -100,8 +129,7 @@ export default function Dashboard({ user, onLogout }) {
       const t = setTimeout(() => setShowTour(true), 900);
       return () => clearTimeout(t);
     }
-  // showTour intentionally excluded from deps — we only want this to fire when
-  // deals first load, not every time the tour is toggled open/closed.
+  // showTour intentionally excluded from deps
   }, [deals.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchAll = useCallback(async () => {
@@ -193,10 +221,9 @@ export default function Dashboard({ user, onLogout }) {
         setShowUpgradeModal(true);
         return;
       }
-      // Other errors fail silently — progress polling will surface the error
     }
     let polls = 0;
-    const maxPolls = 36; // 36 × 5s = 180s
+    const maxPolls = 36;
     const poll = setInterval(async () => {
       polls++;
       try {
@@ -214,7 +241,6 @@ export default function Dashboard({ user, onLogout }) {
           setIsSyncing(false);
           setSyncResult({ status: 'done', new_deals: newDeals });
           setSyncMessage(newDeals > 0 ? `${newDeals} new deal${newDeals !== 1 ? 's' : ''} added` : 'All caught up');
-          // Capture sync log stats from the final status
           if (status?.fetched != null) {
             setSyncLog({
               time: new Date().toLocaleTimeString(),
@@ -227,7 +253,6 @@ export default function Dashboard({ user, onLogout }) {
           setTimeout(() => { setSyncResult(null); setSyncMessage(''); }, 8000);
         }
       } catch {
-        // Transient API error during polling — keep polling until maxPolls
         if (polls >= maxPolls) {
           clearInterval(poll);
           setIsSyncing(false);
@@ -247,7 +272,6 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   const handleDeleteDeal = async (dealId) => {
-    // Optimistic: remove from UI immediately
     const prevDeals = deals;
     const prevFundDeals = fundDeals;
     setDeals((prev) => prev.filter((d) => d.id !== dealId));
@@ -256,7 +280,6 @@ export default function Dashboard({ user, onLogout }) {
 
     try {
       await deleteDeal(dealId);
-      // Refresh archive list so the recovered deal appears immediately
       if (viewMode === 'archived') {
         const a = await getArchivedDeals();
         setArchivedDeals(a || []);
@@ -272,7 +295,6 @@ export default function Dashboard({ user, onLogout }) {
     try {
       await recoverDeal(dealId);
       setArchivedDeals((prev) => prev.filter((d) => d.id !== dealId));
-      // Reload main deals list so recovered deal appears
       const d = await getDeals();
       if (d) setDeals(d);
       toast('Deal recovered and moved back to Inbound.');
@@ -312,196 +334,210 @@ export default function Dashboard({ user, onLogout }) {
     syncBtnLabel = 'Sync Now';
   }
 
-  return (
-    <div className="h-screen w-screen flex flex-col bg-[#0c0c12] overflow-hidden" data-testid="dashboard">
-      {/* Top Nav */}
-      <nav className="h-14 shrink-0 border-b border-[rgba(255,255,255,0.07)] flex items-center px-5 gap-4 bg-[#0c0c12]">
-        {/* Brand — funnl */}
-        <div className="flex items-center gap-2 mr-auto">
-          <span
-            className="text-white font-bold tracking-tight select-none"
-            style={{ fontSize: 22, letterSpacing: '-0.03em' }}
-          >
-            funnl
-          </span>
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              color: '#7c6dfa',
-              border: '1px solid rgba(124,109,250,0.35)',
-              borderRadius: 4,
-              padding: '1px 5px',
-              letterSpacing: '0.08em',
-              lineHeight: 1.8,
-            }}
-          >
-            BETA
-          </span>
-        </div>
+  // ── Stats computed inline ────────────────────────────────────────────────
+  const statTotal    = activeDeals.length;
+  const statPitches  = activeDeals.filter(d => d.category === 'Founder pitch').length;
+  const scores       = activeDeals.map(d => d.relevance_score).filter(s => s != null);
+  const statAvg      = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
+  const statHigh     = activeDeals.filter(d => (d.relevance_score || 0) >= 7).length;
+  const statUnrev    = activeDeals.filter(d => d.deal_stage === 'Inbound' || (!d.deal_stage && d.status === 'New')).length;
 
-        {/* Gmail status */}
-        {user && (
+  return (
+    <div className="flex flex-col overflow-hidden" style={{ height: '100vh', background: '#080810' }} data-testid="dashboard">
+
+      {/* ── Top bar ───────────────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 flex items-center px-5 gap-3"
+        style={{
+          height: 48,
+          background: '#080810',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+        }}
+      >
+        {/* Page title */}
+        <span className="font-semibold text-white" style={{ fontSize: 16 }}>
+          {viewMode === 'fund-dashboard' ? fundName || 'Fund Dashboard' : 'Dashboard'}
+        </span>
+
+        {/* Fund inbox toggle */}
+        {fundInfo?.fund && (
           <div
-            data-testid="gmail-status"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono"
-            style={{
-              background: user.gmail_connected ? 'rgba(61,214,140,0.08)' : 'rgba(245,166,35,0.08)',
-              border: user.gmail_connected ? '1px solid rgba(61,214,140,0.25)' : '1px solid rgba(245,166,35,0.25)',
-              color: user.gmail_connected ? '#3dd68c' : '#f5a623',
-            }}
+            className="flex items-center rounded-lg p-0.5"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
           >
-            <div
-              className="w-1.5 h-1.5 rounded-full"
-              style={{
-                background: user.gmail_connected ? '#3dd68c' : '#f5a623',
-                boxShadow: user.gmail_connected ? '0 0 5px #3dd68c' : 'none',
-              }}
-            />
-            <span className="hidden sm:inline">{user.email || 'Connected'}</span>
-            <span className="sm:hidden">Gmail</span>
+            {[
+              { id: 'my-inbox', label: 'My Inbox' },
+              { id: 'fund-dashboard', label: 'Fund Dashboard' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                data-testid={`view-${tab.id}`}
+                onClick={() => setViewMode(tab.id)}
+                className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                style={viewMode === tab.id
+                  ? { background: '#7c6dfa', color: 'white', boxShadow: '0 0 8px rgba(124,109,250,0.3)' }
+                  : { color: 'rgba(255,255,255,0.4)', background: 'transparent' }
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         )}
 
-        <button
-          data-testid="contacts-btn"
-          onClick={() => navigate('/contacts')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}
-        >
-          <Users size={12} />
-          <span className="hidden sm:inline">Contacts</span>
-        </button>
-        <button
-          data-testid="pipeline-btn"
-          onClick={() => navigate('/pipeline')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-          style={{ color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.07)', background: 'transparent' }}
-        >
-          <LayoutGrid size={12} />
-          <span className="hidden sm:inline">Pipeline</span>
-        </button>
-        <button
-          data-testid="review-mode-btn"
-          onClick={() => navigate('/review')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all"
-          style={{
-            background: 'linear-gradient(135deg, rgba(124,109,250,0.18), rgba(91,77,232,0.1))',
-            border: '1px solid rgba(124,109,250,0.4)',
-            color: '#a89cf7',
-            boxShadow: '0 0 12px rgba(124,109,250,0.15)',
-          }}
-        >
-          <Layers size={12} />
-          <span className="hidden sm:inline">Review Mode</span>
-          <span className="sm:hidden">Review</span>
-        </button>
-        {billingStatus?.status === 'trialing' && billingStatus?.days_remaining != null && billingStatus.days_remaining < 7 && (
-          <button
-            onClick={createCheckoutSession}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all shrink-0"
-            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b' }}
-            title="Your trial ends soon — click to subscribe"
-          >
-            Trial: {billingStatus.days_remaining}d left
-          </button>
-        )}
-
-        {!user?.gmail_send_enabled && (
-          <a
-            data-testid="enable-sending-btn"
-            href={`${BACKEND_URL}/api/auth/google`}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all"
-            style={{
-              background: 'rgba(77,166,255,0.08)',
-              border: '1px solid rgba(77,166,255,0.25)',
-              color: '#4da6ff',
-            }}
-            title="Click to grant Gmail send permission — required for one-click email replies"
-          >
-            <Send size={12} />
-            <span className="hidden sm:inline">Enable Sending</span>
-          </a>
-        )}
-
-        {/* ··· More menu (Archive, Fund Focus, Settings) */}
-        <div className="relative" ref={moreMenuRef}>
-          <button
-            data-testid="more-menu-btn"
-            onClick={() => setMoreMenuOpen((o) => !o)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all"
-            style={{
-              color: moreMenuOpen ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
-              border: moreMenuOpen ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.07)',
-              background: moreMenuOpen ? 'rgba(255,255,255,0.06)' : 'transparent',
-            }}
-            title="More options"
-          >
-            <MoreHorizontal size={14} />
-          </button>
-          {moreMenuOpen && (
+        <div className="ml-auto flex items-center gap-2">
+          {/* Gmail status pill */}
+          {user && (
             <div
-              className="absolute right-0 top-full mt-1.5 w-44 rounded-xl overflow-hidden z-50"
+              data-testid="gmail-status"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono"
               style={{
-                background: '#1a1a26',
-                border: '1px solid rgba(255,255,255,0.08)',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                background: user.gmail_connected ? 'rgba(61,214,140,0.08)' : 'rgba(245,166,35,0.08)',
+                border: user.gmail_connected ? '1px solid rgba(61,214,140,0.25)' : '1px solid rgba(245,166,35,0.25)',
+                color: user.gmail_connected ? '#3dd68c' : '#f5a623',
               }}
             >
-              <button
-                data-testid="archive-btn"
-                onClick={() => { handleViewArchive(); setMoreMenuOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
-                style={{ color: 'rgba(255,255,255,0.6)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
-              >
-                <Trash2 size={13} />
-                Archive
-              </button>
-              <button
-                data-testid="fund-thesis-btn"
-                onClick={() => { navigate('/fund-focus'); setMoreMenuOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
-                style={{ color: 'rgba(255,255,255,0.6)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
-              >
-                <BookOpen size={13} />
-                Fund Focus
-              </button>
-              <button
-                data-testid="settings-btn"
-                onClick={() => { navigate('/settings'); setMoreMenuOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
-                style={{ color: 'rgba(255,255,255,0.6)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
-              >
-                <SettingsIcon size={13} />
-                Settings
-              </button>
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: user.gmail_connected ? '#3dd68c' : '#f5a623',
+                  boxShadow: user.gmail_connected ? '0 0 5px #3dd68c' : 'none',
+                }}
+              />
+              <span className="hidden md:inline">{user.email || 'Connected'}</span>
+              <span className="md:hidden">Gmail</span>
             </div>
           )}
+
+          {/* Trial pill */}
+          {billingStatus?.status === 'trialing' && billingStatus?.days_remaining != null && billingStatus.days_remaining < 7 && (
+            <button
+              onClick={createCheckoutSession}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all shrink-0"
+              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b' }}
+              title="Your trial ends soon — click to subscribe"
+            >
+              Trial: {billingStatus.days_remaining}d left
+            </button>
+          )}
+
+          {/* Enable sending */}
+          {!user?.gmail_send_enabled && (
+            <a
+              data-testid="enable-sending-btn"
+              href={`${BACKEND_URL}/api/auth/google`}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all"
+              style={{ background: 'rgba(77,166,255,0.08)', border: '1px solid rgba(77,166,255,0.25)', color: '#4da6ff' }}
+              title="Click to grant Gmail send permission"
+            >
+              <Send size={11} />
+              <span className="hidden sm:inline">Enable Sending</span>
+            </a>
+          )}
+
+          {/* Last synced */}
+          {lastSynced && !isSyncing && (
+            <button
+              data-testid="sync-log-btn"
+              onClick={() => setShowSyncLog(true)}
+              className="text-[10px] font-mono hidden md:block hover:text-[rgba(255,255,255,0.5)] transition-colors"
+              style={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              synced {fmtLastSynced(lastSynced)}
+            </button>
+          )}
+
+          {/* Sync Now */}
+          <button
+            data-testid="sync-now-btn"
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all disabled:opacity-50"
+            style={syncBtnStyle}
+          >
+            <RefreshCw size={11} className={isSyncing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline max-w-[160px] truncate">{syncBtnLabel}</span>
+          </button>
+
+          {/* Process Email */}
+          <button
+            data-testid="process-email-btn"
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 text-white text-xs font-medium px-3 py-1 rounded-full transition-all"
+            style={{ background: '#7c6dfa', boxShadow: '0 0 12px rgba(124,109,250,0.3)' }}
+          >
+            <Plus size={11} />
+            <span className="hidden sm:inline">Process Email</span>
+          </button>
+
+          {/* Notification bell */}
+          <NotificationBell onNavigateToDeal={(dealId) => {
+            const d = [...deals, ...fundDeals].find((x) => x.id === dealId);
+            if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
+          }} />
+
+          {/* ··· More menu */}
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              data-testid="more-menu-btn"
+              onClick={() => setMoreMenuOpen((o) => !o)}
+              className="flex items-center justify-center transition-all"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: moreMenuOpen ? 'rgba(255,255,255,0.08)' : 'transparent',
+                border: moreMenuOpen ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
+                color: moreMenuOpen ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+              }}
+              title="More options"
+            >
+              <MoreHorizontal size={15} />
+            </button>
+            {moreMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1.5 w-44 rounded-xl overflow-hidden z-50"
+                style={{ background: '#1a1a28', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+              >
+                <button
+                  data-testid="archive-btn"
+                  onClick={() => { handleViewArchive(); setMoreMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
+                  style={{ color: 'rgba(255,255,255,0.6)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <Trash2 size={13} />
+                  Archive
+                </button>
+                <button
+                  data-testid="fund-thesis-btn"
+                  onClick={() => { navigate('/fund-focus'); setMoreMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left"
+                  style={{ color: 'rgba(255,255,255,0.6)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <BookOpen size={13} />
+                  Fund Focus
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+      </div>
 
-        <NotificationBell onNavigateToDeal={(dealId) => {
-          const d = [...deals, ...fundDeals].find((x) => x.id === dealId);
-          if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
-        }} />
-        <button
-          data-testid="logout-btn"
-          onClick={onLogout}
-          className="text-[rgba(255,255,255,0.35)] hover:text-white transition-colors p-1"
-        >
-          <LogOut size={15} />
-        </button>
-      </nav>
+      {/* ── Stats cards row ───────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-3 px-5 py-3">
+        <MetricCard label="Total Inbound"    value={statTotal}   color="rgba(255,255,255,0.85)" accentColor="rgba(255,255,255,0.2)" />
+        <MetricCard label="Founder Pitches"  value={statPitches} color="#7c6dfa"                accentColor="#7c6dfa" />
+        <MetricCard label="Avg Score"        value={statAvg}     color="#f5a623"                accentColor="#f5a623" />
+        <MetricCard label="Strong Fit"       value={statHigh}    color="#3dd68c"                accentColor="#3dd68c" />
+        <MetricCard label="Unreviewed"       value={statUnrev}   color="#4da6ff"                accentColor="#4da6ff" />
+      </div>
 
-      {/* Stats Bar */}
-      <StatsBar deals={activeDeals} />
-
-      {/* Watch List revisit banner */}
+      {/* ── Watch List revisit banner ─────────────────────────────────────── */}
       {watchlistDue.length > 0 && !watchlistBannerDismissed && (
         <div
           className="shrink-0 flex items-center justify-between px-5 py-2.5"
@@ -532,7 +568,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
       )}
 
-      {/* Follow-up due banner */}
+      {/* ── Follow-up due banner ──────────────────────────────────────────── */}
       {followUpDue.length > 0 && !followUpBannerDismissed && (
         <div
           className="shrink-0 flex items-center justify-between px-5 py-2.5"
@@ -563,11 +599,17 @@ export default function Dashboard({ user, onLogout }) {
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="h-12 shrink-0 border-b border-[rgba(255,255,255,0.05)] flex items-center px-4 gap-3 bg-[#0c0c12]">
+      {/* ── Toolbar: search + filters ─────────────────────────────────────── */}
+      <div
+        className="shrink-0 flex items-center px-5 gap-3 py-2"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+      >
         {/* Search */}
-        <div className="flex items-center gap-2 flex-1 max-w-xs bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.07)] rounded-lg px-3 py-1.5">
-          <Search size={13} className="text-[rgba(255,255,255,0.3)] shrink-0" />
+        <div
+          className="flex items-center gap-2 flex-1 max-w-xs rounded-lg px-3 py-1.5"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+        >
+          <Search size={13} style={{ color: 'rgba(255,255,255,0.3)' }} className="shrink-0" />
           <input
             data-testid="search-input"
             type="text"
@@ -578,91 +620,46 @@ export default function Dashboard({ user, onLogout }) {
           />
         </div>
 
-        {/* My Inbox / Fund Dashboard toggle */}
-        {fundInfo?.fund && (
-          <div className="flex items-center rounded-lg p-0.5 shrink-0"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            {[
-              { id: 'my-inbox', label: 'My Inbox' },
-              { id: 'fund-dashboard', label: 'Fund Dashboard' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                data-testid={`view-${tab.id}`}
-                onClick={() => setViewMode(tab.id)}
-                className="px-3 py-1 rounded-md text-xs font-medium transition-all"
-                style={viewMode === tab.id ? {
-                  background: '#7c6dfa', color: 'white',
-                  boxShadow: '0 0 8px rgba(124,109,250,0.3)',
-                } : {
-                  color: 'rgba(255,255,255,0.4)',
-                  background: 'transparent',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Filter tabs */}
-        <div className="flex items-center gap-1">
+        {/* Filter pills — capsule style */}
+        <div className="flex items-center gap-1 flex-wrap">
           {FILTERS.map((f) => (
             <button
               key={f}
-              data-testid={`filter-${f.toLowerCase().replace(/[^a-z0-9]/g,'-')}`}
+              data-testid={`filter-${f.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                filter === f
-                  ? 'bg-[#7c6dfa]/20 text-[#7c6dfa] border border-[#7c6dfa]/30'
-                  : 'text-[rgba(255,255,255,0.4)] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
-              }`}
+              className="text-xs font-medium transition-all"
+              style={{
+                borderRadius: 999,
+                padding: '5px 13px',
+                background: filter === f ? 'rgba(124,109,250,0.15)' : 'transparent',
+                color: filter === f ? '#7c6dfa' : 'rgba(255,255,255,0.4)',
+                border: filter === f ? '1px solid rgba(124,109,250,0.3)' : '1px solid transparent',
+              }}
+              onMouseEnter={(e) => {
+                if (filter !== f) {
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (filter !== f) {
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.4)';
+                  e.currentTarget.style.background = 'transparent';
+                }
+              }}
             >
               {f}
             </button>
           ))}
         </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* Last synced time — clickable to show sync log */}
-          {lastSynced && !isSyncing && (
-            <button
-              data-testid="sync-log-btn"
-              onClick={() => setShowSyncLog(true)}
-              className="text-[10px] font-mono hidden md:block hover:text-[rgba(255,255,255,0.5)] transition-colors"
-              style={{ color: 'rgba(255,255,255,0.2)' }}
-            >
-              synced {fmtLastSynced(lastSynced)}
-            </button>
-          )}
-          <button
-            data-testid="sync-now-btn"
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-50"
-            style={syncBtnStyle}
-          >
-            <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline max-w-[160px] truncate">{syncBtnLabel}</span>
-          </button>
-          <button
-            data-testid="process-email-btn"
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 bg-[#7c6dfa] hover:bg-[#6b5ded] text-white text-xs font-medium px-3 py-1.5 rounded-md transition-all"
-            style={{ boxShadow: '0 0 12px rgba(124,109,250,0.3)' }}
-          >
-            <Plus size={12} />
-            <span className="hidden sm:inline">Process Email</span>
-          </button>
-        </div>
       </div>
 
-      {/* Main content */}
+      {/* ── Main content area ─────────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Deals table / checklist / empty states */}
+
+        {/* Deals table / states */}
         <div className="flex-1 overflow-auto flex flex-col">
           {loading ? (
-            /* ── Loading / first sync state ── */
             <div className="flex-1 flex flex-col items-center justify-center gap-4">
               <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
                 style={{ borderColor: 'rgba(124,109,250,0.3)', borderTopColor: '#7c6dfa' }} />
@@ -673,88 +670,101 @@ export default function Dashboard({ user, onLogout }) {
                 </p>
               </div>
             </div>
+
           ) : viewMode === 'archived' ? (
-            /* ── Archive view ── */
-            <div className="flex-1 overflow-auto">
-              <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex items-center gap-3">
-                <Trash2 size={14} className="text-[#f05252]" />
-                <p className="text-white text-sm font-semibold">Archive</p>
-                <span className="text-[rgba(255,255,255,0.3)] text-xs ml-1">
-                  Deleted emails are recoverable for 30 days
-                </span>
-                <button
-                  onClick={() => setViewMode('my-inbox')}
-                  className="ml-auto text-xs text-[rgba(255,255,255,0.3)] hover:text-white transition-colors"
-                >← Back to inbox</button>
+            <div className="flex-1 overflow-auto p-5">
+              {/* Archive card */}
+              <div
+                style={{
+                  background: '#131320',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+                }}
+              >
+                <div className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <Trash2 size={14} className="text-[#f05252]" />
+                  <p className="text-white text-sm font-semibold">Archive</p>
+                  <span className="text-[rgba(255,255,255,0.3)] text-xs ml-1">
+                    Deleted emails are recoverable for 30 days
+                  </span>
+                  <button
+                    onClick={() => setViewMode('my-inbox')}
+                    className="ml-auto text-xs text-[rgba(255,255,255,0.3)] hover:text-white transition-colors"
+                  >
+                    ← Back to inbox
+                  </button>
+                </div>
+                {archivedLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-12">
+                    <div className="w-4 h-4 rounded-full border border-t-transparent animate-spin"
+                      style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: '#7c6dfa' }} />
+                    <span className="text-[rgba(255,255,255,0.3)] text-xs">Loading archive...</span>
+                  </div>
+                ) : archivedDeals.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-6">
+                    <Trash2 size={28} style={{ color: 'rgba(255,255,255,0.1)' }} />
+                    <p className="text-[rgba(255,255,255,0.35)] text-sm">Archive is empty</p>
+                    <p className="text-[rgba(255,255,255,0.2)] text-xs">Deleted deals will appear here for 30 days.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        {['Company / Sender', 'Subject', 'Deleted', 'Expires In', ''].map((h) => (
+                          <th key={h} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
+                            style={{ color: 'rgba(255,255,255,0.25)', letterSpacing: '0.07em', fontSize: 10 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archivedDeals.map((deal) => {
+                        const deletedAt = new Date(deal.updated_at);
+                        const expiresAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+                        const daysLeft = Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)));
+                        return (
+                          <tr key={deal.id}
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', height: 56 }}
+                            data-testid={`archived-deal-${deal.id}`}>
+                            <td className="px-4 py-3">
+                              <p className="text-white text-xs font-medium">{deal.company_name || deal.sender_name || '—'}</p>
+                              <p className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>{deal.sender_email}</p>
+                            </td>
+                            <td className="px-4 py-3 max-w-[260px]">
+                              <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>{deal.subject}</p>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <p className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>{deletedAt.toLocaleDateString()}</p>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-xs font-mono px-2 py-0.5 rounded"
+                                style={daysLeft <= 3
+                                  ? { background: 'rgba(240,82,82,0.12)', color: '#f05252' }
+                                  : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>
+                                {daysLeft}d
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                data-testid={`recover-deal-${deal.id}`}
+                                onClick={() => handleRecoverDeal(deal.id)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+                                style={{ background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.22)' }}
+                              >
+                                Recover
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
-              {archivedLoading ? (
-                <div className="flex items-center justify-center gap-2 py-12">
-                  <div className="w-4 h-4 rounded-full border border-t-transparent animate-spin"
-                    style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: '#7c6dfa' }} />
-                  <span className="text-[rgba(255,255,255,0.3)] text-xs">Loading archive...</span>
-                </div>
-              ) : archivedDeals.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-6">
-                  <Trash2 size={28} style={{ color: 'rgba(255,255,255,0.1)' }} />
-                  <p className="text-[rgba(255,255,255,0.35)] text-sm">Archive is empty</p>
-                  <p className="text-[rgba(255,255,255,0.2)] text-xs">Deleted deals will appear here for 30 days.</p>
-                </div>
-              ) : (
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                      {['Company / Sender', 'Subject', 'Deleted', 'Expires In', ''].map((h) => (
-                        <th key={h} className="px-3 py-2.5 text-[rgba(255,255,255,0.25)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {archivedDeals.map((deal) => {
-                      const deletedAt = new Date(deal.updated_at);
-                      const expiresAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-                      const daysLeft = Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)));
-                      return (
-                        <tr key={deal.id} className="border-b border-[rgba(255,255,255,0.03)]"
-                          data-testid={`archived-deal-${deal.id}`}>
-                          <td className="px-3 py-2.5">
-                            <p className="text-white text-xs font-medium">{deal.company_name || deal.sender_name || '—'}</p>
-                            <p className="text-[rgba(255,255,255,0.3)] text-xs">{deal.sender_email}</p>
-                          </td>
-                          <td className="px-3 py-2.5 max-w-[260px]">
-                            <p className="text-[rgba(255,255,255,0.5)] text-xs truncate">{deal.subject}</p>
-                          </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">
-                            <p className="text-[rgba(255,255,255,0.3)] text-xs font-mono">{deletedAt.toLocaleDateString()}</p>
-                          </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className="text-xs font-mono px-2 py-0.5 rounded"
-                              style={daysLeft <= 3 ? {
-                                background: 'rgba(240,82,82,0.12)', color: '#f05252',
-                              } : {
-                                background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)',
-                              }}>
-                              {daysLeft}d
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <button
-                              data-testid={`recover-deal-${deal.id}`}
-                              onClick={() => handleRecoverDeal(deal.id)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                              style={{ background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.22)' }}
-                            >
-                              Recover
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
             </div>
+
           ) : showChecklist ? (
-            /* ── Onboarding checklist (new users only) ── */
             <OnboardingChecklist
               user={user}
               deals={deals}
@@ -768,11 +778,13 @@ export default function Dashboard({ user, onLogout }) {
               onOpenSettings={() => navigate('/settings')}
               onProcessEmail={() => setShowModal(true)}
             />
+
           ) : filteredDeals.length === 0 && deals.length === 0 ? (
-            /* ── True empty state — no deals at all ── */
             <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6 text-center" data-testid="empty-no-deals">
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div
+                className="w-14 h-14 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+              >
                 <Inbox size={24} style={{ color: 'rgba(255,255,255,0.2)' }} />
               </div>
               <div>
@@ -795,18 +807,21 @@ export default function Dashboard({ user, onLogout }) {
                 <button
                   data-testid="empty-process-btn"
                   onClick={() => setShowModal(true)}
-                  className="flex items-center gap-1.5 bg-[#7c6dfa] hover:bg-[#6b5ded] text-white text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                  className="flex items-center gap-1.5 text-white text-xs font-medium px-4 py-2 rounded-lg transition-all"
+                  style={{ background: '#7c6dfa' }}
                 >
                   <Plus size={12} />
                   Process Email
                 </button>
               </div>
             </div>
+
           ) : filteredDeals.length === 0 ? (
-            /* ── Filter empty state — deals exist but filter returns nothing ── */
             <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center" data-testid="empty-filtered">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+              >
                 <Filter size={20} style={{ color: 'rgba(255,255,255,0.2)' }} />
               </div>
               <div>
@@ -818,46 +833,65 @@ export default function Dashboard({ user, onLogout }) {
               <button
                 data-testid="clear-filters-btn"
                 onClick={() => { setFilter('All'); setSearch(''); }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border transition-all"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium border transition-all"
                 style={{ color: '#7c6dfa', border: '1px solid rgba(124,109,250,0.3)', background: 'rgba(124,109,250,0.08)' }}
               >
                 Clear filters
               </button>
             </div>
+
           ) : (
-            /* ── Normal deals table ── */
-            <table className="w-full border-collapse text-left" data-testid="deals-table">
-              <thead className="sticky top-0 z-10 bg-[#0c0c12]">
-                <tr>
-                  {[
-                    '', 'Score', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action',
-                    ...(viewMode === 'fund-dashboard' ? ['Owner', 'Assigned', 'Stage', 'Votes'] : []),
-                    'Date',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      data-testid={h === 'Score' ? 'fit-pct-header' : undefined}
-                      className="border-b border-[rgba(255,255,255,0.07)] px-3 py-2.5 text-[rgba(255,255,255,0.4)] text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDeals.map((deal) => (
-                  <DealRow
-                    key={deal.id}
-                    deal={deal}
-                    isSelected={selectedDeal?.id === deal.id}
-                    viewMode={viewMode}
-                    fundMembers={fundInfo?.members}
-                    onSelect={(d) => setSelectedDeal(selectedDeal?.id === d.id ? null : d)}
-                    onDelete={handleDeleteDeal}
-                  />
-                ))}
-              </tbody>
-            </table>
+            /* ── Deals table in a card ── */
+            <div className="p-4 flex-1 overflow-auto">
+              <div
+                style={{
+                  background: '#131320',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+                }}
+              >
+                <table className="w-full border-collapse text-left" data-testid="deals-table">
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#131320' }}>
+                    <tr>
+                      {[
+                        '', 'Score', 'Sender', 'Company / Sector', 'Category', 'Subject', 'Summary', 'Next Action',
+                        ...(viewMode === 'fund-dashboard' ? ['Owner', 'Assigned', 'Stage', 'Votes'] : []),
+                        'Date',
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          data-testid={h === 'Score' ? 'fit-pct-header' : undefined}
+                          className="px-4 py-3 font-semibold uppercase whitespace-nowrap"
+                          style={{
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            color: 'rgba(255,255,255,0.25)',
+                            fontSize: 10,
+                            letterSpacing: '0.07em',
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDeals.map((deal) => (
+                      <DealRow
+                        key={deal.id}
+                        deal={deal}
+                        isSelected={selectedDeal?.id === deal.id}
+                        viewMode={viewMode}
+                        fundMembers={fundInfo?.members}
+                        onSelect={(d) => setSelectedDeal(selectedDeal?.id === d.id ? null : d)}
+                        onDelete={handleDeleteDeal}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
 
@@ -874,22 +908,16 @@ export default function Dashboard({ user, onLogout }) {
         )}
       </div>
 
-      {/* Process email modal */}
+      {/* Modals */}
       {showModal && (
         <ProcessEmailModal onClose={() => setShowModal(false)} onProcessed={handleProcessed} />
       )}
-
-      {/* Product tour */}
       {showTour && (
         <ProductTour onDismiss={() => setShowTour(false)} />
       )}
-
-      {/* Sync Log Modal */}
       {showSyncLog && (
         <SyncLogModal syncLog={syncLog} onClose={() => setShowSyncLog(false)} />
       )}
-
-      {/* Upgrade modal */}
       {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
     </div>
   );

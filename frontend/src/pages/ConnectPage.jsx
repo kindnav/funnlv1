@@ -108,7 +108,7 @@ export default function ConnectPage() {
   return (
     <div
       style={{
-        background: '#0c0c12',
+        background: '#080810',
         fontFamily: "'DM Sans', system-ui, sans-serif",
         color: '#fff',
         minHeight: '100vh',
@@ -125,7 +125,7 @@ export default function ConnectPage() {
       {/* ── Sticky Nav ── */}
       <nav
         className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-10 h-14"
-        style={{ background: 'rgba(12,12,18,0.9)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        style={{ background: 'rgba(8,8,16,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
       >
         <div className="flex items-center gap-2">
           <span className="text-white font-bold tracking-tight" style={{ fontSize: 20, letterSpacing: '-0.03em' }}>funnl</span>
@@ -189,10 +189,10 @@ export default function ConnectPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             {VALUE_PROPS.map((vp, i) => (
               <RevealSection key={vp.title} delay={i * 80}>
-                <div className="h-full rounded-2xl p-6" style={{ background: '#13131c', border: '1px solid rgba(255,255,255,0.07)' }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
-                    style={{ background: `${vp.color}14`, border: `1px solid ${vp.color}28` }}>
-                    <vp.icon size={18} style={{ color: vp.color }} />
+                <div className="h-full rounded-2xl p-6" style={{ background: '#131320', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-4"
+                    style={{ background: `${vp.color}16`, border: `1px solid ${vp.color}35` }}>
+                    <vp.icon size={20} style={{ color: vp.color }} />
                   </div>
                   <h3 className="text-white font-semibold mb-2 leading-snug">{vp.title}</h3>
                   <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>{vp.desc}</p>
@@ -204,7 +204,7 @@ export default function ConnectPage() {
 
         {/* ── Pricing ── */}
         <RevealSection className="px-6 sm:px-10 pb-20 max-w-md mx-auto">
-          <div className="rounded-2xl p-8 text-center" style={{ background: '#13131c', border: '1px solid rgba(124,109,250,0.25)', boxShadow: '0 0 40px rgba(124,109,250,0.08)' }}>
+          <div className="rounded-2xl p-8 text-center" style={{ background: '#131320', border: '1px solid rgba(124,109,250,0.25)', boxShadow: '0 0 40px rgba(124,109,250,0.12), 0 4px 24px rgba(0,0,0,0.4)' }}>
             <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{ color: '#7c6dfa', fontFamily: "'DM Mono', monospace" }}>
               Funnl Pro
             </p>
@@ -250,7 +250,7 @@ export default function ConnectPage() {
           <div className="space-y-6">
             {FAQS.map((faq, i) => (
               <RevealSection key={faq.q} delay={i * 60}>
-                <div className="rounded-xl p-5" style={{ background: '#13131c', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="rounded-2xl p-5" style={{ background: '#131320', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
                   <p className="text-white font-semibold text-sm mb-2">{faq.q}</p>
                   <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>{faq.a}</p>
                 </div>
