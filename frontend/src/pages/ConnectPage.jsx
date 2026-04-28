@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Zap, Layers, Bell, MessageSquare } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -348,115 +348,190 @@ export default function ConnectPage() {
               />
             ))}
 
-            {/* Floating cards stack */}
-            <div style={{ position: 'relative', width: 340, height: 360 }}>
+            {/* Feature showcase — header + 2×2 grid */}
+            <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', padding: '32px' }}>
 
-              {/* Card 1 — back (Inbound Deals list) */}
+              {/* Header */}
               <FadeIn delay={0} triggered={rightReady}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    width: 288,
-                    background: 'rgba(20,20,42,0.92)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 16,
-                    padding: '18px 20px',
-                    boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
-                    animation: 'floatA 4s ease-in-out infinite',
-                    zIndex: 1,
-                  }}
-                >
-                  <p style={{
-                    fontSize: 11, fontWeight: 600,
-                    color: 'rgba(255,255,255,0.45)',
-                    letterSpacing: '0.07em', textTransform: 'uppercase',
-                    margin: '0 0 14px',
-                  }}>
-                    Inbound Deals
-                  </p>
-                  {DEALS.map(row => (
-                    <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                      {/* Score circle */}
-                      <div style={{
-                        width: 30, height: 30, borderRadius: '50%',
-                        background: `${row.color}1e`,
-                        border: `1px solid ${row.color}55`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 11, fontWeight: 700, color: row.color, flexShrink: 0,
-                      }}>
-                        {row.score}
-                      </div>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#fff', flex: 1 }}>
-                        {row.name}
-                      </span>
-                      <span style={{
-                        fontSize: 10, color: 'rgba(255,255,255,0.4)',
-                        background: 'rgba(255,255,255,0.07)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap',
-                      }}>
-                        {row.cat}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <p style={{
+                  fontSize: 15, fontWeight: 600, color: '#fff',
+                  textAlign: 'center', margin: '0 0 20px', lineHeight: 1.4,
+                }}>
+                  Everything you need to run a smarter fund
+                </p>
               </FadeIn>
 
-              {/* Card 2 — front (Stat + sparkline) */}
-              <FadeIn delay={140} triggered={rightReady}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    width: 248,
-                    background: 'rgba(13,13,34,0.97)',
-                    border: '1px solid rgba(255,255,255,0.13)',
-                    borderRadius: 16,
-                    padding: '18px 20px',
-                    boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
-                    animation: 'floatB 4s ease-in-out infinite',
-                    zIndex: 2,
-                  }}
-                >
-                  <p style={{
-                    fontSize: 10, fontWeight: 600,
-                    color: 'rgba(255,255,255,0.35)',
-                    letterSpacing: '0.07em', textTransform: 'uppercase',
-                    margin: '0 0 6px',
+              {/* 2×2 grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+                {/* ── Card 1: AI Inbox Triage ── */}
+                <FadeIn delay={0} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 16,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatA 4s ease-in-out infinite',
                   }}>
-                    This Week
-                  </p>
-                  <p style={{ fontSize: 38, fontWeight: 700, color: '#fff', margin: '0 0 3px', lineHeight: 1 }}>
-                    23
-                  </p>
-                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', margin: '0 0 18px' }}>
-                    deals analyzed by AI
-                  </p>
-                  {/* Sparkline */}
-                  <svg width="100%" height="42" viewBox="0 0 208 42" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%"   stopColor="#7c6dfa" stopOpacity="0.35"/>
-                        <stop offset="100%" stopColor="#7c6dfa" stopOpacity="0"/>
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M0 34 L34 26 L68 30 L102 16 L136 11 L170 6 L208 2"
-                      fill="none" stroke="#7c6dfa" strokeWidth="2"
-                      strokeLinecap="round" strokeLinejoin="round"
-                    />
-                    <path
-                      d="M0 34 L34 26 L68 30 L102 16 L136 11 L170 6 L208 2 L208 42 L0 42 Z"
-                      fill="url(#sg)"
-                    />
-                    {/* End dot */}
-                    <circle cx="208" cy="2" r="3" fill="#7c6dfa"/>
-                  </svg>
-                </div>
-              </FadeIn>
+                    {/* Icon + title */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(245,166,35,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Zap size={14} style={{ color: '#f5a623' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>AI Inbox Triage</span>
+                    </div>
+                    {/* Description */}
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                      Every pitch scored 1-10 against your thesis
+                    </p>
+                    {/* Mini deal rows */}
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {[
+                        { score: 9, name: 'VaultAI',   cat: 'Pitch', color: '#3dd68c' },
+                        { score: 7, name: 'GreenLoop',  cat: 'Intro', color: '#f5a623' },
+                        { score: 4, name: 'NestAI',     cat: 'Pitch', color: '#f05252' },
+                      ].map((r, i) => (
+                        <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: i < 2 ? 7 : 0 }}>
+                          <div style={{
+                            width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                            background: `${r.color}1e`, border: `1px solid ${r.color}55`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 9, fontWeight: 700, color: r.color,
+                          }}>{r.score}</div>
+                          <span style={{ fontSize: 11, fontWeight: 500, color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.07)', borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{r.cat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </FadeIn>
+
+                {/* ── Card 2: Review Mode ── */}
+                <FadeIn delay={80} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 16,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatB 4s ease-in-out infinite',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(124,109,250,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Layers size={14} style={{ color: '#7c6dfa' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Swipe to Triage</span>
+                    </div>
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                      Right to pipeline, left to pass, up to watch
+                    </p>
+                    {/* Mini swipe card mock */}
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'center' }}>
+                      <div style={{
+                        background: 'rgba(30,30,60,0.95)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        borderRadius: 10, padding: '10px 16px',
+                        transform: 'rotate(-2deg)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                        width: '100%', textAlign: 'center',
+                      }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: '#fff', margin: '0 0 2px' }}>VaultAI</p>
+                        <p style={{ fontSize: 22, fontWeight: 700, color: '#7c6dfa', margin: '0 0 8px', lineHeight: 1 }}>9</p>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                          {[{ color: '#3dd68c', label: 'First Look' }, { color: '#f05252', label: 'Pass' }, { color: '#2dd4bf', label: 'Watch' }].map(a => (
+                            <span key={a.label} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: 'rgba(255,255,255,0.45)' }}>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: a.color, display: 'inline-block' }} />
+                              {a.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </FadeIn>
+
+                {/* ── Card 3: Follow-up Reminders ── */}
+                <FadeIn delay={160} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 16,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatA 4s ease-in-out infinite',
+                    animationDelay: '0.8s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(45,212,191,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Bell size={14} style={{ color: '#2dd4bf' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Never Miss a Follow-up</span>
+                    </div>
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                      Set reminders, get notified when deals go cold
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {/* Due today */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f5a623', flexShrink: 0, marginTop: 3 }} />
+                        <div>
+                          <p style={{ fontSize: 11, fontWeight: 600, color: '#fff', margin: 0 }}>VaultAI</p>
+                          <p style={{ fontSize: 10, color: '#f5a623', margin: 0 }}>Follow-up due today</p>
+                        </div>
+                      </div>
+                      {/* Upcoming */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#2dd4bf', flexShrink: 0, marginTop: 3 }} />
+                        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: 0 }}>GreenLoop · in 3 days</p>
+                      </div>
+                    </div>
+                  </div>
+                </FadeIn>
+
+                {/* ── Card 4: AI Call Prep ── */}
+                <FadeIn delay={240} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 16,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatB 4s ease-in-out infinite',
+                    animationDelay: '0.8s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(77,166,255,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <MessageSquare size={14} style={{ color: '#4da6ff' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>AI Call Prep</span>
+                    </div>
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                      One-click brief before every founder call
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 3px' }}>Objective</p>
+                      <p style={{ fontSize: 11, color: '#fff', margin: '0 0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Determine if traction is real...</p>
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 0 8px' }} />
+                      <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 3px' }}>5 Key Questions</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>1. What is your MRR growth...</p>
+                    </div>
+                  </div>
+                </FadeIn>
+
+              </div>
             </div>
           </div>
 
