@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Zap, Layers, Bell, MessageSquare } from 'lucide-react';
+import { AlertTriangle, Zap, Layers, Bell, MessageSquare, Users, Building2 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -348,32 +348,33 @@ export default function ConnectPage() {
               />
             ))}
 
-            {/* Feature showcase — header + 2×2 grid */}
-            <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', padding: '32px' }}>
+            {/* Feature showcase — header + 2×3 grid */}
+            <div style={{ width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 32px' }}>
 
-              {/* Header */}
+              {/* Header + subtitle */}
               <FadeIn delay={0} triggered={rightReady}>
-                <p style={{
-                  fontSize: 15, fontWeight: 600, color: '#fff',
-                  textAlign: 'center', margin: '0 0 20px', lineHeight: 1.4,
-                }}>
-                  Everything you need to run a smarter fund
-                </p>
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: '#fff', margin: '0 0 4px', lineHeight: 1.4 }}>
+                    Everything you need to run a smarter fund
+                  </p>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0 }}>
+                    Connects with Notion, Slack, and your existing workflow
+                  </p>
+                </div>
               </FadeIn>
 
-              {/* 2×2 grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* 2×3 grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto auto', gap: 10 }}>
 
                 {/* ── Card 1: AI Inbox Triage ── */}
                 <FadeIn delay={0} triggered={rightReady}>
                   <div style={{
                     background: 'rgba(18,18,42,0.92)',
                     border: '1px solid rgba(255,255,255,0.09)',
-                    borderRadius: 14, padding: 16,
+                    borderRadius: 14, padding: 14,
                     boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
                     animation: 'floatA 4s ease-in-out infinite',
                   }}>
-                    {/* Icon + title */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{
                         width: 28, height: 28, borderRadius: '50%',
@@ -384,16 +385,14 @@ export default function ConnectPage() {
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>AI Inbox Triage</span>
                     </div>
-                    {/* Description */}
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
-                      Every pitch scored 1-10 against your thesis
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
+                      Every pitch scored 1-10 against your focus
                     </p>
-                    {/* Mini deal rows */}
-                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
                       {[
-                        { score: 9, name: 'VaultAI',   cat: 'Pitch', color: '#3dd68c' },
-                        { score: 7, name: 'GreenLoop',  cat: 'Intro', color: '#f5a623' },
-                        { score: 4, name: 'NestAI',     cat: 'Pitch', color: '#f05252' },
+                        { score: 9, name: 'VaultAI',  cat: 'Pitch', color: '#3dd68c' },
+                        { score: 7, name: 'GreenLoop', cat: 'Intro', color: '#f5a623' },
+                        { score: 4, name: 'NestAI',    cat: 'Pitch', color: '#f05252' },
                       ].map((r, i) => (
                         <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: i < 2 ? 7 : 0 }}>
                           <div style={{
@@ -410,12 +409,12 @@ export default function ConnectPage() {
                   </div>
                 </FadeIn>
 
-                {/* ── Card 2: Review Mode ── */}
+                {/* ── Card 2: Swipe to Decide ── */}
                 <FadeIn delay={80} triggered={rightReady}>
                   <div style={{
                     background: 'rgba(18,18,42,0.92)',
                     border: '1px solid rgba(255,255,255,0.09)',
-                    borderRadius: 14, padding: 16,
+                    borderRadius: 14, padding: 14,
                     boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
                     animation: 'floatB 4s ease-in-out infinite',
                   }}>
@@ -427,31 +426,39 @@ export default function ConnectPage() {
                       }}>
                         <Layers size={14} style={{ color: '#7c6dfa' }} />
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Swipe to Triage</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Swipe to Decide</span>
                     </div>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
-                      Right to pipeline, left to pass, up to watch
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
+                      Tinder-style deal decisions. Right to pipeline, left to pass.
                     </p>
-                    {/* Mini swipe card mock */}
-                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {/* Rotated mini card */}
                       <div style={{
-                        background: 'rgba(30,30,60,0.95)',
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        borderRadius: 10, padding: '10px 16px',
-                        transform: 'rotate(-2deg)',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                        width: '100%', textAlign: 'center',
+                        background: 'rgba(124,109,250,0.08)',
+                        border: '1px solid rgba(124,109,250,0.2)',
+                        borderRadius: 10, padding: '8px 12px',
+                        transform: 'rotate(-3deg)',
+                        marginBottom: 8,
                       }}>
                         <p style={{ fontSize: 12, fontWeight: 700, color: '#fff', margin: '0 0 2px' }}>VaultAI</p>
-                        <p style={{ fontSize: 22, fontWeight: 700, color: '#7c6dfa', margin: '0 0 8px', lineHeight: 1 }}>9</p>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-                          {[{ color: '#3dd68c', label: 'First Look' }, { color: '#f05252', label: 'Pass' }, { color: '#2dd4bf', label: 'Watch' }].map(a => (
-                            <span key={a.label} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: 'rgba(255,255,255,0.45)' }}>
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: a.color, display: 'inline-block' }} />
-                              {a.label}
-                            </span>
-                          ))}
-                        </div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: '#3dd68c', margin: 0 }}>9/10</p>
+                      </div>
+                      {/* Action hints */}
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 5 }}>
+                        {[
+                          { label: '← Pass',       color: '#f05252' },
+                          { label: '→ First Look', color: '#3dd68c' },
+                          { label: '↑ Watch',      color: '#2dd4bf' },
+                        ].map(a => (
+                          <span key={a.label} style={{
+                            fontSize: 10, color: a.color,
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: 999, padding: '2px 8px',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {a.label}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -462,7 +469,7 @@ export default function ConnectPage() {
                   <div style={{
                     background: 'rgba(18,18,42,0.92)',
                     border: '1px solid rgba(255,255,255,0.09)',
-                    borderRadius: 14, padding: 16,
+                    borderRadius: 14, padding: 14,
                     boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
                     animation: 'floatA 4s ease-in-out infinite',
                     animationDelay: '0.8s',
@@ -477,11 +484,10 @@ export default function ConnectPage() {
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Never Miss a Follow-up</span>
                     </div>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
                       Set reminders, get notified when deals go cold
                     </p>
-                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
-                      {/* Due today */}
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f5a623', flexShrink: 0, marginTop: 3 }} />
                         <div>
@@ -489,7 +495,6 @@ export default function ConnectPage() {
                           <p style={{ fontSize: 10, color: '#f5a623', margin: 0 }}>Follow-up due today</p>
                         </div>
                       </div>
-                      {/* Upcoming */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#2dd4bf', flexShrink: 0, marginTop: 3 }} />
                         <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: 0 }}>GreenLoop · in 3 days</p>
@@ -503,7 +508,7 @@ export default function ConnectPage() {
                   <div style={{
                     background: 'rgba(18,18,42,0.92)',
                     border: '1px solid rgba(255,255,255,0.09)',
-                    borderRadius: 14, padding: 16,
+                    borderRadius: 14, padding: 14,
                     boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
                     animation: 'floatB 4s ease-in-out infinite',
                     animationDelay: '0.8s',
@@ -518,15 +523,134 @@ export default function ConnectPage() {
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>AI Call Prep</span>
                     </div>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
                       One-click brief before every founder call
                     </p>
-                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
                       <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 3px' }}>Objective</p>
                       <p style={{ fontSize: 11, color: '#fff', margin: '0 0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Determine if traction is real...</p>
                       <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 0 8px' }} />
                       <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 3px' }}>5 Key Questions</p>
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>1. What is your MRR growth...</p>
+                    </div>
+                  </div>
+                </FadeIn>
+
+                {/* ── Card 5: Contact Intelligence ── */}
+                <FadeIn delay={320} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 14,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatA 4s ease-in-out infinite',
+                    animationDelay: '1.6s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(77,166,255,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Users size={14} style={{ color: '#4da6ff' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Contact Intelligence</span>
+                    </div>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
+                      Every founder auto-saved with deal history and notes
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {[
+                        { initials: 'MC', name: 'Marcus Chen',  badge: '2 deals',  badgeColor: '#2dd4bf', avatarColor: '#7c6dfa' },
+                        { initials: 'AK', name: 'Anika Kumar',  badge: 'Returning', badgeColor: '#f5a623', avatarColor: '#4da6ff' },
+                        { initials: 'JP', name: 'James Park',   badge: '1 deal',   badgeColor: null,      avatarColor: '#3dd68c' },
+                      ].map((c, i) => (
+                        <div key={c.initials} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: i < 2 ? 6 : 0 }}>
+                          <div style={{
+                            width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                            background: `${c.avatarColor}33`, color: c.avatarColor,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 9, fontWeight: 700,
+                          }}>{c.initials}</div>
+                          <span style={{ fontSize: 12, fontWeight: i === 2 ? 400 : 500, color: i === 2 ? 'rgba(255,255,255,0.5)' : '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                          <span style={{
+                            fontSize: 10, borderRadius: 999, padding: '1px 6px', flexShrink: 0,
+                            color: c.badgeColor || 'rgba(255,255,255,0.3)',
+                            background: c.badgeColor ? `${c.badgeColor}1a` : 'rgba(255,255,255,0.06)',
+                          }}>{c.badge}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </FadeIn>
+
+                {/* ── Card 6: Shared Fund Workspace ── */}
+                <FadeIn delay={400} triggered={rightReady}>
+                  <div style={{
+                    background: 'rgba(18,18,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: 14, padding: 14,
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+                    animation: 'floatB 4s ease-in-out infinite',
+                    animationDelay: '1.6s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(245,166,35,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Building2 size={14} style={{ color: '#f5a623' }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Shared Fund Workspace</span>
+                    </div>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '6px 0 10px', lineHeight: 1.5 }}>
+                      Invite your team, vote on deals, build pipeline together
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {/* Fund label */}
+                      <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                        YBK Ventures
+                      </p>
+                      {/* Overlapping avatars */}
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                        {[
+                          { initials: 'NK', color: '#7c6dfa' },
+                          { initials: 'AK', color: '#4da6ff' },
+                          { initials: 'MJ', color: '#3dd68c' },
+                        ].map((a, i) => (
+                          <div key={a.initials} style={{
+                            width: 24, height: 24, borderRadius: '50%',
+                            background: `${a.color}33`, color: a.color,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 9, fontWeight: 700,
+                            marginLeft: i > 0 ? -6 : 0,
+                            border: '1px solid rgba(18,18,42,0.92)',
+                          }}>{a.initials}</div>
+                        ))}
+                      </div>
+                      {/* Member count */}
+                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', margin: '0 0 8px' }}>
+                        3 partners · 12 deals this week
+                      </p>
+                      {/* Vote row */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, color: '#fff', fontWeight: 500 }}>VaultAI</span>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {[
+                            { symbol: '✓', color: '#3dd68c' },
+                            { symbol: '✓', color: '#3dd68c' },
+                            { symbol: '?', color: '#f5a623' },
+                          ].map((v, i) => (
+                            <div key={i} style={{
+                              width: 18, height: 18, borderRadius: '50%',
+                              background: `${v.color}1e`, border: `1px solid ${v.color}55`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 9, fontWeight: 700, color: v.color,
+                            }}>{v.symbol}</div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </FadeIn>
