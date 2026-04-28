@@ -1,36 +1,47 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Zap, Inbox, Bookmark } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-// ── Scroll reveal hook ────────────────────────────────────────────────────────
-function useReveal() {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } },
-      { threshold: 0.12 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return [ref, visible];
+// ── Colored Google G ──────────────────────────────────────────────────────────
+function GoogleGColored() {
+  return (
+    <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, flexShrink: 0 }}>
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+    </svg>
+  );
 }
 
-function RevealSection({ children, delay = 0, className = '' }) {
-  const [ref, visible] = useReveal();
+// ── Dot-circle logo (8 dots arranged in a circle like Image 1) ────────────────
+function LogoDots() {
+  const OPACITIES = [1, 0.55, 0.3, 0.55, 1, 0.55, 0.3, 0.55];
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36">
+      {Array.from({ length: 8 }, (_, i) => {
+        const angle = (i * 45 - 90) * (Math.PI / 180);
+        const r = 14;
+        const x = 18 + r * Math.cos(angle);
+        const y = 18 + r * Math.sin(angle);
+        return <circle key={i} cx={x} cy={y} r={2.2} fill="white" opacity={OPACITIES[i]} />;
+      })}
+    </svg>
+  );
+}
+
+// ── Stagger fade-in helper ────────────────────────────────────────────────────
+function FadeIn({ delay = 0, triggered, children, style = {} }) {
   return (
     <div
-      ref={ref}
-      className={className}
       style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(28px)',
-        transition: `opacity 0.65s ease ${delay}ms, transform 0.65s ease ${delay}ms`,
+        opacity: triggered ? 1 : 0,
+        transform: triggered ? 'translateY(0)' : 'translateY(20px)',
+        transition: `opacity 500ms cubic-bezier(0.16,1,0.3,1) ${delay}ms,
+                     transform 500ms cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
+        ...style,
       }}
     >
       {children}
@@ -38,259 +49,449 @@ function RevealSection({ children, delay = 0, className = '' }) {
   );
 }
 
-const VALUE_PROPS = [
-  {
-    icon: Zap,
-    color: '#7c6dfa',
-    title: 'Scores every founder email 1–10 against your thesis',
-    desc: 'Every inbound pitch is automatically classified, scored for relevance to your specific fund focus, and summarised in plain English.',
-  },
-  {
-    icon: Inbox,
-    color: '#4da6ff',
-    title: 'Swipe-to-triage turns 50 emails into 5 decisions',
-    desc: 'Review Mode surfaces only what deserves your attention. Swipe to pipeline, archive noise, respond to the best deals first.',
-  },
-  {
-    icon: Bookmark,
-    color: '#3dd68c',
-    title: 'Never lose track of a warm intro again',
-    desc: 'Follow-up date reminders and Watch List revisit dates keep every relationship in the pipeline, not your memory.',
-  },
+// ── Static star particles (computed once at module load) ──────────────────────
+const PARTICLES = Array.from({ length: 48 }, (_, i) => ({
+  id: i,
+  left: `${((i * 137.5) % 100).toFixed(2)}%`,
+  top:  `${((i * 97.3 + 11) % 100).toFixed(2)}%`,
+  size: i % 5 === 0 ? 2 : 1,
+  opacity: ((i % 7) * 0.05 + 0.08).toFixed(2),
+}));
+
+// ── Mock deal rows for preview card ──────────────────────────────────────────
+const DEALS = [
+  { score: 9, name: 'VaultAI',   cat: 'Founder pitch', color: '#3dd68c' },
+  { score: 7, name: 'GreenLoop', cat: 'Warm intro',    color: '#f5a623' },
+  { score: 6, name: 'NestAI',    cat: 'Founder pitch', color: '#f5a623' },
 ];
 
-const FAQS = [
-  {
-    q: 'Is my email data private?',
-    a: 'Your emails are analyzed by Claude (Anthropic) to extract deal signals. Only the fields we extract — company name, scores, summary — are stored. Raw email bodies are never saved to our database.',
-  },
-  {
-    q: 'What emails does it analyze?',
-    a: 'Only emails that look like founder pitches, warm intros, or LP communications. Newsletters, receipts, and automated mail are filtered out before analysis — so your deal flow stays clean.',
-  },
-  {
-    q: 'How is this different from a CRM?',
-    a: 'A CRM stores what you type. Funnl reads what founders send you, scores it automatically, and tells you what to do next. Zero data entry required.',
-  },
-];
-
-function GoogleG() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white shrink-0">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-    </svg>
-  );
-}
-
+// ── Main component ────────────────────────────────────────────────────────────
 export default function ConnectPage() {
-  const [urlError, setUrlError] = useState(null);
-  const [heroVisible, setHeroVisible] = useState(false);
+  const [urlError,    setUrlError]    = useState(null);
+  const [mounted,     setMounted]     = useState(false);
+  const [panelOpen,   setPanelOpen]   = useState(false);
+  const [rightReady,  setRightReady]  = useState(false);
 
   useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
     const params = new URLSearchParams(window.location.search);
     const err = params.get('error');
     if (err) setUrlError(err);
-    setTimeout(() => setHeroVisible(true), 80);
-    return () => { try { document.head.removeChild(link); } catch { /* safe */ } };
+    // Trigger entry waterfall
+    const t = setTimeout(() => setMounted(true), 60);
+    return () => clearTimeout(t);
   }, []);
+
+  const handleOpenPanel = () => {
+    setPanelOpen(true);
+    // Stagger right-panel content in after the panel slide finishes
+    setTimeout(() => setRightReady(true), 320);
+  };
 
   const handleConnect = () => {
     window.location.href = `${BACKEND_URL}/api/auth/google`;
   };
 
   return (
-    <div
-      style={{
-        background: '#080810',
-        fontFamily: "'DM Sans', system-ui, sans-serif",
-        color: '#fff',
-        minHeight: '100vh',
-        overflowX: 'hidden',
-      }}
-    >
-      {/* Ambient gradient + grid */}
-      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-        <div style={{ position: 'absolute', top: '-10%', left: '20%', width: '60%', height: '50%', background: 'radial-gradient(ellipse, rgba(124,109,250,0.08) 0%, transparent 70%)' }} />
-        <div style={{ position: 'absolute', top: '40%', right: '10%', width: '40%', height: '40%', background: 'radial-gradient(ellipse, rgba(77,166,255,0.05) 0%, transparent 70%)' }} />
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.016) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.016) 1px, transparent 1px)', backgroundSize: '56px 56px' }} />
-      </div>
+    <>
+      <style>{`
+        @keyframes floatA {
+          0%, 100% { transform: translateY(0px);  }
+          50%       { transform: translateY(-7px); }
+        }
+        @keyframes floatB {
+          0%, 100% { transform: translateY(-7px); }
+          50%       { transform: translateY(0px);  }
+        }
+      `}</style>
 
-      {/* ── Sticky Nav ── */}
-      <nav
-        className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-10 h-14"
-        style={{ background: 'rgba(8,8,16,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+      {/* Page background */}
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `
+            radial-gradient(ellipse at 15% 88%, rgba(120,55,25,0.18) 0%, transparent 48%),
+            radial-gradient(ellipse at 85% 88%, rgba(38,38,90,0.22)  0%, transparent 48%),
+            #0a0a0f
+          `,
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          color: '#fff',
+          padding: '20px',
+          boxSizing: 'border-box',
+        }}
       >
-        <div className="flex items-center gap-2">
-          <span className="text-white font-bold tracking-tight" style={{ fontSize: 20, letterSpacing: '-0.03em' }}>funnl</span>
-        </div>
-        <button
-          data-testid="nav-connect-btn"
-          onClick={handleConnect}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
-          style={{ background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)', boxShadow: '0 0 20px rgba(124,109,250,0.3)' }}
+        {/* ── Outer card ────────────────────────────────────────────────── */}
+        <div
+          style={{
+            width: '90vw',
+            maxWidth: 1200,
+            height: '90vh',
+            borderRadius: 12,
+            background: '#0f0f14',
+            border: '1px solid rgba(255,255,255,0.06)',
+            position: 'relative',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'row',
+          }}
         >
-          <GoogleG />
-          <span>Sign in</span>
-        </button>
-      </nav>
 
-      <div className="relative z-10">
-        {/* ── Hero ── */}
-        <section className="px-6 sm:px-10 pt-20 pb-16 sm:pt-28 sm:pb-24 max-w-5xl mx-auto text-center">
-          <div style={{ opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(20px)', transition: 'opacity 0.7s ease 0s, transform 0.7s ease 0s' }}>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-5 tracking-tight">
-              Your deal flow inbox,
-              <br />
-              <span style={{ background: 'linear-gradient(90deg, #7c6dfa 0%, #4da6ff 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-                handled by AI
-              </span>
-            </h1>
-          </div>
-
-          <div style={{ opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(24px)', transition: 'opacity 0.7s ease 120ms, transform 0.7s ease 120ms' }}>
-            <p className="text-base sm:text-lg leading-relaxed mb-10 max-w-xl mx-auto" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              Connect Gmail → AI scores every pitch → 15 minutes a day on what matters
-            </p>
-          </div>
-
-          <div style={{ opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(24px)', transition: 'opacity 0.7s ease 200ms, transform 0.7s ease 200ms' }}>
-            {urlError && (
-              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg mb-6" style={{ background: 'rgba(240,82,82,0.08)', border: '1px solid rgba(240,82,82,0.2)' }}>
-                <AlertTriangle size={14} className="text-[#f05252] shrink-0" />
-                <p className="text-[#f05252] text-sm">Auth error: {urlError}. Please try again.</p>
-              </div>
-            )}
-
-            <button
-              data-testid="connect-gmail-btn"
-              onClick={handleConnect}
-              className="inline-flex items-center gap-3 px-8 py-4 rounded-xl text-white font-semibold text-base transition-all"
-              style={{ background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)', boxShadow: '0 0 40px rgba(124,109,250,0.4)' }}
-            >
-              <GoogleG />
-              Connect Gmail — start free trial
-            </button>
-
-            <p className="mt-4 text-xs" style={{ color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Mono', monospace" }}>
-              14-day free trial &nbsp;·&nbsp; $29/month after &nbsp;·&nbsp; Cancel anytime
-            </p>
-          </div>
-        </section>
-
-        {/* ── Value props ── */}
-        <section className="px-6 sm:px-10 pb-20 max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            {VALUE_PROPS.map((vp, i) => (
-              <RevealSection key={vp.title} delay={i * 80}>
-                <div className="h-full rounded-2xl p-6" style={{ background: '#131320', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
-                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-4"
-                    style={{ background: `${vp.color}16`, border: `1px solid ${vp.color}35` }}>
-                    <vp.icon size={20} style={{ color: vp.color }} />
-                  </div>
-                  <h3 className="text-white font-semibold mb-2 leading-snug">{vp.title}</h3>
-                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>{vp.desc}</p>
-                </div>
-              </RevealSection>
-            ))}
-          </div>
-        </section>
-
-        {/* ── Pricing ── */}
-        <RevealSection className="px-6 sm:px-10 pb-20 max-w-md mx-auto">
-          <div className="rounded-2xl p-8 text-center" style={{ background: '#131320', border: '1px solid rgba(124,109,250,0.25)', boxShadow: '0 0 40px rgba(124,109,250,0.12), 0 4px 24px rgba(0,0,0,0.4)' }}>
-            <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{ color: '#7c6dfa', fontFamily: "'DM Mono', monospace" }}>
-              Funnl Pro
-            </p>
-            <div className="flex items-baseline justify-center gap-1 mb-1">
-              <span className="text-white text-5xl font-bold">$29</span>
-              <span className="text-[rgba(255,255,255,0.4)]">/ month</span>
-            </div>
-            <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.35)', fontFamily: "'DM Mono', monospace" }}>
-              14-day free trial &nbsp;·&nbsp; cancel anytime
-            </p>
-            <ul className="space-y-3 mb-8 text-left">
-              {[
-                'AI scores every pitch against your thesis',
-                'Gmail sync + automatic email triage',
-                'Follow-up date reminders',
-                'Fund team collaboration',
-              ].map((f) => (
-                <li key={f} className="flex items-center gap-2.5 text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(124,109,250,0.15)', border: '1px solid rgba(124,109,250,0.3)' }}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#7c6dfa]" />
-                  </div>
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <button
-              data-testid="pricing-connect-btn"
-              onClick={handleConnect}
-              className="w-full py-3 rounded-lg text-white font-semibold text-sm transition-all"
-              style={{ background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)', boxShadow: '0 0 20px rgba(124,109,250,0.3)' }}
-            >
-              <GoogleG className="inline mr-2" />
-              Connect Gmail — start trial
-            </button>
-          </div>
-        </RevealSection>
-
-        {/* ── FAQ ── */}
-        <section className="px-6 sm:px-10 pb-20 max-w-2xl mx-auto">
-          <RevealSection className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">Common questions</h2>
-          </RevealSection>
-          <div className="space-y-6">
-            {FAQS.map((faq, i) => (
-              <RevealSection key={faq.q} delay={i * 60}>
-                <div className="rounded-2xl p-5" style={{ background: '#131320', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
-                  <p className="text-white font-semibold text-sm mb-2">{faq.q}</p>
-                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>{faq.a}</p>
-                </div>
-              </RevealSection>
-            ))}
-          </div>
-        </section>
-
-        {/* ── Final CTA ── */}
-        <RevealSection className="px-6 sm:px-10 pb-20 max-w-2xl mx-auto text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-            Start triaging in 2 minutes
-          </h2>
-          <p className="text-sm mb-8" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            Connect Gmail once. Claude handles everything after that.
-          </p>
-          <button
-            data-testid="footer-connect-btn"
-            onClick={handleConnect}
-            className="inline-flex items-center gap-3 px-8 py-4 rounded-xl text-white font-semibold text-base transition-all"
-            style={{ background: 'linear-gradient(135deg, #7c6dfa, #5b4de8)', boxShadow: '0 0 40px rgba(124,109,250,0.35)' }}
+          {/* ── LEFT PANEL ─────────────────────────────────────────────── */}
+          <div
+            style={{
+              flex:       panelOpen ? '0 0 42%' : '1 1 100%',
+              display:    'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding:    panelOpen ? '0 0 0 60px' : '0',
+              transition: 'flex 520ms cubic-bezier(0.16,1,0.3,1), padding 520ms cubic-bezier(0.16,1,0.3,1)',
+              minWidth: 0,
+            }}
           >
-            <GoogleG />
-            Connect Gmail — start free trial
-          </button>
-          <p className="mt-4 text-xs" style={{ color: 'rgba(255,255,255,0.25)', fontFamily: "'DM Mono', monospace" }}>
-            14-day free trial &nbsp;·&nbsp; $29/month after &nbsp;·&nbsp; Cancel anytime
-          </p>
-        </RevealSection>
+            {/* Content column — fixed width, shifts alignment on split */}
+            <div
+              style={{
+                width: 320,
+                maxWidth: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: panelOpen ? 'flex-start' : 'center',
+                transition: 'align-items 520ms ease',
+                padding: panelOpen ? '0' : '0 20px',
+              }}
+            >
+              {/* Logo */}
+              <FadeIn delay={0} triggered={mounted}>
+                <LogoDots />
+              </FadeIn>
 
-        {/* ── Footer ── */}
-        <footer className="px-6 py-8 text-center" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: "'DM Mono', monospace" }}>
-            funnl &nbsp;·&nbsp; Built for emerging fund managers &nbsp;·&nbsp;{' '}
-            <Link to="/privacy" className="underline underline-offset-2 hover:text-[rgba(255,255,255,0.5)] transition-colors">
-              Privacy
-            </Link>
-          </p>
-        </footer>
+              {/* Heading */}
+              <FadeIn delay={80} triggered={mounted} style={{ marginTop: 18 }}>
+                <h1
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 600,
+                    color: '#fff',
+                    letterSpacing: '-0.02em',
+                    margin: 0,
+                    textAlign: panelOpen ? 'left' : 'center',
+                    transition: 'text-align 300ms ease',
+                  }}
+                >
+                  {panelOpen ? 'Welcome back to Funnl' : 'Welcome to Funnl'}
+                </h1>
+              </FadeIn>
+
+              {/* Subheading */}
+              <FadeIn delay={160} triggered={mounted} style={{ marginTop: 8 }}>
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: 'rgba(255,255,255,0.45)',
+                    margin: 0,
+                    textAlign: panelOpen ? 'left' : 'center',
+                    transition: 'text-align 300ms ease',
+                  }}
+                >
+                  Connect your Gmail to get started
+                </p>
+              </FadeIn>
+
+              {/* Error banner */}
+              {urlError && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(240,82,82,0.08)',
+                    border: '1px solid rgba(240,82,82,0.2)',
+                    width: '100%',
+                  }}
+                >
+                  <AlertTriangle size={14} style={{ color: '#f05252', flexShrink: 0 }} />
+                  <p style={{ fontSize: 13, color: '#f05252', margin: 0 }}>
+                    Auth error: {urlError}. Please try again.
+                  </p>
+                </div>
+              )}
+
+              {/* Google button */}
+              <FadeIn delay={240} triggered={mounted} style={{ marginTop: 28, width: '100%' }}>
+                <button
+                  data-testid="connect-gmail-btn"
+                  onClick={handleConnect}
+                  style={{
+                    width: '100%',
+                    height: 48,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 10,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: '#fff',
+                    cursor: 'pointer',
+                    transition: 'background 150ms ease',
+                    fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                >
+                  <GoogleGColored />
+                  Continue with Google
+                </button>
+              </FadeIn>
+
+              {/* "See how it works" — only visible before panel opens */}
+              <div
+                style={{
+                  width: '100%',
+                  overflow: 'hidden',
+                  maxHeight: panelOpen ? 0 : 60,
+                  opacity: panelOpen ? 0 : 1,
+                  marginTop: panelOpen ? 0 : 12,
+                  transition: 'max-height 400ms ease, opacity 300ms ease, margin-top 400ms ease',
+                }}
+              >
+                <FadeIn delay={320} triggered={mounted} style={{ width: '100%' }}>
+                  <button
+                    data-testid="see-how-btn"
+                    onClick={handleOpenPanel}
+                    style={{
+                      width: '100%',
+                      height: 48,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#ffffff',
+                      border: 'none',
+                      borderRadius: 10,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: '#0a0a0f',
+                      cursor: 'pointer',
+                      transition: 'background 150ms ease',
+                      fontFamily: 'inherit',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.88)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#ffffff')}
+                  >
+                    See how it works →
+                  </button>
+                </FadeIn>
+              </div>
+
+              {/* Trial text — collapses when panel opens */}
+              <div
+                style={{
+                  overflow: 'hidden',
+                  maxHeight: panelOpen ? 0 : 40,
+                  opacity: panelOpen ? 0 : 1,
+                  marginTop: panelOpen ? 0 : 16,
+                  transition: 'max-height 400ms ease, opacity 300ms ease, margin-top 400ms ease',
+                }}
+              >
+                <FadeIn delay={400} triggered={mounted}>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    14-day free trial · No credit card required
+                  </p>
+                </FadeIn>
+              </div>
+            </div>
+          </div>
+
+          {/* ── RIGHT PANEL (product preview) ──────────────────────────── */}
+          <div
+            style={{
+              flex:       panelOpen ? '1' : '0 0 0%',
+              opacity:    panelOpen ? 1 : 0,
+              overflow:   'hidden',
+              borderRadius: '0 10px 10px 0',
+              background: `radial-gradient(
+                ellipse at 50% 30%,
+                rgba(55,75,190,0.45) 0%,
+                rgba(18,18,58,0.85) 40%,
+                #07070f 100%
+              )`,
+              display:    'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position:   'relative',
+              transition: 'flex 520ms cubic-bezier(0.16,1,0.3,1), opacity 400ms ease',
+            }}
+          >
+            {/* Star particles */}
+            {PARTICLES.map(p => (
+              <div
+                key={p.id}
+                style={{
+                  position: 'absolute',
+                  left: p.left,
+                  top: p.top,
+                  width: p.size,
+                  height: p.size,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  opacity: p.opacity,
+                  pointerEvents: 'none',
+                }}
+              />
+            ))}
+
+            {/* Floating cards stack */}
+            <div style={{ position: 'relative', width: 340, height: 360 }}>
+
+              {/* Card 1 — back (Inbound Deals list) */}
+              <FadeIn delay={0} triggered={rightReady}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: 288,
+                    background: 'rgba(20,20,42,0.92)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 16,
+                    padding: '18px 20px',
+                    boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
+                    animation: 'floatA 4s ease-in-out infinite',
+                    zIndex: 1,
+                  }}
+                >
+                  <p style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: 'rgba(255,255,255,0.45)',
+                    letterSpacing: '0.07em', textTransform: 'uppercase',
+                    margin: '0 0 14px',
+                  }}>
+                    Inbound Deals
+                  </p>
+                  {DEALS.map(row => (
+                    <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                      {/* Score circle */}
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%',
+                        background: `${row.color}1e`,
+                        border: `1px solid ${row.color}55`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700, color: row.color, flexShrink: 0,
+                      }}>
+                        {row.score}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#fff', flex: 1 }}>
+                        {row.name}
+                      </span>
+                      <span style={{
+                        fontSize: 10, color: 'rgba(255,255,255,0.4)',
+                        background: 'rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap',
+                      }}>
+                        {row.cat}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </FadeIn>
+
+              {/* Card 2 — front (Stat + sparkline) */}
+              <FadeIn delay={140} triggered={rightReady}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    width: 248,
+                    background: 'rgba(13,13,34,0.97)',
+                    border: '1px solid rgba(255,255,255,0.13)',
+                    borderRadius: 16,
+                    padding: '18px 20px',
+                    boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+                    animation: 'floatB 4s ease-in-out infinite',
+                    zIndex: 2,
+                  }}
+                >
+                  <p style={{
+                    fontSize: 10, fontWeight: 600,
+                    color: 'rgba(255,255,255,0.35)',
+                    letterSpacing: '0.07em', textTransform: 'uppercase',
+                    margin: '0 0 6px',
+                  }}>
+                    This Week
+                  </p>
+                  <p style={{ fontSize: 38, fontWeight: 700, color: '#fff', margin: '0 0 3px', lineHeight: 1 }}>
+                    23
+                  </p>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', margin: '0 0 18px' }}>
+                    deals analyzed by AI
+                  </p>
+                  {/* Sparkline */}
+                  <svg width="100%" height="42" viewBox="0 0 208 42" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"   stopColor="#7c6dfa" stopOpacity="0.35"/>
+                        <stop offset="100%" stopColor="#7c6dfa" stopOpacity="0"/>
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M0 34 L34 26 L68 30 L102 16 L136 11 L170 6 L208 2"
+                      fill="none" stroke="#7c6dfa" strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round"
+                    />
+                    <path
+                      d="M0 34 L34 26 L68 30 L102 16 L136 11 L170 6 L208 2 L208 42 L0 42 Z"
+                      fill="url(#sg)"
+                    />
+                    {/* End dot */}
+                    <circle cx="208" cy="2" r="3" fill="#7c6dfa"/>
+                  </svg>
+                </div>
+              </FadeIn>
+            </div>
+          </div>
+
+          {/* ── Footer (pinned to bottom of card) ──────────────────────── */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px 28px',
+              pointerEvents: 'none',
+            }}
+          >
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)', pointerEvents: 'auto' }}>
+              © 2025 Funnl
+            </span>
+            <div style={{ display: 'flex', gap: 20, pointerEvents: 'auto' }}>
+              <Link
+                to="/privacy"
+                style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)', textDecoration: 'none' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.6)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.28)')}
+              >
+                Privacy Policy
+              </Link>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.28)' }}>Support</span>
+            </div>
+          </div>
+
+        </div>
       </div>
-    </div>
+    </>
   );
 }
