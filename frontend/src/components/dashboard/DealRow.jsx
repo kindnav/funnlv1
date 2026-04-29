@@ -1,9 +1,5 @@
-import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { MemberAvatar } from '../MemberAvatar';
-import { saveToNotion, shareToSlack } from '../../lib/api';
-import { toast } from '../ui/sonner';
-import { NotionLogo, SlackLogo, CalendarLogo } from '../IntegrationLogos';
 
 // ── Local style helpers (mirror Dashboard-level constants) ───────────────────
 const CATEGORY_STYLES = {
@@ -62,60 +58,12 @@ const fmtDate = (d) => {
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function DealRow({ deal, isSelected, viewMode, fundMembers, onSelect, onDelete, integrationSettings }) {
+export function DealRow({ deal, isSelected, viewMode, fundMembers, onSelect, onDelete }) {
   const stageStyle = STAGE_STYLES[deal.deal_stage] || STAGE_STYLES['Inbound'];
   const assignedMember = fundMembers?.find((m) => m.user_id === deal.assigned_to);
 
   const scoreVal = deal.thesis_match_score ?? deal.relevance_score;
   const scoreColor = getThresholdColor(scoreVal || 0);
-
-  const [notionSaving, setNotionSaving] = useState(false);
-  const [slackSharing, setSlackSharing] = useState(false);
-
-  const handleQuickNotion = async (e) => {
-    e.stopPropagation();
-    if (notionSaving || !integrationSettings?.notion_connected) {
-      if (!integrationSettings?.notion_connected) toast.error('Connect Notion in Settings first');
-      return;
-    }
-    setNotionSaving(true);
-    try {
-      const result = await saveToNotion(deal.id);
-      if (result?.notion_url) {
-        toast.success('Saved to Notion', {
-          action: { label: 'View', onClick: () => window.open(result.notion_url, '_blank') },
-        });
-      } else {
-        toast.success('Saved to Notion ✓');
-      }
-    } catch (err) {
-      toast.error(err?.message === 'notion_not_configured' ? 'Connect Notion in Settings first' : 'Notion save failed');
-    } finally {
-      setNotionSaving(false);
-    }
-  };
-
-  const handleQuickSlack = async (e) => {
-    e.stopPropagation();
-    if (slackSharing || !integrationSettings?.slack_connected) {
-      if (!integrationSettings?.slack_connected) toast.error('Connect Slack in Settings first');
-      return;
-    }
-    setSlackSharing(true);
-    try {
-      await shareToSlack(deal.id);
-      toast.success('Shared to Slack ✓');
-    } catch (err) {
-      toast.error(err?.message === 'slack_not_configured' ? 'Connect Slack in Settings first' : 'Slack share failed');
-    } finally {
-      setSlackSharing(false);
-    }
-  };
-
-  const handleQuickCalendar = (e) => {
-    e.stopPropagation();
-    toast.info('Open the deal to schedule a call');
-  };
 
   return (
     <tr
@@ -222,72 +170,15 @@ export function DealRow({ deal, isSelected, viewMode, fundMembers, onSelect, onD
         </p>
       </td>
       <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-          {/* Notion quick-action */}
-          <button
-            onClick={handleQuickNotion}
-            title={integrationSettings?.notion_connected ? 'Save to Notion' : 'Connect Notion in Settings'}
-            className="flex items-center justify-center transition-all"
-            style={{
-              width: 28, height: 28, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              cursor: notionSaving ? 'wait' : 'pointer',
-              opacity: integrationSettings?.notion_connected ? 1 : 0.35,
-            }}
-            onMouseEnter={e => { if (integrationSettings?.notion_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-          >
-            <NotionLogo size={12} style={{ color: '#fff' }} />
-          </button>
-
-          {/* Slack quick-action */}
-          <button
-            onClick={handleQuickSlack}
-            title={integrationSettings?.slack_connected ? 'Share to Slack' : 'Connect Slack in Settings'}
-            className="flex items-center justify-center transition-all"
-            style={{
-              width: 28, height: 28, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              cursor: slackSharing ? 'wait' : 'pointer',
-              opacity: integrationSettings?.slack_connected ? 1 : 0.35,
-            }}
-            onMouseEnter={e => { if (integrationSettings?.slack_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-          >
-            <SlackLogo size={12} />
-          </button>
-
-          {/* Calendar quick-action */}
-          <button
-            onClick={handleQuickCalendar}
-            title="Schedule a call (open deal first)"
-            className="flex items-center justify-center transition-all"
-            style={{
-              width: 28, height: 28, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              cursor: 'pointer',
-              opacity: 0.6,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; e.currentTarget.style.opacity = '1'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.opacity = '0.6'; }}
-          >
-            <CalendarLogo size={12} />
-          </button>
-
-          {/* Delete */}
-          <button
-            data-testid={`delete-deal-${deal.id}`}
-            onClick={() => onDelete(deal.id)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:bg-[rgba(240,82,82,0.18)] hover:text-[#f05252]"
-            title="Remove from dashboard"
-            style={{ color: 'rgba(255,255,255,0.3)' }}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+        <button
+          data-testid={`delete-deal-${deal.id}`}
+          onClick={() => onDelete(deal.id)}
+          className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:bg-[rgba(240,82,82,0.18)] hover:text-[#f05252]"
+          title="Remove from dashboard"
+          style={{ color: 'rgba(255,255,255,0.3)' }}
+        >
+          <Trash2 size={13} />
+        </button>
       </td>
     </tr>
   );

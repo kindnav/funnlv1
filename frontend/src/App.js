@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
+import Integrations from './pages/Integrations';
 import FundFocus from './pages/FundFocus';
 import ConnectPage from './pages/ConnectPage';
 import OAuthCallback from './pages/OAuthCallback';
@@ -21,6 +22,7 @@ function getActivePage(pathname) {
   if (pathname.startsWith('/review')) return 'review';
   if (pathname.startsWith('/contacts')) return 'contacts';
   if (pathname.startsWith('/settings')) return 'settings';
+  if (pathname.startsWith('/integrations')) return 'integrations';
   return 'dashboard';
 }
 
@@ -137,6 +139,16 @@ function App() {
             user
               ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
                   <Pipeline user={user} onLogout={handleLogout} />
+                </AuthenticatedLayout>
+              : <Navigate to="/" />
+          }
+        />
+        <Route
+          path="/integrations"
+          element={
+            user
+              ? <AuthenticatedLayout user={user} onLogout={handleLogout}>
+                  <Integrations />
                 </AuthenticatedLayout>
               : <Navigate to="/" />
           }

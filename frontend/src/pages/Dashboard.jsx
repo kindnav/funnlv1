@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, RefreshCw, Plus, Send, Filter, Trash2, MoreHorizontal,
-  BookOpen, Inbox,
+  BookOpen, Inbox, CalendarDays, PanelRight,
 } from 'lucide-react';
 import DetailPanel from '../components/DetailPanel';
 import ProcessEmailModal from '../components/ProcessEmailModal';
@@ -12,6 +12,7 @@ import { NotificationBell } from '../components/NotificationBell';
 import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import ActivityFeed from '../components/ActivityFeed';
+import CalendarPanel from '../components/CalendarPanel';
 import { toast } from '../components/ui/sonner';
 import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession, getIntegrationSettings } from '../lib/api';
 import UpgradeModal from '../components/UpgradeModal';
@@ -96,6 +97,10 @@ export default function Dashboard({ user, onLogout }) {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [integrationSettings, setIntegrationSettings] = useState(null);
   const [syncCount, setSyncCount] = useState(0);
+  const [showCalendarPanel, setShowCalendarPanel] = useState(false);
+  const [showActivityFeed, setShowActivityFeed] = useState(
+    () => localStorage.getItem('funnl_activity_feed_visible') !== 'false'
+  );
   const moreMenuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -172,6 +177,11 @@ export default function Dashboard({ user, onLogout }) {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Persist activity feed visibility preference
+  useEffect(() => {
+    localStorage.setItem('funnl_activity_feed_visible', String(showActivityFeed));
+  }, [showActivityFeed]);
 
   // Decide whether to show onboarding checklist (only on first load)
   useEffect(() => {
@@ -474,6 +484,40 @@ export default function Dashboard({ user, onLogout }) {
           >
             <Plus size={11} />
             <span className="hidden sm:inline">Process Email</span>
+          </button>
+
+          {/* Calendar panel toggle */}
+          <button
+            data-testid="calendar-panel-btn"
+            onClick={() => setShowCalendarPanel(p => !p)}
+            title="Scheduled calls"
+            className="flex items-center justify-center transition-all"
+            style={{
+              width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+              background: showCalendarPanel ? 'rgba(66,133,244,0.15)' : 'transparent',
+              color: showCalendarPanel ? '#4285F4' : 'rgba(255,255,255,0.4)',
+            }}
+            onMouseEnter={e => { if (!showCalendarPanel) { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.color = '#fff'; } }}
+            onMouseLeave={e => { if (!showCalendarPanel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; } }}
+          >
+            <CalendarDays size={15} />
+          </button>
+
+          {/* Activity feed toggle */}
+          <button
+            data-testid="activity-feed-toggle"
+            onClick={() => setShowActivityFeed(v => !v)}
+            title="Toggle activity feed"
+            className="flex items-center justify-center transition-all"
+            style={{
+              width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+              background: showActivityFeed ? 'rgba(124,109,250,0.15)' : 'transparent',
+              color: showActivityFeed ? '#7c6dfa' : 'rgba(255,255,255,0.4)',
+            }}
+            onMouseEnter={e => { if (!showActivityFeed) { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.color = '#fff'; } }}
+            onMouseLeave={e => { if (!showActivityFeed) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; } }}
+          >
+            <PanelRight size={15} />
           </button>
 
           {/* Notification bell */}
@@ -892,7 +936,6 @@ export default function Dashboard({ user, onLogout }) {
                         fundMembers={fundInfo?.members}
                         onSelect={(d) => setSelectedDeal(selectedDeal?.id === d.id ? null : d)}
                         onDelete={handleDeleteDeal}
-                        integrationSettings={integrationSettings}
                       />
                     ))}
                   </tbody>
@@ -915,15 +958,28 @@ export default function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {/* Activity feed — right column, hidden below xl (1280px) */}
+        {/* Calendar panel — overlaps activity feed at xl+ */}
+        {showCalendarPanel && (
+          <CalendarPanel
+            onClose={() => setShowCalendarPanel(false)}
+            onNavigateToDeal={(dealId) => {
+              const d = [...deals, ...fundDeals].find(x => x.id === dealId);
+              if (d) { setSelectedDeal(d); if (d.user_id !== user?.id) setViewMode('fund-dashboard'); }
+              setShowCalendarPanel(false);
+            }}
+          />
+        )}
+
+        {/* Activity feed — right column, hidden below xl or when toggled off */}
         <div
-          className="hidden xl:flex flex-col shrink-0"
+          className={`flex-col shrink-0 ${showActivityFeed ? 'hidden xl:flex' : 'hidden'}`}
           style={{ width: 320, minWidth: 280, maxWidth: 340, padding: '12px 16px 12px 0' }}
         >
           <ActivityFeed
             userId={user?.id}
             refreshTrigger={syncCount}
             scope={viewMode === 'fund-dashboard' ? 'fund' : 'personal'}
+            onClose={() => setShowActivityFeed(false)}
           />
         </div>
       </div>

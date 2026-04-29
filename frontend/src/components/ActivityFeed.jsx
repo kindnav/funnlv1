@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, Activity } from 'lucide-react';
+import { RefreshCw, Activity, ChevronRight } from 'lucide-react';
 import { getActivityFeed } from '../lib/api';
 
 // ── Relative timestamp ───────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ function SkeletonRow() {
 }
 
 // ── Main Component ───────────────────────────────────────────────────────────
-export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal' }) {
+export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal', onClose }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
@@ -109,10 +109,26 @@ export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal
             color: 'rgba(255,255,255,0.35)',
             letterSpacing: '0.07em',
             textTransform: 'uppercase',
+            flex: 1,
           }}
         >
           Activity
         </span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            title="Hide activity feed"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center',
+              padding: 4, borderRadius: 6,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.25)'; }}
+          >
+            <ChevronRight size={13} />
+          </button>
+        )}
         <button
           onClick={() => load(true)}
           title="Refresh"

@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Key, RefreshCw, LogOut, Check, AlertTriangle, CreditCard, Bell,
 } from 'lucide-react';
-import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal, toggleWeeklyDigest, reprocessExisting, getIntegrationSettings, saveIntegrationSettings } from '../lib/api';
-import { NotionLogo, SlackLogo, CalendarLogo } from '../components/IntegrationLogos';
+import { getSettings, disconnectGmail, logout, getMyFund, getGatedEmails, restoreGatedEmail, getBillingStatus, createCheckoutSession, openBillingPortal, toggleWeeklyDigest, reprocessExisting } from '../lib/api';
 import { TeamSetup } from '../components/TeamSetup';
 import { AIGateSection } from '../components/settings/AIGateSection';
 import { toast } from '../components/ui/sonner';
@@ -38,18 +37,6 @@ export default function Settings({ user, onLogout }) {
   const [cleanupRunning, setCleanupRunning] = useState(false);
   const [cleanupResult, setCleanupResult] = useState(null);
 
-  // Integration settings
-  const [integrations, setIntegrations] = useState({});
-  const [notionKey, setNotionKey] = useState('');
-  const [notionDbId, setNotionDbId] = useState('');
-  const [slackWebhook, setSlackWebhook] = useState('');
-  const [notionSaving, setNotionSaving] = useState(false);
-  const [slackSaving, setSlackSaving] = useState(false);
-  const [notionSaved, setNotionSaved] = useState(false);
-  const [slackSaved, setSlackSaved] = useState(false);
-  const [notionShowInputs, setNotionShowInputs] = useState(false);
-  const [slackShowInputs, setSlackShowInputs] = useState(false);
-
   const navigate = useNavigate();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,13 +52,6 @@ export default function Settings({ user, onLogout }) {
     }).finally(() => setLoading(false));
 
     getBillingStatus().then((b) => { if (b) setBillingStatus(b); }).finally(() => setBillingLoading(false));
-
-    getIntegrationSettings().then((d) => {
-      if (d) {
-        setIntegrations(d);
-        if (d.notion_database_id) setNotionDbId(d.notion_database_id);
-      }
-    }).catch(() => {});
 
     // Load gated emails
     setGatedLoading(true);
@@ -108,32 +88,6 @@ export default function Settings({ user, onLogout }) {
   const handleLogout = async () => {
     await logout().catch(() => {});
     onLogout();
-  };
-
-  const handleSaveNotion = async () => {
-    if (!notionKey && !notionDbId) return;
-    setNotionSaving(true);
-    try {
-      await saveIntegrationSettings({ notion_api_key: notionKey, notion_database_id: notionDbId });
-      setNotionSaved(true);
-      setIntegrations(prev => ({ ...prev, notion_connected: !!(notionKey && notionDbId), notion_database_id: notionDbId }));
-      setTimeout(() => setNotionSaved(false), 3000);
-      setNotionKey(''); // clear key field after save (write-only)
-    } catch { toast.error('Failed to save Notion settings'); }
-    finally { setNotionSaving(false); }
-  };
-
-  const handleSaveSlack = async () => {
-    if (!slackWebhook) return;
-    setSlackSaving(true);
-    try {
-      await saveIntegrationSettings({ slack_webhook_url: slackWebhook });
-      setSlackSaved(true);
-      setIntegrations(prev => ({ ...prev, slack_connected: true }));
-      setTimeout(() => setSlackSaved(false), 3000);
-      setSlackWebhook('');
-    } catch { toast.error('Failed to save Slack settings'); }
-    finally { setSlackSaving(false); }
   };
 
   const handleCleanup = async () => {
@@ -202,169 +156,6 @@ export default function Settings({ user, onLogout }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-5">
-
-          {/* ── Integrations (marketplace cards) ── */}
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4 }}>
-              Integrations
-            </p>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 16 }}>
-              Connect Funnl to your existing workflow
-            </p>
-            <div className="flex flex-col gap-3">
-
-              {/* ── Google Calendar card ── */}
-              <div className={cardCls} style={{ ...cardStyle, display: 'flex', alignItems: 'flex-start', gap: 16, padding: 20 }}>
-                {/* Logo square */}
-                <div style={{ width: 48, height: 48, borderRadius: 10, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <CalendarLogo size={28} />
-                </div>
-                {/* Right col */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-white font-semibold" style={{ fontSize: 15 }}>Google Calendar</span>
-                    <span
-                      className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1.5"
-                      style={integrations.calendar_enabled
-                        ? { background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.25)' }
-                        : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.1)' }
-                      }
-                    >
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: integrations.calendar_enabled ? '#3dd68c' : 'rgba(255,255,255,0.3)', display: 'inline-block' }} />
-                      {integrations.calendar_enabled ? 'Connected' : 'Not granted'}
-                    </span>
-                  </div>
-                  <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-                    Schedule calls directly from deal cards. Uses your existing Google account.
-                  </p>
-                  {integrations.calendar_enabled ? (
-                    <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                      Calendar access granted. Use "Schedule a call" in any First Look or In Conversation deal.
-                    </p>
-                  ) : (
-                    <a
-                      href={`${BACKEND_URL}/api/auth/google`}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all"
-                      style={{ background: 'rgba(66,133,244,0.1)', border: '1px solid rgba(66,133,244,0.3)', color: '#4285F4', textDecoration: 'none' }}
-                    >
-                      <CalendarLogo size={13} />
-                      Grant Calendar Access
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Notion card ── */}
-              <div className={cardCls} style={{ ...cardStyle, display: 'flex', alignItems: 'flex-start', gap: 16, padding: 20 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 10, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <NotionLogo size={26} style={{ color: '#000' }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-white font-semibold" style={{ fontSize: 15 }}>Notion</span>
-                    <span
-                      className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1.5"
-                      style={integrations.notion_connected
-                        ? { background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.25)' }
-                        : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.1)' }
-                      }
-                    >
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: integrations.notion_connected ? '#3dd68c' : 'rgba(255,255,255,0.3)', display: 'inline-block' }} />
-                      {integrations.notion_connected ? 'Connected' : 'Not connected'}
-                    </span>
-                  </div>
-                  <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-                    Push deals to your Notion database as structured pages.{' '}
-                    <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer" style={{ color: '#4da6ff' }}>How to set up →</a>
-                  </p>
-                  {integrations.notion_connected && !notionShowInputs ? (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                        DB: {integrations.notion_database_id ? `…${integrations.notion_database_id.slice(-8)}` : 'configured'}
-                      </span>
-                      <button onClick={() => setNotionShowInputs(true)} className="text-xs" style={{ color: '#4da6ff', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        Update credentials
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <input type="password" className={inputCls} style={inputStyle} placeholder="Notion API Key (secret_...)" value={notionKey} onChange={e => setNotionKey(e.target.value)} />
-                      <input type="text" className={inputCls} style={inputStyle} placeholder="Database ID (from Notion URL)" value={notionDbId} onChange={e => setNotionDbId(e.target.value)} />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleSaveNotion}
-                          disabled={notionSaving || (!notionKey && !notionDbId)}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all self-start disabled:opacity-40"
-                          style={{ background: notionSaved ? 'rgba(61,214,140,0.1)' : 'rgba(255,255,255,0.06)', border: `1px solid ${notionSaved ? 'rgba(61,214,140,0.3)' : 'rgba(255,255,255,0.1)'}`, color: notionSaved ? '#3dd68c' : 'rgba(255,255,255,0.7)' }}
-                        >
-                          {notionSaved ? <><Check size={11} /> Saved</> : notionSaving ? 'Saving…' : 'Save'}
-                        </button>
-                        {notionShowInputs && (
-                          <button onClick={() => setNotionShowInputs(false)} className="text-xs px-3 py-2 rounded-xl" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}>
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Slack card ── */}
-              <div className={cardCls} style={{ ...cardStyle, display: 'flex', alignItems: 'flex-start', gap: 16, padding: 20 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 10, background: '#4A154B', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <SlackLogo size={26} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-white font-semibold" style={{ fontSize: 15 }}>Slack</span>
-                    <span
-                      className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1.5"
-                      style={integrations.slack_connected
-                        ? { background: 'rgba(61,214,140,0.1)', color: '#3dd68c', border: '1px solid rgba(61,214,140,0.25)' }
-                        : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.1)' }
-                      }
-                    >
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: integrations.slack_connected ? '#3dd68c' : 'rgba(255,255,255,0.3)', display: 'inline-block' }} />
-                      {integrations.slack_connected ? 'Connected' : 'Not connected'}
-                    </span>
-                  </div>
-                  <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-                    Post deal summaries to your fund's Slack channel.{' '}
-                    <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" style={{ color: '#4da6ff' }}>How to set up →</a>
-                  </p>
-                  {integrations.slack_connected && !slackShowInputs ? (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>Webhook configured</span>
-                      <button onClick={() => setSlackShowInputs(true)} className="text-xs" style={{ color: '#4da6ff', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        Update URL
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <input type="text" className={inputCls} style={inputStyle} placeholder="https://hooks.slack.com/services/..." value={slackWebhook} onChange={e => setSlackWebhook(e.target.value)} />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleSaveSlack}
-                          disabled={slackSaving || !slackWebhook}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all self-start disabled:opacity-40"
-                          style={{ background: slackSaved ? 'rgba(61,214,140,0.1)' : 'rgba(255,255,255,0.06)', border: `1px solid ${slackSaved ? 'rgba(61,214,140,0.3)' : 'rgba(255,255,255,0.1)'}`, color: slackSaved ? '#3dd68c' : 'rgba(255,255,255,0.7)' }}
-                        >
-                          {slackSaved ? <><Check size={11} /> Saved</> : slackSaving ? 'Saving…' : 'Save'}
-                        </button>
-                        {slackShowInputs && (
-                          <button onClick={() => setSlackShowInputs(false)} className="text-xs px-3 py-2 rounded-xl" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}>
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </div>
 
           {/* ── Subscription ── */}
           <div className={cardCls} style={cardStyle}>

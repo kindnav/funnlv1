@@ -3255,6 +3255,68 @@ async def reprocess_existing(current_user: dict = Depends(get_current_user)):
     return {'scanned': total, 'removed': removed}
 
 
+# ── Calendar events ──────────────────────────────────────────────────────────────
+
+@api_router.get("/calendar/events")
+async def get_calendar_events(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    user  = users[0] if users else {}
+
+    if not user.get('calendar_enabled'):
+        return {'events': [], 'calendar_enabled': False}
+
+    try:
+        cal_svc = build_calendar_service(user)
+        now     = datetime.now(timezone.utc)
+        time_min = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        time_max = (now + timedelta(days=30)).isoformat()
+
+        result = await asyncio.to_thread(
+            lambda: cal_svc.events().list(
+                calendarId='primary',
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy='startTime',
+                q='Funnl',
+                maxResults=50,
+            ).execute()
+        )
+
+        events = []
+        for e in (result.get('items') or []):
+            start_raw = e.get('start', {})
+            end_raw   = e.get('end', {})
+            start = start_raw.get('dateTime') or start_raw.get('date', '')
+            end   = end_raw.get('dateTime')   or end_raw.get('date', '')
+
+            # Try to extract deal_id from description
+            desc = e.get('description', '') or ''
+            deal_id = None
+            import re as _re
+            m = _re.search(r'deal[_-]?id[=:]\s*([0-9a-f\-]{36})', desc, _re.IGNORECASE)
+            if m:
+                deal_id = m.group(1)
+
+            events.append({
+                'id':          e.get('id', ''),
+                'title':       e.get('summary', '(No title)'),
+                'start':       start,
+                'end':         end,
+                'description': desc,
+                'html_link':   e.get('htmlLink', ''),
+                'deal_id':     deal_id,
+            })
+
+        logger.info(f'[Calendar] Fetched {len(events)} events for user {uid[:8]}')
+        return {'events': events, 'calendar_enabled': True}
+
+    except Exception as e:
+        logger.error(f'[Calendar] events list failed: {e}')
+        return {'events': [], 'calendar_enabled': True}
+
+
 # ── Integration settings ─────────────────────────────────────────────────────────
 
 @api_router.get("/integrations/settings")

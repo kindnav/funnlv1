@@ -4,8 +4,21 @@ import {
   MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Calendar, Phone, MoreHorizontal,
 } from 'lucide-react';
 import { updateDeal, deleteDeal, generateCallPrep, saveToNotion, shareToSlack } from '../lib/api';
-import { NotionLogo, SlackLogo, CalendarLogo } from './IntegrationLogos';
 import CallPrepModal from './CallPrepModal';
+
+// ── Inline Google Calendar logo (no external file dependency) ─────────────────
+function GCalLogo({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0 }}>
+      <rect x="1" y="3" width="22" height="20" rx="2" fill="#ffffff" />
+      <rect x="1" y="3" width="22" height="6" rx="2" fill="#4285F4" />
+      <rect x="1" y="7" width="22" height="2" fill="#4285F4" />
+      <rect x="6.5" y="1.5" width="2" height="4" rx="1" fill="#4285F4" />
+      <rect x="15.5" y="1.5" width="2" height="4" rx="1" fill="#4285F4" />
+      <text x="12" y="19" textAnchor="middle" fontSize="7" fontWeight="700" fill="#4285F4" fontFamily="Arial, sans-serif">31</text>
+    </svg>
+  );
+}
 import CalendarModal from './CalendarModal';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
@@ -493,7 +506,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                 const connected = !!integrationSettings?.calendar_enabled;
                 return (
                   <button
-                    onClick={() => connected ? setShowCalendarModal(true) : (window.location.href = '/settings')}
+                    onClick={() => connected ? setShowCalendarModal(true) : (window.location.href = '/integrations')}
                     className="flex items-center gap-2.5 transition-all"
                     style={{
                       width: '100%', height: 40, padding: '0 14px',
@@ -512,7 +525,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                       e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                     }}
                   >
-                    <CalendarLogo size={15} />
+                    <GCalLogo size={15} />
                     <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
                       Schedule a call
                     </span>
@@ -529,7 +542,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                 const connected = !!integrationSettings?.notion_connected;
                 return (
                   <button
-                    onClick={() => connected ? handleSaveToNotion() : (window.location.href = '/settings')}
+                    onClick={() => connected ? handleSaveToNotion() : (window.location.href = '/integrations')}
                     disabled={notionSaving}
                     className="flex items-center gap-2.5 transition-all"
                     style={{
@@ -549,7 +562,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                       e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                     }}
                   >
-                    <NotionLogo size={15} style={{ color: '#fff' }} />
+                    <img src="https://cdn.simpleicons.org/notion/ffffff" width="15" height="15" alt="Notion" style={{ display: 'block', flexShrink: 0 }} />
                     <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
                       {notionSaving ? 'Saving…' : 'Export to Notion'}
                     </span>
@@ -566,7 +579,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                 const connected = !!integrationSettings?.slack_connected;
                 return (
                   <button
-                    onClick={() => connected ? handleShareToSlack() : (window.location.href = '/settings')}
+                    onClick={() => connected ? handleShareToSlack() : (window.location.href = '/integrations')}
                     disabled={slackSharing}
                     className="flex items-center gap-2.5 transition-all"
                     style={{
@@ -586,7 +599,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                       e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                     }}
                   >
-                    <SlackLogo size={15} />
+                    <img src="https://cdn.simpleicons.org/slack" width="15" height="15" alt="Slack" style={{ display: 'block', flexShrink: 0 }} />
                     <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
                       {slackSharing ? 'Sharing…' : 'Share in Slack'}
                     </span>

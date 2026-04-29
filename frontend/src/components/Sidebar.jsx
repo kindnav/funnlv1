@@ -1,14 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import {
-  Inbox, Layers, Zap, Users, Settings, LogOut,
+  Inbox, Layers, Zap, Users, Plug, Settings, LogOut,
 } from 'lucide-react';
-import { NotionMark, SlackMark, CalendarMark } from './IntegrationLogos';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', icon: Inbox,  label: 'Dashboard',   path: '/',         testId: 'dashboard-btn' },
-  { id: 'pipeline',  icon: Layers, label: 'Pipeline',    path: '/pipeline', testId: 'pipeline-btn' },
-  { id: 'review',    icon: Zap,    label: 'Review Mode', path: '/review',   testId: 'review-mode-btn' },
-  { id: 'contacts',  icon: Users,  label: 'Contacts',    path: '/contacts', testId: 'contacts-btn' },
+  { id: 'dashboard',    icon: Inbox,  label: 'Dashboard',    path: '/',             testId: 'dashboard-btn' },
+  { id: 'pipeline',     icon: Layers, label: 'Pipeline',     path: '/pipeline',     testId: 'pipeline-btn' },
+  { id: 'review',       icon: Zap,    label: 'Review Mode',  path: '/review',       testId: 'review-mode-btn' },
+  { id: 'contacts',     icon: Users,  label: 'Contacts',     path: '/contacts',     testId: 'contacts-btn' },
+  { id: 'integrations', icon: Plug,   label: 'Integrations', path: '/integrations', testId: 'integrations-btn' },
 ];
 
 function getInitials(email) {
@@ -19,7 +19,7 @@ function getInitials(email) {
   return local[0].toUpperCase();
 }
 
-export default function Sidebar({ user, onLogout, activePage, integrationSettings }) {
+export default function Sidebar({ user, onLogout, activePage }) {
   const navigate = useNavigate();
 
   return (
@@ -88,31 +88,6 @@ export default function Sidebar({ user, onLogout, activePage, integrationSetting
             </button>
           );
         })}
-      </div>
-
-      {/* Connected apps status dots */}
-      <div
-        className="flex items-center justify-center gap-1.5 py-3 shrink-0"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.05)', width: '100%' }}
-      >
-        <span
-          title={integrationSettings?.notion_connected ? 'Notion — Connected' : 'Notion — Not connected'}
-          style={{ cursor: 'default' }}
-        >
-          <NotionMark connected={!!integrationSettings?.notion_connected} />
-        </span>
-        <span
-          title={integrationSettings?.slack_connected ? 'Slack — Connected' : 'Slack — Not connected'}
-          style={{ cursor: 'default' }}
-        >
-          <SlackMark connected={!!integrationSettings?.slack_connected} />
-        </span>
-        <span
-          title={integrationSettings?.calendar_enabled ? 'Google Calendar — Connected' : 'Google Calendar — Not connected'}
-          style={{ cursor: 'default' }}
-        >
-          <CalendarMark connected={!!integrationSettings?.calendar_enabled} />
-        </span>
       </div>
 
       {/* Bottom items */}

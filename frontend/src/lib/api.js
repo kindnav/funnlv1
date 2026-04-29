@@ -171,3 +171,6 @@ export const saveToNotion = (dealId) =>
 
 export const shareToSlack = (dealId) =>
   fetchJson(`${API}/deals/${dealId}/share-slack`, { method: 'POST' });
+
+export const getCalendarEvents = () =>
+  fetchJson(`${API}/calendar/events`);
