@@ -892,6 +892,7 @@ export default function Dashboard({ user, onLogout }) {
                         fundMembers={fundInfo?.members}
                         onSelect={(d) => setSelectedDeal(selectedDeal?.id === d.id ? null : d)}
                         onDelete={handleDeleteDeal}
+                        integrationSettings={integrationSettings}
                       />
                     ))}
                   </tbody>

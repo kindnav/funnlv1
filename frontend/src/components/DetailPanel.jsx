@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
-  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Calendar, Phone, MoreHorizontal,
-  BookOpen, Hash,
+  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Phone, MoreHorizontal,
 } from 'lucide-react';
 import { updateDeal, deleteDeal, generateCallPrep, saveToNotion, shareToSlack } from '../lib/api';
+import { NotionLogo, SlackLogo, CalendarLogo } from './IntegrationLogos';
 import CallPrepModal from './CallPrepModal';
 import CalendarModal from './CalendarModal';
 import { toast } from '../components/ui/sonner';
@@ -486,60 +486,118 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
           {/* ── Integrations ──────────────────────────────────────────── */}
           <Section>
             <SectionLabel>Integrations</SectionLabel>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {/* Calendar — only for First Look / In Conversation */}
-              {(deal.deal_stage === 'First Look' || deal.deal_stage === 'In Conversation') && (
-                <button
-                  onClick={() => setShowCalendarModal(true)}
-                  className="flex flex-col items-center justify-center gap-1 transition-all"
-                  style={{
-                    flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
-                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                    color: 'rgba(255,255,255,0.6)', cursor: 'pointer',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                >
-                  <Calendar size={14} style={{ color: '#7c6dfa' }} />
-                  Schedule call
-                </button>
-              )}
-              {/* Notion */}
-              <button
-                onClick={handleSaveToNotion}
-                disabled={notionSaving}
-                title={!integrationSettings?.notion_connected ? 'Connect Notion in Settings' : ''}
-                className="flex flex-col items-center justify-center gap-1 transition-all"
-                style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                  color: 'rgba(255,255,255,0.6)', cursor: notionSaving ? 'wait' : 'pointer',
-                  opacity: !integrationSettings?.notion_connected ? 0.38 : 1,
-                }}
-                onMouseEnter={e => { if (integrationSettings?.notion_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-              >
-                <BookOpen size={14} style={{ color: '#4da6ff' }} />
-                {notionSaving ? 'Saving…' : 'Save to Notion'}
-              </button>
-              {/* Slack */}
-              <button
-                onClick={handleShareToSlack}
-                disabled={slackSharing}
-                title={!integrationSettings?.slack_connected ? 'Connect Slack in Settings' : ''}
-                className="flex flex-col items-center justify-center gap-1 transition-all"
-                style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                  color: 'rgba(255,255,255,0.6)', cursor: slackSharing ? 'wait' : 'pointer',
-                  opacity: !integrationSettings?.slack_connected ? 0.38 : 1,
-                }}
-                onMouseEnter={e => { if (integrationSettings?.slack_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-              >
-                <Hash size={14} style={{ color: '#3dd68c' }} />
-                {slackSharing ? 'Sharing…' : 'Share to Slack'}
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+              {/* ── Google Calendar — only for First Look / In Conversation ── */}
+              {(deal.deal_stage === 'First Look' || deal.deal_stage === 'In Conversation') && (() => {
+                const connected = !!integrationSettings?.calendar_enabled;
+                return (
+                  <button
+                    onClick={() => connected ? setShowCalendarModal(true) : (window.location.href = '/settings')}
+                    className="flex items-center gap-2.5 transition-all"
+                    style={{
+                      width: '100%', height: 40, padding: '0 14px',
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
+                      opacity: connected ? 1 : 0.45,
+                    }}
+                    onMouseEnter={e => {
+                      if (connected) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                    }}
+                  >
+                    <CalendarLogo size={15} />
+                    <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
+                      Schedule a call
+                    </span>
+                    {connected
+                      ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd68c', flexShrink: 0 }} />
+                      : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>Connect →</span>
+                    }
+                  </button>
+                );
+              })()}
+
+              {/* ── Notion ── */}
+              {(() => {
+                const connected = !!integrationSettings?.notion_connected;
+                return (
+                  <button
+                    onClick={() => connected ? handleSaveToNotion() : (window.location.href = '/settings')}
+                    disabled={notionSaving}
+                    className="flex items-center gap-2.5 transition-all"
+                    style={{
+                      width: '100%', height: 40, padding: '0 14px',
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 10, cursor: notionSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
+                      opacity: connected ? 1 : 0.45,
+                    }}
+                    onMouseEnter={e => {
+                      if (connected && !notionSaving) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                    }}
+                  >
+                    <NotionLogo size={15} style={{ color: '#fff' }} />
+                    <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
+                      {notionSaving ? 'Saving…' : 'Export to Notion'}
+                    </span>
+                    {connected
+                      ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd68c', flexShrink: 0 }} />
+                      : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>Connect →</span>
+                    }
+                  </button>
+                );
+              })()}
+
+              {/* ── Slack ── */}
+              {(() => {
+                const connected = !!integrationSettings?.slack_connected;
+                return (
+                  <button
+                    onClick={() => connected ? handleShareToSlack() : (window.location.href = '/settings')}
+                    disabled={slackSharing}
+                    className="flex items-center gap-2.5 transition-all"
+                    style={{
+                      width: '100%', height: 40, padding: '0 14px',
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 10, cursor: slackSharing ? 'wait' : 'pointer', fontFamily: 'inherit',
+                      opacity: connected ? 1 : 0.45,
+                    }}
+                    onMouseEnter={e => {
+                      if (connected && !slackSharing) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                    }}
+                  >
+                    <SlackLogo size={15} />
+                    <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
+                      {slackSharing ? 'Sharing…' : 'Share in Slack'}
+                    </span>
+                    {connected
+                      ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd68c', flexShrink: 0 }} />
+                      : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>Connect →</span>
+                    }
+                  </button>
+                );
+              })()}
+
             </div>
           </Section>
 
