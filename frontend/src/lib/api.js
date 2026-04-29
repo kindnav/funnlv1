@@ -155,3 +155,19 @@ export const getFundContacts = () =>
 // ── Admin / data management ───────────────────────────────────────────────────────
 export const reprocessExisting = () =>
   fetchJson(`${API}/admin/reprocess-existing`, { method: 'POST' });
+
+// ── Integrations ──────────────────────────────────────────────────────────────────
+export const getIntegrationSettings = () =>
+  fetchJson(`${API}/integrations/settings`);
+
+export const saveIntegrationSettings = (data) =>
+  fetchJson(`${API}/integrations/settings`, { method: 'POST', body: JSON.stringify(data) });
+
+export const scheduleCall = (dealId, data) =>
+  fetchJson(`${API}/deals/${dealId}/schedule-call`, { method: 'POST', body: JSON.stringify(data) });
+
+export const saveToNotion = (dealId) =>
+  fetchJson(`${API}/deals/${dealId}/save-to-notion`, { method: 'POST' });
+
+export const shareToSlack = (dealId) =>
+  fetchJson(`${API}/deals/${dealId}/share-slack`, { method: 'POST' });

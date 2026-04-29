@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, ChevronRight, ChevronLeft, Target, TrendingUp, TrendingDown } from 'lucide-react';
-import { getDeals, updateDealStage } from '../lib/api';
+import { getDeals, updateDealStage, getIntegrationSettings } from '../lib/api';
 import DetailPanel from '../components/DetailPanel';
 
 const STAGES = [
@@ -141,6 +141,7 @@ export default function Pipeline({ user, onLogout }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDeal, setSelectedDeal] = useState(null);
+  const [integrationSettings, setIntegrationSettings] = useState(null);
 
   const fetchDeals = useCallback(async () => {
     try {
@@ -152,6 +153,10 @@ export default function Pipeline({ user, onLogout }) {
   }, []);
 
   useEffect(() => { fetchDeals(); }, [fetchDeals]);
+
+  useEffect(() => {
+    getIntegrationSettings().then(d => { if (d) setIntegrationSettings(d); }).catch(() => {});
+  }, []);
 
   const handleMove = async (deal, newStage) => {
     await updateDealStage(deal.id, newStage);
@@ -279,6 +284,7 @@ export default function Pipeline({ user, onLogout }) {
             deal={selectedDeal}
             onClose={() => setSelectedDeal(null)}
             onDealUpdated={handleDealUpdated}
+            integrationSettings={integrationSettings}
           />
         )}
       </div>

@@ -220,6 +220,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_digest_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notion_api_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notion_database_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_webhook_url TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 
 CREATE TABLE IF NOT EXISTS deals (
@@ -608,6 +612,7 @@ GOOGLE_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/calendar.events',
 ]
 
 # Scopes used to BUILD existing credentials from stored tokens.
@@ -705,6 +710,26 @@ def build_gmail_service(user: dict):
         scopes=GMAIL_SERVICE_SCOPES,  # Never include gmail.send here — old tokens break if we do
     )
     return gbuild('gmail', 'v1', credentials=creds), creds
+
+def build_calendar_service(user: dict):
+    """Build a Google Calendar API service from stored user credentials."""
+    expiry = None
+    if user.get('token_expiry'):
+        try:
+            dt = datetime.fromisoformat(user['token_expiry'].replace('Z', '+00:00'))
+            expiry = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        except Exception:
+            pass
+    creds = Credentials(
+        token=user.get('access_token'),
+        refresh_token=user.get('refresh_token'),
+        expiry=expiry,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        scopes=['https://www.googleapis.com/auth/calendar.events'],
+    )
+    return gbuild('calendar', 'v3', credentials=creds)
 
 # ── Noise filters ──────────────────────────────────────────────────────────────
 # Exact known automated sender addresses to always skip
@@ -1691,8 +1716,11 @@ async def auth_callback(
         else:
             logger.info(f'[Auth] JWT will use verified user_id: {user_id[:8]}')
 
-        # Mark that this user has completed the full OAuth flow (includes gmail.send scope)
-        await sb_update('users', {'gmail_send_enabled': True}, {'id': f'eq.{user_id}'})
+        # Mark scopes granted via this OAuth flow
+        await sb_update('users', {
+            'gmail_send_enabled': True,
+            'calendar_enabled': True,
+        }, {'id': f'eq.{user_id}'})
 
         token = create_jwt(user_id, email)
         background_tasks.add_task(sync_user_emails, user_id, True)
@@ -1719,6 +1747,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         'picture': u['picture'], 'last_synced': u.get('last_synced'),
         'gmail_connected': bool(u.get('refresh_token')),
         'gmail_send_enabled': bool(u.get('gmail_send_enabled')),
+        'calendar_enabled': bool(u.get('calendar_enabled')),
     }
 
 @api_router.post("/auth/logout")
@@ -3224,6 +3253,254 @@ async def reprocess_existing(current_user: dict = Depends(get_current_user)):
 
     logger.info(f'[Reprocess] user={uid[:8]} scanned={total} removed={removed}')
     return {'scanned': total, 'removed': removed}
+
+
+# ── Integration settings ─────────────────────────────────────────────────────────
+
+@api_router.get("/integrations/settings")
+async def get_integration_settings(current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    u = users[0] if users else {}
+    notion_connected = bool(u.get('notion_api_key') and u.get('notion_database_id'))
+    slack_connected  = bool(u.get('slack_webhook_url'))
+    return {
+        'calendar_enabled':   bool(u.get('calendar_enabled')),
+        'notion_connected':   notion_connected,
+        'notion_database_id': u.get('notion_database_id') or '',
+        'slack_connected':    slack_connected,
+    }
+
+
+@api_router.post("/integrations/settings")
+async def save_integration_settings(data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+    allowed = {'notion_api_key', 'notion_database_id', 'slack_webhook_url'}
+    update = {k: v for k, v in data.items() if k in allowed}
+    if update:
+        await sb_update('users', update, {'id': f'eq.{uid}'})
+    return {'saved': True}
+
+
+# ── Google Calendar integration ──────────────────────────────────────────────────
+
+@api_router.post("/deals/{deal_id}/schedule-call")
+async def schedule_call(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    if not users:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = users[0]
+
+    if not user.get('calendar_enabled'):
+        raise HTTPException(status_code=403, detail="calendar_scope_required")
+
+    date_str  = data.get('date', '')
+    time_str  = data.get('time', '10:00')
+    duration  = int(data.get('duration_minutes', 30))
+    title     = data.get('title', 'Intro call')
+    desc      = data.get('description', '')
+    guest     = data.get('guest_email', '')
+
+    try:
+        start_dt = datetime.fromisoformat(f'{date_str}T{time_str}:00')
+        end_dt   = start_dt + timedelta(minutes=duration)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date or time format")
+
+    event_body = {
+        'summary':     title,
+        'description': desc,
+        'start':       {'dateTime': start_dt.isoformat(), 'timeZone': 'UTC'},
+        'end':         {'dateTime': end_dt.isoformat(),   'timeZone': 'UTC'},
+    }
+    if guest:
+        event_body['attendees'] = [{'email': guest}]
+
+    try:
+        cal_svc = build_calendar_service(user)
+        event   = await asyncio.to_thread(
+            lambda: cal_svc.events().insert(
+                calendarId='primary',
+                body=event_body,
+                sendUpdates='all' if guest else 'none',
+            ).execute()
+        )
+        logger.info(f'[Calendar] Event created for deal {deal_id}: {event.get("id")}')
+        return {'event_id': event.get('id'), 'html_link': event.get('htmlLink', '')}
+    except Exception as e:
+        logger.error(f'[Calendar] Event creation failed: {e}')
+        raise HTTPException(status_code=500, detail=f'Calendar error: {str(e)}')
+
+
+# ── Notion integration ───────────────────────────────────────────────────────────
+
+@api_router.post("/deals/{deal_id}/save-to-notion")
+async def save_to_notion(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    deal = deals[0]
+
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    user  = users[0] if users else {}
+    notion_key = user.get('notion_api_key')
+    notion_db  = user.get('notion_database_id')
+
+    if not notion_key or not notion_db:
+        raise HTTPException(status_code=400, detail="notion_not_configured")
+
+    company  = deal.get('company_name') or deal.get('sender_name') or 'Unknown'
+    score    = deal.get('relevance_score')
+    fit      = deal.get('thesis_match_score')
+    strengths  = ', '.join(deal.get('fit_strengths') or []) or ''
+    weaknesses = ', '.join(deal.get('fit_weaknesses') or []) or ''
+
+    properties = {
+        'Company':     {'title':  [{'text': {'content': company}}]},
+        'Founder':     {'rich_text': [{'text': {'content': deal.get('sender_name') or ''}}]},
+        'Email':       {'email': deal.get('sender_email') or None},
+        'Stage':       {'select': {'name': deal.get('deal_stage') or 'Inbound'}},
+        'Category':    {'select': {'name': deal.get('category') or 'Other'}},
+        'Sector':      {'rich_text': [{'text': {'content': deal.get('sector') or ''}}]},
+        'Geography':   {'rich_text': [{'text': {'content': deal.get('geography') or ''}}]},
+        'Summary':     {'rich_text': [{'text': {'content': (deal.get('summary') or '')[:2000]}}]},
+        'Strengths':   {'rich_text': [{'text': {'content': strengths[:1000]}}]},
+        'Weaknesses':  {'rich_text': [{'text': {'content': weaknesses[:1000]}}]},
+        'Notes':       {'rich_text': [{'text': {'content': (deal.get('notes') or '')[:2000]}}]},
+        'Date Added':  {'date': {'start': datetime.now(timezone.utc).date().isoformat()}},
+    }
+    if score is not None:
+        properties['Score'] = {'number': score}
+    if fit is not None:
+        properties['Thesis Fit'] = {'number': fit}
+
+    def _block(heading, text):
+        return [
+            {'object': 'block', 'type': 'heading_2',
+             'heading_2': {'rich_text': [{'type': 'text', 'text': {'content': heading}}]}},
+            {'object': 'block', 'type': 'paragraph',
+             'paragraph': {'rich_text': [{'type': 'text', 'text': {'content': text[:2000]}}]}},
+        ]
+
+    children = (
+        _block('Deal Overview', deal.get('body_preview') or 'No email preview available.') +
+        _block('AI Analysis', deal.get('summary') or '') +
+        _block('Notes', deal.get('notes') or '')
+    )
+
+    payload = {
+        'parent':     {'database_id': notion_db},
+        'properties': properties,
+        'children':   children,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                'https://api.notion.com/v1/pages',
+                headers={
+                    'Authorization': f'Bearer {notion_key}',
+                    'Notion-Version': '2022-06-28',
+                    'Content-Type':  'application/json',
+                },
+                json=payload,
+            )
+        if resp.status_code not in (200, 201):
+            logger.error(f'[Notion] API error {resp.status_code}: {resp.text[:300]}')
+            raise HTTPException(status_code=502, detail=f'Notion API error: {resp.status_code}')
+        result = resp.json()
+        logger.info(f'[Notion] Page created for deal {deal_id}: {result.get("id")}')
+        return {'notion_url': result.get('url', '')}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'[Notion] Request failed: {e}')
+        raise HTTPException(status_code=500, detail=f'Notion error: {str(e)}')
+
+
+# ── Slack integration ────────────────────────────────────────────────────────────
+
+@api_router.post("/deals/{deal_id}/share-slack")
+async def share_to_slack(deal_id: str, current_user: dict = Depends(get_current_user)):
+    uid = current_user['user_id']
+
+    deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
+    if not deals:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    deal = deals[0]
+
+    users = await sb_select('users', {'id': f'eq.{uid}'})
+    user  = users[0] if users else {}
+    webhook = user.get('slack_webhook_url')
+
+    if not webhook:
+        raise HTTPException(status_code=400, detail="slack_not_configured")
+
+    company = deal.get('company_name') or deal.get('sender_name') or 'Unknown'
+    score   = deal.get('relevance_score') or 0
+    summary = deal.get('summary') or 'No summary available.'
+    stage   = deal.get('deal_stage') or 'Inbound'
+    cat     = deal.get('category') or '—'
+    fit     = deal.get('thesis_match_score')
+    sector  = deal.get('sector') or '—'
+    shared_by = user.get('name') or user.get('email') or 'a team member'
+    deal_link = f'{FRONTEND_URL}/?deal={deal_id}'
+
+    blocks = [
+        {
+            'type': 'header',
+            'text': {'type': 'plain_text', 'text': f'{company} — Score: {score}/10'},
+        },
+        {
+            'type': 'section',
+            'text': {'type': 'mrkdwn', 'text': summary[:500]},
+        },
+        {
+            'type': 'section',
+            'fields': [
+                {'type': 'mrkdwn', 'text': f'*Stage:*\n{stage}'},
+                {'type': 'mrkdwn', 'text': f'*Category:*\n{cat}'},
+                {'type': 'mrkdwn', 'text': f'*Thesis Fit:*\n{fit if fit is not None else "—"}%'},
+                {'type': 'mrkdwn', 'text': f'*Sector:*\n{sector}'},
+            ],
+        },
+        {'type': 'divider'},
+        {
+            'type': 'context',
+            'elements': [{'type': 'mrkdwn', 'text': f'Shared from Funnl by {shared_by}'}],
+        },
+        {
+            'type': 'actions',
+            'elements': [{
+                'type': 'button',
+                'text': {'type': 'plain_text', 'text': 'View in Funnl'},
+                'url': deal_link,
+                'style': 'primary',
+            }],
+        },
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(webhook, json={'blocks': blocks})
+        if resp.status_code != 200:
+            logger.error(f'[Slack] Webhook error {resp.status_code}: {resp.text[:200]}')
+            raise HTTPException(status_code=502, detail='Slack webhook error')
+        logger.info(f'[Slack] Deal {deal_id} shared to Slack')
+        return {'ok': True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'[Slack] Request failed: {e}')
+        raise HTTPException(status_code=500, detail=f'Slack error: {str(e)}')
 
 
 # ── App setup ───────────────────────────────────────────────────────────────────

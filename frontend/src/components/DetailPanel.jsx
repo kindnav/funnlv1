@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
   MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Calendar, Phone, MoreHorizontal,
+  BookOpen, Hash,
 } from 'lucide-react';
-import { updateDeal, deleteDeal, generateCallPrep } from '../lib/api';
+import { updateDeal, deleteDeal, generateCallPrep, saveToNotion, shareToSlack } from '../lib/api';
 import CallPrepModal from './CallPrepModal';
+import CalendarModal from './CalendarModal';
 import { toast } from '../components/ui/sonner';
 import ActionModal from './ActionModal';
 import { VotingSection } from './VotingSection';
@@ -86,7 +88,7 @@ const Section = ({ children, style }) => (
   </div>
 );
 
-export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fundInfo, userId }) {
+export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fundInfo, userId, integrationSettings }) {
   const [saving, setSaving] = useState(null);
   const [actionModal, setActionModal] = useState(null);
   const [notes, setNotes] = useState(deal.notes || '');
@@ -96,6 +98,9 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
   const [callPrepBrief, setCallPrepBrief] = useState(null);
   const [callPrepLoading, setCallPrepLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [notionSaving, setNotionSaving] = useState(false);
+  const [slackSharing, setSlackSharing] = useState(false);
 
   const members = fundInfo?.members || [];
   const inFund = !!fundInfo?.fund;
@@ -133,6 +138,46 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
       setTimeout(() => setNotesSaved(false), 2000);
     } finally {
       setSaving(null);
+    }
+  };
+
+  const handleSaveToNotion = async () => {
+    if (notionSaving) return;
+    setNotionSaving(true);
+    try {
+      const result = await saveToNotion(deal.id);
+      if (result?.notion_url) {
+        toast.success('Deal saved to Notion', {
+          action: { label: 'View in Notion', onClick: () => window.open(result.notion_url, '_blank') },
+        });
+      } else {
+        toast.success('Deal saved to Notion ✓');
+      }
+    } catch (err) {
+      if (err?.message === 'notion_not_configured') {
+        toast.error('Connect Notion in Settings first');
+      } else {
+        toast.error('Failed to save to Notion — please try again');
+      }
+    } finally {
+      setNotionSaving(false);
+    }
+  };
+
+  const handleShareToSlack = async () => {
+    if (slackSharing) return;
+    setSlackSharing(true);
+    try {
+      await shareToSlack(deal.id);
+      toast.success('Shared to Slack ✓');
+    } catch (err) {
+      if (err?.message === 'slack_not_configured') {
+        toast.error('Connect Slack in Settings first');
+      } else {
+        toast.error('Failed to share to Slack — please try again');
+      }
+    } finally {
+      setSlackSharing(false);
     }
   };
 
@@ -438,6 +483,66 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
             </Section>
           )}
 
+          {/* ── Integrations ──────────────────────────────────────────── */}
+          <Section>
+            <SectionLabel>Integrations</SectionLabel>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {/* Calendar — only for First Look / In Conversation */}
+              {(deal.deal_stage === 'First Look' || deal.deal_stage === 'In Conversation') && (
+                <button
+                  onClick={() => setShowCalendarModal(true)}
+                  className="flex flex-col items-center justify-center gap-1 transition-all"
+                  style={{
+                    flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.6)', cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                >
+                  <Calendar size={14} style={{ color: '#7c6dfa' }} />
+                  Schedule call
+                </button>
+              )}
+              {/* Notion */}
+              <button
+                onClick={handleSaveToNotion}
+                disabled={notionSaving}
+                title={!integrationSettings?.notion_connected ? 'Connect Notion in Settings' : ''}
+                className="flex flex-col items-center justify-center gap-1 transition-all"
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.6)', cursor: notionSaving ? 'wait' : 'pointer',
+                  opacity: !integrationSettings?.notion_connected ? 0.38 : 1,
+                }}
+                onMouseEnter={e => { if (integrationSettings?.notion_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+              >
+                <BookOpen size={14} style={{ color: '#4da6ff' }} />
+                {notionSaving ? 'Saving…' : 'Save to Notion'}
+              </button>
+              {/* Slack */}
+              <button
+                onClick={handleShareToSlack}
+                disabled={slackSharing}
+                title={!integrationSettings?.slack_connected ? 'Connect Slack in Settings' : ''}
+                className="flex flex-col items-center justify-center gap-1 transition-all"
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 11, fontWeight: 500,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.6)', cursor: slackSharing ? 'wait' : 'pointer',
+                  opacity: !integrationSettings?.slack_connected ? 0.38 : 1,
+                }}
+                onMouseEnter={e => { if (integrationSettings?.slack_connected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+              >
+                <Hash size={14} style={{ color: '#3dd68c' }} />
+                {slackSharing ? 'Sharing…' : 'Share to Slack'}
+              </button>
+            </div>
+          </Section>
+
           {/* ── Send Email ────────────────────────────────────────────── */}
           <Section>
             <SectionLabel>Send Email</SectionLabel>
@@ -554,6 +659,12 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
         </div>
       </div>
 
+      {showCalendarModal && (
+        <CalendarModal
+          deal={deal}
+          onClose={() => setShowCalendarModal(false)}
+        />
+      )}
       {actionModal && (
         <ActionModal
           deal={deal}

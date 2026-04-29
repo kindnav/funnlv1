@@ -13,7 +13,7 @@ import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import ActivityFeed from '../components/ActivityFeed';
 import { toast } from '../components/ui/sonner';
-import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession } from '../lib/api';
+import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession, getIntegrationSettings } from '../lib/api';
 import UpgradeModal from '../components/UpgradeModal';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -94,6 +94,7 @@ export default function Dashboard({ user, onLogout }) {
   const [billingStatus, setBillingStatus] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [integrationSettings, setIntegrationSettings] = useState(null);
   const [syncCount, setSyncCount] = useState(0);
   const moreMenuRef = useRef(null);
   const navigate = useNavigate();
@@ -136,12 +137,14 @@ export default function Dashboard({ user, onLogout }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, f, status, fi, billing] = await Promise.all([
+      const [d, f, status, fi, billing, intSettings] = await Promise.all([
         getDeals(), getFundSettings(),
         getSyncStatus().catch(() => null),
         getMyFund().catch(() => null),
         getBillingStatus().catch(() => null),
+        getIntegrationSettings().catch(() => null),
       ]);
+      if (intSettings) setIntegrationSettings(intSettings);
       if (d) {
         setDeals(d);
         const today = new Date().toISOString().slice(0, 10);
@@ -907,6 +910,7 @@ export default function Dashboard({ user, onLogout }) {
             onDelete={handleDeleteDeal}
             fundInfo={fundInfo}
             userId={user?.id}
+            integrationSettings={integrationSettings}
           />
         )}
 
