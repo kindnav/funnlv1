@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   X, ExternalLink, Check, ChevronRight, XCircle, Trash2,
-  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Phone, MoreHorizontal,
+  MessageSquare, Share2, Target, TrendingUp, TrendingDown, FileText, Calendar, Phone, MoreHorizontal,
 } from 'lucide-react';
 import { updateDeal, deleteDeal, generateCallPrep, saveToNotion, shareToSlack } from '../lib/api';
 import { NotionLogo, SlackLogo, CalendarLogo } from './IntegrationLogos';
