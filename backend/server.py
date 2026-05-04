@@ -224,6 +224,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_enabled BOOLEAN DEFAULT FALS
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notion_api_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notion_database_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_webhook_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_brief_text TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_brief_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gmail_send_enabled BOOLEAN DEFAULT FALSE;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 
 CREATE TABLE IF NOT EXISTS deals (
@@ -876,7 +879,7 @@ async def gate_email(sender_name: str, sender_email: str, subject: str, body: st
     )
     try:
         msg = await claude_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-haiku-4-5-20251001",
             max_tokens=150,
             system=GATE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
@@ -1151,7 +1154,7 @@ async def process_and_save_email(
     subject: str, body: str, thread_id: str = None,
     message_id: str = None, received_date: str = None, gmail_link: str = None,
     fund_ctx: dict = None, skip_dedup: bool = False, force_replace: bool = False,
-    run_gate: bool = True,
+    run_gate: bool = True, user: dict = None,
 ) -> Optional[dict]:
     # Deduplicate (only if not already checked by caller's pre-fetched set)
     if not skip_dedup and user_id and thread_id:
@@ -1218,7 +1221,7 @@ async def process_and_save_email(
         logger.info(f'[PROCESS] Saved: "{subject}" from {sender_email} | category={ai.get("category")} score={ai.get("relevance_score")}')
         # Auto-create / update contact for every saved deal (not stage-gated)
         if user_id:
-            await sync_contact(user_id, saved, is_new_deal=True)
+            await sync_contact(user_id, saved, is_new_deal=True, user=user)
             await _log_deal_activity(user_id, saved, 'deal_received',
                 f"New deal received: {saved.get('company_name') or saved.get('sender_name', 'Unknown')}")
         return saved
@@ -1349,7 +1352,7 @@ async def _process_single_message(
         subject=subject, body=body, thread_id=thread_id,
         message_id=ref['id'], received_date=received_date,
         gmail_link=gmail_link, fund_ctx=fund_ctx,
-        skip_dedup=True, force_replace=force_reprocess,
+        skip_dedup=True, force_replace=force_reprocess, user=user,
     )
     existing_thread_ids.add(thread_id)
     return result if result in ('gated', None) else 'saved'
@@ -2399,7 +2402,7 @@ _CONTACT_SKIP_CATEGORIES = frozenset({
 })
 
 
-async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> Optional[dict]:
+async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False, user: dict = None) -> Optional[dict]:
     """
     Create or update a contact from a categorized, non-passed deal.
 
@@ -2427,8 +2430,11 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False) -> O
     # This happens when Gmail sync captures a REPLY the user sent (thread reply),
     # so the From: header shows the user, not the founder.
     # Fix: use company_name to form a unique synthetic contact email.
-    user_rows = await sb_select('users', {'id': f'eq.{user_id}'})
-    user_row = user_rows[0] if user_rows else {}
+    if user is None:
+        user_rows = await sb_select('users', {'id': f'eq.{user_id}'})
+        user_row = user_rows[0] if user_rows else {}
+    else:
+        user_row = user
     user_email = (user_row.get('email') or '').strip().lower()
     user_name = (user_row.get('name') or '').strip().lower()
 
@@ -2940,13 +2946,22 @@ async def billing_portal(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/billing/webhook")
 async def billing_webhook(request: Request):
-    # Webhook signature verification is skipped while running locally (no public URL yet).
-    # TODO: Once deployed, replace the raw JSON parse below with:
-    #   payload = await request.body()
-    #   event = stripe.Webhook.construct_event(payload, request.headers.get('stripe-signature'), STRIPE_WEBHOOK_SECRET)
-    payload = await request.json()
-    event_type = payload.get('type', '')
-    data_obj = payload.get('data', {}).get('object', {})
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature', '')
+
+    if STRIPE_WEBHOOK_SECRET and sig_header:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+            event_type = event['type']
+            data_obj = event['data']['object']
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    else:
+        payload_dict = json.loads(payload)
+        event_type = payload_dict.get('type', '')
+        data_obj = payload_dict.get('data', {}).get('object', {})
     if event_type in ('customer.subscription.created', 'customer.subscription.updated'):
         customer_id = data_obj.get('customer')
         sub_status = data_obj.get('status')
@@ -2971,6 +2986,8 @@ async def billing_webhook(request: Request):
 @api_router.post("/deals/{deal_id}/call-prep")
 async def generate_call_prep(deal_id: str, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    if not await check_subscription_access(uid):
+        raise HTTPException(status_code=402, detail="subscription_required")
     deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not deals:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -3506,6 +3523,8 @@ async def save_integration_settings(data: dict, current_user: dict = Depends(get
 @api_router.post("/deals/{deal_id}/schedule-call")
 async def schedule_call(deal_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    if not await check_subscription_access(uid):
+        raise HTTPException(status_code=402, detail="subscription_required")
 
     deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not deals:
@@ -3562,6 +3581,8 @@ async def schedule_call(deal_id: str, data: dict, current_user: dict = Depends(g
 @api_router.post("/deals/{deal_id}/save-to-notion")
 async def save_to_notion(deal_id: str, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    if not await check_subscription_access(uid):
+        raise HTTPException(status_code=402, detail="subscription_required")
 
     deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not deals:
@@ -3650,6 +3671,8 @@ async def save_to_notion(deal_id: str, current_user: dict = Depends(get_current_
 @api_router.post("/deals/{deal_id}/share-slack")
 async def share_to_slack(deal_id: str, current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
+    if not await check_subscription_access(uid):
+        raise HTTPException(status_code=402, detail="subscription_required")
 
     deals = await sb_select('deals', {'id': f'eq.{deal_id}'})
     if not deals:

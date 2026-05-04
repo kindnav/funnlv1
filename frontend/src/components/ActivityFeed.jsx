@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Activity, ChevronRight } from 'lucide-react';
 import { getActivityFeed } from '../lib/api';
 
@@ -42,7 +42,6 @@ export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
-  const intervalRef = useRef(null);
 
   const load = useCallback(async (manual = false, currentScope = scope) => {
     if (manual) setSpinning(true);
@@ -62,12 +61,6 @@ export default function ActivityFeed({ userId, refreshTrigger, scope = 'personal
     setLoading(true);
     load(false, scope);
   }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-refresh every 60 seconds
-  useEffect(() => {
-    intervalRef.current = setInterval(() => load(), 60_000);
-    return () => clearInterval(intervalRef.current);
-  }, [load]);
 
   // Refresh when sync completes (refreshTrigger increments)
   useEffect(() => {
