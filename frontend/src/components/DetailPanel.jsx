@@ -599,7 +599,7 @@ export default function DetailPanel({ deal, onClose, onDealUpdated, onDelete, fu
                       e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                     }}
                   >
-                    <img src="https://cdn.simpleicons.org/slack" width="15" height="15" alt="Slack" style={{ display: 'block', flexShrink: 0 }} />
+                    <img src="https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png" width="16" height="16" alt="Slack" style={{ display: 'block', flexShrink: 0 }} />
                     <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>
                       {slackSharing ? 'Sharing…' : 'Share in Slack'}
                     </span>

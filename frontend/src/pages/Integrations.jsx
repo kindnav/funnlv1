@@ -211,7 +211,7 @@ export default function Integrations() {
           {/* ── Slack ── */}
           <div style={cardStyle}>
             <div style={{ width: 48, height: 48, borderRadius: 12, background: '#4A154B', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <img src="https://cdn.simpleicons.org/slack" width="26" height="26" alt="Slack" style={{ display: 'block' }} />
+              <img src="https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png" width="32" height="32" alt="Slack" style={{ display: 'block' }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="flex items-center gap-2 mb-0.5">
