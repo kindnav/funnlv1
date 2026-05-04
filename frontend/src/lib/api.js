@@ -33,7 +33,6 @@ export const disconnectGmail = () => fetchJson(`${API}/auth/disconnect`, { metho
 export const getGoogleAuthUrl = () => `${API}/auth/google`;
 
 export const getDeals = () => fetchJson(`${API}/deals`);
-export const getStats = () => fetchJson(`${API}/stats`);
 export const processEmail = (data) =>
   fetchJson(`${API}/deals/process`, { method: 'POST', body: JSON.stringify(data) });
 export const updateDeal = (id, data) =>

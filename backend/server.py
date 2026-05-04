@@ -24,7 +24,6 @@ from fastapi import FastAPI, APIRouter, Depends, HTTPException, BackgroundTasks,
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 from googleapiclient.discovery import build as gbuild
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
@@ -503,11 +502,9 @@ async def init_database():
     exists = await sb_table_exists('users')
     if exists:
         logger.info("Database tables verified")
-        await migrate_deal_stages()
         await purge_expired_archived_deals()
         await migrate_sample_thesis()
         await seed_sample_data()
-        await _auto_populate_contacts_if_empty()
         return True
     logger.warning("DB tables not found — please run the schema SQL in Supabase SQL Editor")
     return False
@@ -1068,8 +1065,6 @@ def _claude_fallback() -> dict:
     }
 
 # ── Deal processing ───────────────────────────────────────────────────────────────
-# Categories to skip entirely — not relevant to any fund
-SKIP_CATEGORIES = {'Spam / irrelevant'}
 
 # ── Pitch signal heuristics ────────────────────────────────────────────────────
 PITCH_KEYWORDS = [
@@ -2102,6 +2097,7 @@ async def get_contact_deals(contact_id: str, current_user: dict = Depends(get_cu
 
 
 @api_router.get("/stats")
+# Deprecated — stats are computed client-side from the deals array
 async def get_stats(current_user: dict = Depends(get_current_user)):
     uid = current_user['user_id']
     IRRELEVANT_CATS = {'Spam / irrelevant', 'Service provider / vendor', 'Recruiter / hiring'}
@@ -2458,10 +2454,11 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False, user
         logger.debug(f'[Contact] Skip — no email and no company_name')
         return None
 
-    # 3. Handle Passed deals — remove the contact so it no longer appears in Contacts
+    # 3. Fetch contact once — used for both Passed removal and upsert
+    existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
+
     stage = (deal.get('deal_stage') or deal.get('status') or '').strip()
     if stage == 'Passed':
-        existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
         if existing:
             await sb_delete('contacts', {'id': f'eq.{existing[0]["id"]}'})
             logger.info(f'[Contact] Deleted (deal Passed): {email} user={user_id[:8]}')
@@ -2473,8 +2470,6 @@ async def sync_contact(user_id: str, deal: dict, is_new_deal: bool = False, user
     last_stage = stage or 'Inbound'
     # Use thesis_match_score (0-100) if available; else scale relevance_score (0-10) × 10
     new_score = deal.get('thesis_match_score') or ((deal.get('relevance_score') or 0) * 10)
-
-    existing = await sb_select('contacts', {'email': f'eq.{email}', 'user_id': f'eq.{user_id}'})
 
     if existing:
         contact = existing[0]
@@ -2785,11 +2780,13 @@ async def generate_weekly_digest(user_id: str, user: dict) -> str:
     week_ago = now - timedelta(days=7)
     today_str = now.date().isoformat()
 
-    new_deals = await sb_select('deals', {
+    all_deals = await sb_select('deals', {
         'user_id': f'eq.{user_id}',
-        'created_at': f'gte.{week_ago.isoformat()}',
         'status': 'neq.deleted',
+        'order': 'created_at.desc',
     }) or []
+    cutoff = week_ago.isoformat()
+    new_deals = [d for d in all_deals if d.get('created_at', '') >= cutoff]
 
     fund_ctx = await get_fund_settings(user_id)
     fund_name = fund_ctx.get('fund_name', 'your fund')
@@ -2808,8 +2805,6 @@ async def generate_weekly_digest(user_id: str, user: dict) -> str:
         f"{d.get('relevance_score') or 0}/10 — {(d.get('summary') or 'No summary')[:100]}"
         for i, d in enumerate(top3)
     )
-
-    all_deals = await sb_select('deals', {'user_id': f'eq.{user_id}', 'status': 'neq.deleted'}) or []
     overdue = [d for d in all_deals if d.get('follow_up_date') and str(d['follow_up_date'])[:10] <= today_str]
     overdue_names = ', '.join(d.get('company_name') or d.get('sender_name', 'Unknown') for d in overdue[:5]) or 'None'
     watchlist_overdue = [d for d in all_deals if d.get('deal_stage') == 'Watch List' and d.get('watchlist_revisit_date') and str(d['watchlist_revisit_date'])[:10] <= today_str]
@@ -2845,12 +2840,8 @@ Write a warm, brief Monday morning digest. Mention top deals by company name. Ca
     return f"Hi {name},\n\n{response.content[0].text}\n\n— funnl"
 
 
-async def send_weekly_digest():
-    """Scheduled job: send weekly digest email to all eligible users."""
-    logger.info('[DIGEST] Starting weekly digest send')
-    users = await sb_select('users', {'refresh_token': 'not.is.null', 'weekly_digest_enabled': 'neq.false'}) or []
-    sent = 0
-    for user in users:
+async def _send_one_digest(user: dict, sem: asyncio.Semaphore) -> bool:
+    async with sem:
         try:
             body = await generate_weekly_digest(user['id'], user)
             success, _ = await send_gmail_message(
@@ -2860,10 +2851,19 @@ async def send_weekly_digest():
                 subject='Your weekly deal flow digest',
                 body=body,
             )
-            if success:
-                sent += 1
+            return bool(success)
         except Exception as e:
             logger.error(f'[DIGEST] Failed for user {user["id"][:8]}: {e}')
+            return False
+
+
+async def send_weekly_digest():
+    """Scheduled job: send weekly digest email to all eligible users."""
+    logger.info('[DIGEST] Starting weekly digest send')
+    users = await sb_select('users', {'refresh_token': 'not.is.null', 'weekly_digest_enabled': 'neq.false'}) or []
+    sem = asyncio.Semaphore(5)
+    results = await asyncio.gather(*[_send_one_digest(u, sem) for u in users])
+    sent = sum(1 for r in results if r)
     logger.info(f'[DIGEST] Sent {sent}/{len(users)} digests')
 
 
@@ -3752,8 +3752,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
+    allow_methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allow_headers=['Content-Type', 'Authorization', 'stripe-signature'],
 )
 
 @app.on_event("startup")
