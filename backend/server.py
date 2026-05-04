@@ -3255,6 +3255,163 @@ async def reprocess_existing(current_user: dict = Depends(get_current_user)):
     return {'scanned': total, 'removed': removed}
 
 
+# ── Today's Focus (daily intelligence brief) ─────────────────────────────────────
+
+@api_router.get("/brief/today")
+async def get_todays_brief(
+    refresh: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+):
+    uid = current_user['user_id']
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    # ── Return cached brief if generated today and no manual refresh ────────
+    if not refresh:
+        users = await sb_select('users', {'id': f'eq.{uid}'})
+        u = users[0] if users else {}
+        if u.get('daily_brief_date') == today and u.get('daily_brief_text'):
+            logger.info(f'[Brief] Returning cached brief for user {uid[:8]}')
+            return {
+                'brief': u['daily_brief_text'],
+                'generated_at': today,
+                'cached': True,
+            }
+
+    # ── Gather pipeline data ────────────────────────────────────────────────
+    all_deals = await sb_select('deals', {
+        'user_id': f'eq.{uid}',
+        'status':  'neq.deleted',
+    }) or []
+
+    # Only deals that are in-play (exclude Passed)
+    active = [d for d in all_deals if d.get('deal_stage') not in ('Passed',)]
+
+    # Need at least 3 active deals to generate a meaningful brief
+    if len(active) < 3:
+        return {'brief': None, 'generated_at': today, 'cached': False, 'reason': 'not_enough_deals'}
+
+    fund_ctx   = await get_fund_settings(uid)
+    fund_name  = fund_ctx.get('fund_name') or 'Your fund'
+    fund_type  = fund_ctx.get('fund_type') or 'VC fund'
+    thesis     = fund_ctx.get('thesis') or 'Not specified'
+    sectors    = fund_ctx.get('sectors') or 'Not specified'
+    check_size = fund_ctx.get('check_size') or 'Not specified'
+
+    now_dt     = datetime.now(timezone.utc)
+    today_str  = now_dt.date().isoformat()
+
+    # ── Build critical / priority / momentum lists ──────────────────────────
+    critical, high_priority, momentum = [], [], []
+
+    for d in active:
+        company  = d.get('company_name') or d.get('sender_name') or 'Unknown'
+        stage    = d.get('deal_stage') or 'Inbound'
+        score    = d.get('relevance_score') or 0
+        urgency  = d.get('urgency_score') or 0
+        thesis_s = d.get('thesis_match_score')
+        follow   = d.get('follow_up_date')
+        warm     = d.get('warm_or_cold') == 'Warm'
+        intro    = d.get('intro_source') or ''
+        created  = d.get('created_at') or ''
+        updated  = d.get('updated_at') or ''
+
+        # Days in current stage (approximate from created_at or updated_at)
+        try:
+            ref_date = datetime.fromisoformat((updated or created).replace('Z', '+00:00'))
+            days_in_stage = (now_dt - ref_date).days
+        except Exception:
+            days_in_stage = 0
+
+        follow_overdue = follow and str(follow)[:10] <= today_str
+
+        # Critical: overdue follow-up with high urgency, or warm intro going cold
+        if (follow_overdue and urgency >= 6) or (warm and days_in_stage > 14 and score >= 7):
+            reasons = []
+            if follow_overdue:   reasons.append(f'follow-up overdue')
+            if warm and days_in_stage > 14: reasons.append(f'warm intro {days_in_stage}d old')
+            critical.append(
+                f"{company} (Stage: {stage}, Score: {score}/10, Urgency: {urgency}/10)"
+                + (f" via {intro}" if intro else '')
+                + (f" — {'; '.join(reasons)}" if reasons else '')
+            )
+
+        # High priority: strong thesis fit, still unreviewed or stuck in First Look
+        elif (thesis_s is not None and thesis_s >= 65 and stage in ('Inbound', 'First Look')) \
+          or (score >= 8 and stage == 'Inbound'):
+            age_note = f'unreviewed {days_in_stage}d' if stage == 'Inbound' else f'{days_in_stage}d in First Look'
+            high_priority.append(
+                f"{company} (Stage: {stage}"
+                + (f", Thesis Fit: {thesis_s}%" if thesis_s else f", Score: {score}/10")
+                + f") — {age_note}"
+            )
+
+        # Momentum: moved stage recently (updated in last 7 days, not Inbound)
+        elif days_in_stage <= 7 and stage not in ('Inbound', 'Passed'):
+            momentum.append(f"{company}: active in {stage}")
+
+    # Cap each list to top 4 entries
+    critical      = critical[:4]
+    high_priority = high_priority[:4]
+    momentum      = momentum[:4]
+
+    # ── Build prompt ────────────────────────────────────────────────────────
+    def fmt_list(items):
+        return '\n'.join(f'  - {i}' for i in items) if items else '  None'
+
+    prompt = f"""You are the deal flow intelligence system for {fund_name}, a {fund_type}.
+
+Fund thesis: {thesis}
+Focus sectors: {sectors}
+Typical check size: {check_size}
+
+Today is {today_str}. Write a 3-4 sentence daily intelligence brief for the fund manager.
+This brief should feel like a smart analyst briefing you before your morning coffee.
+Be specific — use company names, numbers, and context. Do not be generic.
+
+PIPELINE SNAPSHOT:
+Total active deals: {len(active)}
+Unreviewed in Inbound: {sum(1 for d in active if (d.get('deal_stage') or 'Inbound') == 'Inbound')}
+
+CRITICAL TODAY (immediate attention required):
+{fmt_list(critical)}
+
+HIGH PRIORITY (strong thesis fit, needs forward momentum):
+{fmt_list(high_priority)}
+
+RECENT MOMENTUM (active in last 7 days):
+{fmt_list(momentum)}
+
+Write exactly 3-4 sentences.
+Sentence 1: Name the single most important action today and why it is critical (use specific company names and scores).
+Sentence 2: Name one or two high-quality deals worth prioritising today (specific to the fund thesis).
+Sentence 3: Any positive momentum worth noting, or a pipeline health risk to flag.
+Sentence 4 (optional, only if there is something genuinely worth adding): One forward-looking observation.
+
+Rules: No bullet points. No headers. No lists. Be direct. Mention company names. Reference actual scores.
+Sound like a trusted analyst, not a notification system. Under 100 words total."""
+
+    try:
+        response = await claude_client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=300,
+            system='You are a senior VC analyst writing a concise daily pipeline brief. Be specific, direct, and actionable. Mention company names. Under 100 words.',
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        brief_text = response.content[0].text.strip()
+    except Exception as e:
+        logger.error(f'[Brief] Claude call failed: {e}')
+        return {'brief': None, 'generated_at': today, 'cached': False, 'reason': 'generation_failed'}
+
+    # ── Cache on the user row ───────────────────────────────────────────────
+    await sb_update('users', {
+        'daily_brief_text': brief_text,
+        'daily_brief_date': today,
+    }, {'id': f'eq.{uid}'})
+
+    logger.info(f'[Brief] Generated and cached for user {uid[:8]}')
+    return {'brief': brief_text, 'generated_at': today, 'cached': False}
+
+
 # ── Calendar events ──────────────────────────────────────────────────────────────
 
 @api_router.get("/calendar/events")

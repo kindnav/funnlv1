@@ -174,3 +174,7 @@ export const shareToSlack = (dealId) =>
 
 export const getCalendarEvents = () =>
   fetchJson(`${API}/calendar/events`);
+
+// ── Today's Focus ─────────────────────────────────────────────────────────────────
+export const getTodaysBrief = (refresh = false) =>
+  fetchJson(`${API}/brief/today${refresh ? '?refresh=true' : ''}`);

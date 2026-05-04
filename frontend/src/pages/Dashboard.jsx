@@ -13,6 +13,7 @@ import { DealRow } from '../components/dashboard/DealRow';
 import { SyncLogModal } from '../components/dashboard/SyncLogModal';
 import ActivityFeed from '../components/ActivityFeed';
 import CalendarPanel from '../components/CalendarPanel';
+import TodaysBrief from '../components/TodaysBrief';
 import { toast } from '../components/ui/sonner';
 import { getDeals, triggerSync, getSyncStatus, updateDeal, getFundSettings, getMyFund, getFundDeals, deleteDeal, getArchivedDeals, recoverDeal, getBillingStatus, createCheckoutSession, getIntegrationSettings } from '../lib/api';
 import UpgradeModal from '../components/UpgradeModal';
@@ -577,6 +578,13 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       </div>
+
+      {/* ── Today's Focus brief ──────────────────────────────────────────── */}
+      {!loading && (
+        <div className="shrink-0 pt-3">
+          <TodaysBrief dealCount={activeDeals.length} />
+        </div>
+      )}
 
       {/* ── Stats cards row ───────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 px-5 py-3">
