@@ -52,7 +52,7 @@ const getInitials = (name, email) => {
   return '?';
 };
 
-const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed'];
+const FILTER_TABS = ['All', 'First Look', 'In Conversation', 'Due Diligence', 'Closed', 'Watch List', 'Passed', 'Needs Attention'];
 const AVATAR_COLORS = [
   ['rgba(124,109,250,0.2)', '#7c6dfa'],
   ['rgba(77,166,255,0.18)', '#4da6ff'],
@@ -69,6 +69,61 @@ const fmtEmail = (email) => {
   if (!email || email.endsWith('@deal.funnl')) return null;
   return email;
 };
+
+// ── Relationship health score (pure, no API calls) ─────────────────────────
+function healthScore(contact) {
+  const now = Date.now();
+  let pts = 0;
+
+  // 1. Recency (40 pts)
+  const daysSince = contact.last_contacted
+    ? Math.floor((now - new Date(contact.last_contacted).getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+  if (daysSince < 14)      pts += 40;
+  else if (daysSince < 30) pts += 20;
+  else if (daysSince < 60) pts += 8;
+
+  // 2. Status trajectory (25 pts)
+  const st = contact.contact_status;
+  if (st === 'In Conversation' || st === 'Closed') pts += 25;
+  else if (st === 'First Look')  pts += 15;
+  else if (st === 'Inbound')     pts += 8;
+
+  // 3. Engagement depth — deal count (15 pts)
+  const dc = contact.deal_count || 1;
+  if (dc >= 3)     pts += 15;
+  else if (dc >= 2) pts += 10;
+  else              pts += 5;
+
+  // 4. Deal quality — relevance score (10 pts)
+  const rel = contact.relevance_score || 0;
+  if (rel >= 8)      pts += 10;
+  else if (rel >= 6) pts += 6;
+  else if (rel >= 4) pts += 3;
+
+  // 5. Active follow-up set (10 pts)
+  if (contact.follow_up_date && new Date(contact.follow_up_date) > new Date()) pts += 10;
+
+  return Math.min(100, pts);
+}
+
+function getHealthLabel(score) {
+  if (score >= 80) return 'Active';
+  if (score >= 50) return 'Warm';
+  if (score >= 20) return 'Cooling';
+  return 'At Risk';
+}
+
+function getHealthColor(score) {
+  if (score >= 80) return '#3dd68c';
+  if (score >= 50) return '#f5a623';
+  return '#f05252';
+}
+
+function daysSinceContact(contact) {
+  if (!contact.last_contacted) return 999;
+  return Math.floor((Date.now() - new Date(contact.last_contacted).getTime()) / (1000 * 60 * 60 * 24));
+}
 
 /* ── Subcomponents ────────────────────────────────────────────────────────── */
 function StageBadge({ stage }) {
@@ -224,15 +279,24 @@ export default function Contacts({ user, onLogout }) {
   const activeContacts = contactView === 'fund-contacts' ? fundContacts : contacts;
   const activeLoading  = contactView === 'fund-contacts' ? fundContactsLoading : loading;
 
-  const filtered = activeContacts.filter(c => {
+  let filtered = activeContacts.filter(c => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       (c.name || '').toLowerCase().includes(q) ||
       (c.email || '').toLowerCase().includes(q) ||
       (c.company || '').toLowerCase().includes(q);
-    const matchFilter = filter === 'All' || c.contact_status === filter;
+    let matchFilter;
+    if (filter === 'All')                matchFilter = true;
+    else if (filter === 'Needs Attention') matchFilter = healthScore(c) < 50;
+    else                                   matchFilter = c.contact_status === filter;
     return matchSearch && matchFilter;
   });
+  // Sort worst-first when in Needs Attention view
+  if (filter === 'Needs Attention') {
+    filtered = [...filtered].sort((a, b) => healthScore(a) - healthScore(b));
+  }
+
+  const needsAttentionCount = activeContacts.filter(c => healthScore(c) < 50).length;
 
   const pipelineCount = activeContacts.filter(c =>
     ['First Look', 'In Conversation', 'Due Diligence'].includes(c.contact_status)
@@ -353,25 +417,54 @@ export default function Contacts({ user, onLogout }) {
             </div>
           </div>
 
+          {/* Pulse animation for At Risk health bars */}
+          <style>{`
+            @keyframes healthPulse {
+              0%, 100% { opacity: 1; }
+              50%       { opacity: 0.45; }
+            }
+          `}</style>
+
           {/* Filter tabs — capsule pills */}
           <div className="px-3 pb-2 shrink-0 flex gap-1 flex-wrap">
-            {FILTER_TABS.map(tab => (
-              <button
-                key={tab}
-                data-testid={`contact-filter-tab-${tab.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={() => setFilter(tab)}
-                className="text-[10px] font-semibold transition-all"
-                style={{
-                  borderRadius: 999,
-                  padding: '4px 10px',
-                  background: filter === tab ? 'rgba(124,109,250,0.15)' : 'transparent',
-                  color: filter === tab ? '#7c6dfa' : 'rgba(255,255,255,0.35)',
-                  border: `1px solid ${filter === tab ? 'rgba(124,109,250,0.35)' : 'transparent'}`,
-                }}
-              >
-                {tab}
-              </button>
-            ))}
+            {FILTER_TABS.map(tab => {
+              const isNeedsAttention = tab === 'Needs Attention';
+              const isActive = filter === tab;
+              return (
+                <button
+                  key={tab}
+                  data-testid={`contact-filter-tab-${tab.toLowerCase().replace(/\s+/g, '-')}`}
+                  onClick={() => setFilter(tab)}
+                  className="text-[10px] font-semibold transition-all flex items-center gap-1"
+                  style={{
+                    borderRadius: 999,
+                    padding: '4px 10px',
+                    background: isActive
+                      ? (isNeedsAttention ? 'rgba(240,82,82,0.15)' : 'rgba(124,109,250,0.15)')
+                      : 'transparent',
+                    color: isActive
+                      ? (isNeedsAttention ? '#f05252' : '#7c6dfa')
+                      : 'rgba(255,255,255,0.35)',
+                    border: `1px solid ${isActive
+                      ? (isNeedsAttention ? 'rgba(240,82,82,0.35)' : 'rgba(124,109,250,0.35)')
+                      : 'transparent'}`,
+                  }}
+                >
+                  {tab}
+                  {isNeedsAttention && needsAttentionCount > 0 && (
+                    <span style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      background: '#f05252', color: '#fff',
+                      fontSize: 9, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {needsAttentionCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Contact list */}
@@ -401,6 +494,11 @@ export default function Contacts({ user, onLogout }) {
                   ? c.owner_name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
                   : null;
                 const [ownerBg, ownerFg] = ownerInitials ? avatarColor(c.owner_user_id || 'x') : ['transparent', 'transparent'];
+                const hs    = healthScore(c);
+                const hcol  = getHealthColor(hs);
+                const hlbl  = getHealthLabel(hs);
+                const dsince = daysSinceContact(c);
+                const isAtRisk = hs < 20;
                 return (
                   <div
                     key={`${c.id}-${c.owner_user_id || ''}`}
@@ -431,7 +529,24 @@ export default function Contacts({ user, onLogout }) {
                       {c.company && (
                         <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</p>
                       )}
-                      <div className="flex items-center gap-2 mt-1.5">
+                      {/* ── Health bar ── */}
+                      <div
+                        className="flex items-center gap-1.5 mt-1.5"
+                        title={`Relationship score: ${hs} — Last contact: ${dsince === 999 ? 'never' : `${dsince} days ago`}`}
+                      >
+                        <div style={{ position: 'relative', width: 40, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }}>
+                          <div style={{
+                            position: 'absolute', top: 0, left: 0, bottom: 0,
+                            width: `${hs}%`, borderRadius: 2,
+                            background: hcol,
+                            animation: isAtRisk ? 'healthPulse 2s ease-in-out infinite' : 'none',
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: hcol, lineHeight: 1 }}>
+                          {hlbl}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
                         <StageBadge stage={c.contact_status} />
                         {c.relevance_score != null && (
                           <span className="text-[10px] font-bold font-mono" style={{ color: scoreColor(normScore(c.relevance_score)) }}>
@@ -551,6 +666,38 @@ function ContactDetailPanel({
 }) {
   const [bgA, fgA] = avatarColor(contact.email || contact.name);
 
+  // Compute health score components for this contact
+  const hs     = healthScore(contact);
+  const hcol   = getHealthColor(hs);
+  const hlbl   = getHealthLabel(hs);
+  const dsince = daysSinceContact(contact);
+  const isAtRisk = hs < 20;
+
+  const now = Date.now();
+  // Component breakdowns (for the detail table)
+  const recencyPts = (() => {
+    if (dsince < 14)      return 40;
+    if (dsince < 30)      return 20;
+    if (dsince < 60)      return 8;
+    return 0;
+  })();
+  const statusPts = (() => {
+    const st = contact.contact_status;
+    if (st === 'In Conversation' || st === 'Closed') return 25;
+    if (st === 'First Look')  return 15;
+    if (st === 'Inbound')     return 8;
+    return 0;
+  })();
+  const depthPts = (() => {
+    const dc = contact.deal_count || 1;
+    if (dc >= 3) return 15; if (dc >= 2) return 10; return 5;
+  })();
+  const qualPts = (() => {
+    const rel = contact.relevance_score || 0;
+    if (rel >= 8) return 10; if (rel >= 6) return 6; if (rel >= 4) return 3; return 0;
+  })();
+  const followPts = (contact.follow_up_date && new Date(contact.follow_up_date) > new Date()) ? 10 : 0;
+
   return (
     <div
       data-testid="contact-detail-panel"
@@ -636,6 +783,63 @@ function ContactDetailPanel({
               <p className="text-sm font-semibold text-white">{String(value)}</p>
             </div>
           ))}
+        </div>
+
+        {/* ── Relationship Health ───────────────────────────────────── */}
+        <div className="rounded-2xl px-5 py-4" style={cardSection}>
+          <p style={sectionLabelStyle}>Relationship Health</p>
+
+          {/* At Risk warning banner */}
+          {isAtRisk && (contact.relevance_score || 0) >= 7 && (
+            <div style={{
+              background: 'rgba(245,166,35,0.08)',
+              border: '1px solid rgba(245,166,35,0.2)',
+              borderRadius: 8, padding: '10px 12px',
+              fontSize: 12, color: '#f5a623',
+              marginBottom: 14, lineHeight: 1.5,
+            }}>
+              High-quality contact — {dsince === 999 ? 'no engagement recorded' : `${dsince} days without engagement`}. Their fundraising window may be closing.
+            </div>
+          )}
+
+          {/* Score + label */}
+          <div className="flex items-baseline gap-3 mb-4">
+            <span style={{ fontSize: 28, fontWeight: 700, color: hcol, lineHeight: 1 }}>{hs}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: hcol }}>{hlbl}</span>
+            <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', width: `${hs}%`, borderRadius: 3,
+                background: hcol,
+                animation: isAtRisk ? 'healthPulse 2s ease-in-out infinite' : 'none',
+                transition: 'width 0.4s ease',
+              }} />
+            </div>
+          </div>
+
+          {/* Breakdown table */}
+          <div>
+            {[
+              { label: 'Last contacted',   pts: recencyPts, sub: dsince === 999 ? 'Never recorded' : `${dsince} days ago` },
+              { label: 'Pipeline status',  pts: statusPts,  sub: contact.contact_status || 'Inbound' },
+              { label: 'Engagement depth', pts: depthPts,   sub: `${contact.deal_count ?? 1} deal${(contact.deal_count ?? 1) !== 1 ? 's' : ''}` },
+              { label: 'Deal quality',     pts: qualPts,    sub: contact.relevance_score != null ? `Score ${contact.relevance_score}/10` : 'Not scored' },
+              { label: 'Follow-up set',    pts: followPts,  sub: followPts > 0 ? `Due ${new Date(contact.follow_up_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'None set' },
+            ].map(({ label, pts, sub }, i, arr) => (
+              <div key={label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '7px 0',
+                borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+              }}>
+                <div>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', margin: 0 }}>{label}</p>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>{sub}</p>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: pts > 0 ? hcol : 'rgba(255,255,255,0.2)', flexShrink: 0 }}>
+                  +{pts} pts
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ── Contact info ──────────────────────────────────────────── */}
